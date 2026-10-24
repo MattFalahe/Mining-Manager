@@ -925,6 +925,26 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                         </li>
                     </ul>
 
+                    <h4><i class="fas fa-flag"></i> Events count what you say, for whom you say</h4>
+                    <ul>
+                        <li>
+                            A moon event is set in whole EVE days and can be narrowed to some of your refineries,
+                            so it counts one chunk when several arrive the same day. It can count only some
+                            rarities, and a special event the ore you pick.
+                        </li>
+                        <li>
+                            An event is for everyone, for the members of your corporations, or for one
+                            corporation. Everyone who mines within its rules gets its rate, or only those who
+                            <strong>sign up</strong>, from when they sign up. Signing up covers every character
+                            on the account.
+                        </li>
+                        <li>
+                            The event page lists people by account with the discount each one got, and an
+                            extraction's page can start an event on its chunk. Pings say what an event counts,
+                            and its final results are posted once the last refinery reports are in.
+                        </li>
+                    </ul>
+
                     <h4><i class="fas fa-shield-alt"></i> Nothing set before is lost, and nothing taxed before changes</h4>
                     <ul>
                         <li>
@@ -2352,7 +2372,7 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                         Flip the "Enter time in: EVE / UTC &middot; My local time" toggle to enter times in
                         your local timezone instead &mdash; we convert to EVE on submit. The live confirmation box
                         below the inputs shows both interpretations side by side so you always see what the server
-                        will record.
+                        will record. A moon event takes a first and last day instead, in EVE time.
                     </p>
                     <script>
                         (function () {
@@ -2412,7 +2432,7 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                             </tr>
                             <tr>
                                 <td><strong>Moon Extraction</strong></td>
-                                <td><code>moon_r4</code>, <code>moon_r8</code>, <code>moon_r16</code>, <code>moon_r32</code>, <code>moon_r64</code> &mdash; all moon ore rarities</td>
+                                <td><code>moon_r4</code> to <code>moon_r64</code>: every moon ore rarity, or only the ones you tick</td>
                                 <td>Moon chunk fractures</td>
                             </tr>
                             <tr>
@@ -2427,7 +2447,7 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                             </tr>
                             <tr class="bg-dark">
                                 <td><strong class="text-warning">Special Event</strong></td>
-                                <td><strong>Every currently-taxed ore category</strong> &mdash; intersects with your <code>tax_selector</code>. If the plugin doesn't tax gas, a Special Event won't credit gas mining either.</td>
+                                <td><strong>The ore you tick</strong>, all of it unless you narrow it, as far as your tax settings tax it. If the plugin doesn't tax gas, a Special Event won't credit gas mining either.</td>
                                 <td>Holidays, incentives, tax-free weekends, competitions</td>
                             </tr>
                         </tbody>
@@ -2448,6 +2468,21 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                         </ul>
                         <p class="mb-0 small text-muted">This is powered by the <code>event_mining_records</code> table, which captures the exact subset of mining that qualifies for each event. For moon events the slice is day-level (per ESI); for belt/ice/gas events the slice is time-precise.</p>
                     </div>
+
+                    <h4 class="mt-4"><i class="fas fa-industry text-info"></i> Refineries and chunks</h4>
+                    <p>
+                        A moon event can be narrowed to some of your refineries: tick them on the form, which shows
+                        each refinery's chunks and the days their belts can last. Only those refineries' mining
+                        counts, wherever they are. A refinery has one belt at a time, so its mining on the event's
+                        days is exactly that chunk's, even when other chunks arrive the same day. Leave them all
+                        unticked to count every refinery in the event's location.
+                    </p>
+                    <p>
+                        <strong>Make an Event</strong> on an extraction's page opens the form with that refinery
+                        ticked and the days set from the chunk's arrival to the latest its belt can last. Only your
+                        own refineries can be picked: refinery reports only exist for your structures, so for
+                        somebody else's moon use its system instead.
+                    </p>
 
                     <h4 class="mt-4"><i class="fas fa-link text-info"></i> Events mirror your Tax Settings</h4>
                     <p>Event participation tracks only ore categories the plugin is <em>currently taxing</em>. This keeps events meaningful &mdash; there's no point running a "Gas Huffing" event if your plugin isn't configured to tax gas, because the tax modifier would have a 0% rate to modify.</p>
@@ -2489,13 +2524,15 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                         </tbody>
                     </table>
 
-                    <h5 class="mt-3">Corporation scoping on events</h5>
-                    <p>The event form's <strong>Corporation Scope</strong> field gates <em>which miners</em> the event counts, independent of the ore data pool:</p>
+                    <h5 class="mt-3">Who an event is for</h5>
+                    <p>The form's <strong>Whose mining counts</strong> field decides <em>which miners</em> the event counts, apart from which ore:</p>
                     <ul>
-                        <li><strong>Corp-scoped event</strong> &mdash; only miners whose current corp matches the selected corp get credited. A miner from a different corp mining the same ore is excluded.</li>
-                        <li><strong>Global event</strong> &mdash; any miner in your plugin's data gets credited, regardless of their corp.</li>
+                        <li><strong>One corporation</strong>: pilots who were in it on the day they mined. A member who leaves keeps the event mining they did as a member.</li>
+                        <li><strong>Members of our corporations</strong>: pilots who were in any configured corporation that day.</li>
+                        <li><strong>Everyone</strong>: every miner in the plugin's data, members and non-members.</li>
                     </ul>
-                    <p class="text-muted small">Cross-corp moon mining is allowed: a Corp B miner mining at Corp A's moon counts for a Corp B event (because the miner is in Corp B) and for any global event. Corp A's ownership of the moon doesn't block that &mdash; the filter is on who mined, not on whose moon.</p>
+                    <p>Then <strong>Who gets the event's rate</strong>: everyone who mines within the rules, who the event adds by itself, or only those who sign up. On a sign-up event, anyone else's mining still shows on the event page, marked as mined without signing up, and pays the normal rate.</p>
+                    <p class="text-muted small">Cross-corp moon mining is allowed: a Corp B miner mining at Corp A's moon counts for a Corp B event (because the miner is in Corp B) and for any event for everyone. Corp A's ownership of the moon doesn't block that: the filter is on who mined, not on whose moon.</p>
 
                     <h4 class="mt-4"><i class="fas fa-clock text-warning"></i> Time Granularity</h4>
                     <p>How precisely the plugin can attribute mining activity to an event window depends on the source table each event type reads from:</p>
@@ -2518,10 +2555,12 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                     </table>
                     <p class="mb-0"><strong>Practical guidance:</strong></p>
                     <ul class="mb-2">
-                        <li><strong>Moon events shorter than 24h</strong> capture all of the overlapping day's moon mining. For precise tracking, align moon events to UTC day boundaries or multiples of 24h.</li>
+                        <li><strong>Moon events are set in whole EVE days</strong>, because that is how refineries report. Narrowing one to a refinery makes the days exactly that chunk's.</li>
                         <li><strong>Non-moon events</strong> benefit from SeAT's fetch-time granularity &mdash; a 4-hour gas event won't pull in gas mining from the same day that happened before or after the window (provided SeAT fetched within a reasonable cadence).</li>
-                        <li>For competitive/incentive events where "did you participate?" matters more than exact timing, use the manual <strong>Join Event</strong> button as an opt-in filter &mdash; only characters who clicked Join get counted regardless of mining data.</li>
+                        <li>When only the people who turn up should get the rate, make it a <strong>sign-up</strong> event: an account's mining counts from when it signs up, moon mining from that day.</li>
                         <li><strong>Mining reported late still counts.</strong> A refinery reports a day's mining only after the day is over, so the last day of an event always arrives after it has ended. An event keeps gathering for four days after it ends, and each day its mining reaches has its tax worked out again at once. A day already on an issued bill keeps what it was billed.</li>
+                        <li>When those four days are over, the webhooks that take <strong>Event Completed</strong> get the event's final results: what was mined, by how many pilots, the discount given and the top miners.</li>
+                        <li>Cancelling or deleting an event takes its discount off every day not billed yet.</li>
                     </ul>
                 </div>
             </div>

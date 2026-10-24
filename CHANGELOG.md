@@ -8,7 +8,7 @@ All notable changes to Mining Manager will be documented in this file.
 
 Settings move into **tax profiles**. A tax profile decides how often bills go out, the prefix on their payment codes, and what is taxed at which rate. Each configured corporation has one of its own, and the **Global** profile taxes everyone else. Everything else is set once for the whole install.
 
-This release also brings tax periods to the ledger, My Mining and the dashboards, the tax on every row of a character's ledger, invoices that list only what they taxed, and theft detection that follows players rather than scans.
+This release also brings tax periods to the ledger, My Mining and the dashboards, the tax on every row of a character's ledger, invoices that list only what they taxed, theft detection that follows players rather than scans, and events narrowed to the refineries, ore and people you pick, with sign-ups.
 
 ### Tax Profiles
 
@@ -107,9 +107,21 @@ This release also brings tax periods to the ledger, My Mining and the dashboards
 
 ### Events
 
+- **Events count what you tell them to.** A moon event is set in whole EVE days and can be narrowed to some of your refineries: the form lists each one with its chunks and the days their belts can last, so an event can count one chunk when several arrive the same day. A moon event can count only some rarities, and a special event the ore you tick. **Make an Event** on an extraction's page starts one on its chunk.
+- **An event is for everyone, for the members of your corporations, or for one corporation**, and either everyone who mines within its rules gets its rate, as before, or only those who sign up, from when they sign up: moon mining from that day, other mining from that moment. Signing up covers every character on the account and stays open until the event ends. Join used to put your main on the list and change nothing else. On a sign-up event, anyone else's mining still shows on the event page, at the normal rate. My Events lists the events you signed up for.
+- **The event page sets out the event's rules**, its refineries and their chunks, and its people by account, each marked signed up, waiting for mining, added, or mined without signing up, with the discount each one got. It adds up the mining by day and by refinery, and says while late refinery reports can still come in.
+- **Event pings say what an event counts**: the days, the refineries with their chunks, the ore, who counts and whether signing up matters, with a link to the event page. An event for no one corporation now also reaches every configured corporation's webhooks, not only the admin ones. Four days after an event ends, the webhooks that take Event Completed get its final results, once: what was mined, by how many pilots, the discount given and the top miners. Events that ended before this update get none.
+- **Cancelling or deleting an event** takes its discount off every day not billed yet, and bringing a cancelled event back puts it back.
 - **Event mining follows the profiles of the miners it covers.** A corporation's event counts what that corporation's profile taxes, and an event open to everyone counts what any profile taxes. Each miner's discount is still worked out by their own profile. The event form offers the configured corporations.
 - The event form no longer offers options that did nothing: a participant limit, a mandatory flag, an organizer, and auto start, since an event always starts at its start time. Editing an event no longer offers to notify participants, which it never did.
 - Fixed: **an event's discount missed mining reported after the event ended.** A refinery reports a day's mining only once the day is over, so the last day of every moon event arrived after the event had closed and was taxed in full. On the other days the newest figures could be taxed in full too, as the import worked out a day before the event had recorded them. Events now keep gathering for four days after they end, and every day whose event mining changes has its tax worked out again at once. A day already on an issued bill keeps what it was billed. An event made more than 30 days before it ran was never gathered at all; it now is.
+- Fixed: **an event set up after its days had passed was never counted.** It went from planned to completed in one go without being gathered. It is now gathered once.
+- Fixed: **Update Data on an event page counted every miner in the event's dates**, whatever the event's type, place or corporation, and filled its participant list with them. It now gathers the event by its own rules.
+- Fixed: **narrowing an event never took anyone off its participant list**, so its totals kept pilots who no longer counted. Their discount did go. Signing up is now kept apart from who mined, so the list follows the event.
+- Fixed: **a constellation or region event could not be saved**, as its location was checked against the list of solar systems.
+- Fixed: **times typed in local time were saved as EVE time** when creating an event.
+- Fixed: **Event Completed showed the units mined as ISK.** It shows the ISK.
+- Fixed: **the event page offered Delete to directors**, who are not allowed to delete events. It shows only for those who are.
 
 ### Reports
 
@@ -135,12 +147,14 @@ This release also brings tax periods to the ledger, My Mining and the dashboards
 - **Tax Trace shows who taxed each day** and builds the month's days again with the code billing uses, in place of the old recalculation at today's prices, so a difference is exactly what a rebuild would change. Each bill of the month is checked against its own period, both halves of a twice-a-month month included.
 - Health Checks lists the tax profiles, and the Valuation Test shows what each profile charges. The Master Test checks the Moon Owner, runs the Settings Health checks and matches the upfront keyword against every profile's code prefix.
 - The Master Test no longer checks that the moon value shown matches the value taxed. They can no longer differ.
+- The Event Diagnostic says whether the event tables from 000041 are in place, and what events do until they are.
 
 ### Schema
 
 - **000038** adds `mining_manager_settings_archive`, copies every settings row into it and moves the settings into tax profiles, in one transaction. Its `down()` puts every row back.
 - **000039** clears retired settings and copies of install-wide settings saved under a corporation, after archiving each row. Tax profile rows and keys the plugin does not know are left alone.
 - **000040** adds `tax_profile` to `mining_taxes`, the profile that made each bill. Existing bills are left empty.
+- **000041** adds what events need for their rules: `participation`, `members_only`, `ore_categories` and `results_sent_at` on `mining_events`, `qualifies` on `event_mining_records`, and two tables, `mining_manager_event_moons` for the refineries an event is narrowed to and `mining_manager_event_signups` for sign-ups. Existing events read exactly as before.
 
 ## [2.0.5] — 2026-10-19 — The Ecosystem Era: Rotations and Rigs
 
