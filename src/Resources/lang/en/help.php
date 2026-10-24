@@ -153,7 +153,7 @@ return [
 
     // Tax Periods
     'tax_periods_title' => 'Tax Calculation Periods',
-    'tax_periods_desc' => 'Each tax profile has its own billing period, set under Settings, Tax profiles. An account\'s bills follow the profile of its main character\'s corporation on the first of the month. Two period types are supported:',
+    'tax_periods_desc' => 'Each tax profile has its own billing period, set under Settings, Tax profiles. An account\'s bills follow the profile of its main character\'s corporation on the first of the month. A change of period starts on the 3rd, after the old period\'s last bills, or on the day from the 3rd to the 15th while the profile has billed none of the month, so no day is billed twice or missed. Two period types are supported:',
     'tax_period_monthly' => 'Monthly — One tax bill per calendar month (1st to last day). Calculated on the 2nd of the following month.',
     'tax_period_biweekly' => 'Biweekly — Two tax bills per month: 1st-14th and 15th-end. Calculated on the 2nd and 16th.',
     // tax_period_weekly removed in v1.0.3. Historical rows with period_type='weekly' still render via MiningTax::formatted_period.
@@ -478,7 +478,7 @@ return [
     'settings_setup' => 'Setup',
     'settings_setup_desc' => 'The Moon Owner Corporation, the one that owns your refineries and runs the tax program, and the list of configured corporations. Adding one gives it a tax profile copied from the Moon Owner\'s, and removing one makes its members non-members from then on.',
     'settings_profiles' => 'Tax profiles',
-    'settings_profiles_desc' => 'Every profile side by side, Global first: how often its bills go out, the prefix on its payment codes, what it taxes and at which rate. Above the Global column, a line says what its moon rates mean for non-members. A new billing period waits for the 3rd of next month unless you tick Change billing periods today.',
+    'settings_profiles_desc' => 'Every profile side by side, Global first: how often its bills go out, the prefix on its payment codes, what it taxes and at which rate. Above the Global column, a line says what its moon rates mean for non-members. A new billing period starts on the 3rd, once the old one\'s last bills have gone out. From the 3rd to the 15th, a profile that has billed none of the month yet can change on the day: tick Change billing periods today.',
     'settings_billing' => 'Billing',
     'settings_billing_desc' => 'For the whole install: the exemption threshold and minimum tax, days to pay, the wallet delay allowance, when a part-paid bill counts as overdue, reminders, and how payment codes are made.',
     'settings_payments' => 'Payments',

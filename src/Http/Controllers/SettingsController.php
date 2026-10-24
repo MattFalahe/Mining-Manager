@@ -15,6 +15,7 @@ use Illuminate\Support\Facades\Schema;
 use Seat\Eveapi\Models\Corporation\CorporationInfo;
 use MiningManager\Services\Character\AffiliationResolutionService;
 use MiningManager\Services\Character\CharacterNames;
+use MiningManager\Services\Tax\TaxPeriodHelper;
 use Carbon\Carbon;
 
 class SettingsController extends Controller
@@ -127,6 +128,7 @@ class SettingsController extends Controller
 
         $usesTaxProfiles = $this->settingsService->usesTaxProfiles();
         $profiles = $this->taxProfiles();
+        $periodChangeDate = app(TaxPeriodHelper::class)->nextSafeEffectiveDate();
         $addableCorporations = $corporations
             ->reject(fn ($corporation) => $this->settingsService->isConfiguredCorporation((int) $corporation->corporation_id))
             ->values();
@@ -195,6 +197,7 @@ class SettingsController extends Controller
             'taxedCorporations',
             'leaderboardCorporations',
             'profiles',
+            'periodChangeDate',
             'addableCorporations',
             'usesTaxProfiles',
             'overdueDays',
@@ -219,6 +222,7 @@ class SettingsController extends Controller
         usort($ids, fn (int $a, int $b) => [$a !== $moonOwner, strcasecmp($names[$a]->name ?? '', $names[$b]->name ?? '')]
             <=> [$b !== $moonOwner, strcasecmp($names[$b]->name ?? '', $names[$a]->name ?? '')]);
 
+        $periods = app(TaxPeriodHelper::class);
         $profiles = [];
         foreach (array_merge([null], $ids) as $id) {
             $read = fn (string $key, $default = null) => $this->settingsService->getSettingForCorporation($key, $id, $default);
@@ -233,6 +237,7 @@ class SettingsController extends Controller
                 'period' => $read('tax_rates.tax_calculation_period', 'monthly'),
                 'pending' => $read('tax_rates.tax_calculation_period_pending'),
                 'pending_from' => $read('tax_rates.tax_calculation_period_effective_from'),
+                'change_today' => $periods->canChangePeriodToday($id),
                 'prefix' => $read('tax_rates.tax_code_prefix', 'TAX-'),
                 'rates' => $this->settingsService->taxRatesFor($id),
                 'selector' => $selector,
@@ -369,6 +374,7 @@ class SettingsController extends Controller
 
         $new = (int) $validated['moon_owner_corporation_id'];
         $old = (int) $this->settingsService->getSettingForCorporation('general.moon_owner_corporation_id', null) ?: null;
+        $note = '';
 
         if ($new !== $old) {
             // A Moon Owner is always configured. One that was not yet starts
@@ -377,6 +383,7 @@ class SettingsController extends Controller
             $stored = array_map('intval', (array) $this->settingsService->getSettingForCorporation(SettingsTransfer::CONFIGURED_KEY, null, []));
             if ($this->settingsService->usesTaxProfiles() && !in_array($new, $stored, true)) {
                 $this->settingsService->configureCorporation($new, $old);
+                $note = $this->heldPeriodNote($new);
             }
 
             $this->settingsService->updateGlobalSetting('general.moon_owner_corporation_id', $new, 'integer');
@@ -384,7 +391,7 @@ class SettingsController extends Controller
         }
 
         return redirect(route('mining-manager.settings.index') . '#setup')
-            ->with('success', 'Moon Owner Corporation saved.');
+            ->with('success', 'Moon Owner Corporation saved.' . $note);
     }
 
     /**
@@ -414,7 +421,7 @@ class SettingsController extends Controller
         $this->clearSettingsCache();
 
         return redirect(route('mining-manager.settings.index') . '#profiles')
-            ->with('success', "{$name} is configured. Its members are taxed by its own profile, a copy of the Moon Owner's, from now on. Change it under Tax profiles.");
+            ->with('success', "{$name} is configured. Its members are taxed by its own profile, a copy of the Moon Owner's, from now on." . $this->heldPeriodNote($id) . ' Change it under Tax profiles.');
     }
 
     /**
@@ -488,7 +495,8 @@ class SettingsController extends Controller
             }
         }
 
-        DB::transaction(function () use ($validated, $request, $others) {
+        $waiting = [];
+        DB::transaction(function () use ($validated, $request, $others, &$waiting) {
             foreach ($validated['profiles'] ?? [] as $key => $values) {
                 $rates = Arr::dot($values['rates'] ?? []);
 
@@ -501,20 +509,74 @@ class SettingsController extends Controller
                     }
                 }
 
-                $this->settingsService->saveProfile($key === 'global' ? null : (int) $key, [
+                $profile = $key === 'global' ? null : (int) $key;
+                $period = $this->settingsService->saveProfile($profile, [
                     'prefix' => trim((string) $values['prefix']),
                     'moon' => $values['moon'],
                     'rates' => array_filter($rates, fn ($rate) => $rate !== null && $rate !== ''),
                     'taxed' => $taxed,
                     'period' => $values['period'],
                 ], $request->boolean('apply_period_now'));
+
+                if ($period === 'queued' && $request->boolean('apply_period_now')) {
+                    $waiting[] = $profile;
+                }
             }
         });
 
         $this->clearSettingsCache();
 
+        $message = 'Tax profiles saved.';
+        if ($waiting) {
+            $from = app(TaxPeriodHelper::class)->nextSafeEffectiveDate()->format('F j');
+            $message .= count($waiting) === 1
+                ? " {$this->profileNames($waiting)}'s new billing period starts on {$from}, not today."
+                : " The new billing periods of {$this->profileNames($waiting)} start on {$from}, not today.";
+            $message .= ' A period can only change on the day from the 3rd to the 15th of a month, while the profile has billed none of it.';
+        }
+
         return redirect(route('mining-manager.settings.index') . '#profiles')
-            ->with('success', 'Tax profiles saved.');
+            ->with('success', $message);
+    }
+
+    /**
+     * Tax profiles by name, as the Tax profiles page heads them: Global, or a
+     * corporation's ticker.
+     *
+     * @param array<int, int|null> $profiles
+     */
+    private function profileNames(array $profiles): string
+    {
+        $tickers = CorporationInfo::whereIn('corporation_id', array_filter($profiles))->pluck('ticker', 'corporation_id');
+        $names = array_map(
+            fn (?int $profile) => $profile === null ? 'Global' : (isset($tickers[$profile]) ? "[{$tickers[$profile]}]" : "Corporation {$profile}"),
+            array_values($profiles)
+        );
+
+        return count($names) > 1 ? implode(', ', array_slice($names, 0, -1)) . ' and ' . end($names) : (string) reset($names);
+    }
+
+    /**
+     * For a corporation just configured: when its bills keep the period its
+     * members were billed on this month for now, and when they change.
+     */
+    private function heldPeriodNote(int $corporationId): string
+    {
+        $change = app(TaxPeriodHelper::class)->pendingPeriodChangeFor($corporationId);
+
+        if ($change === null) {
+            return '';
+        }
+
+        $label = fn (string $period) => $period === 'biweekly' ? 'twice a month' : 'monthly';
+
+        return sprintf(
+            ' Its bills go out %s until %s, as its members\' have this month, and %s from %s.',
+            $label($change['current']),
+            $change['effective_from']->copy()->subDay()->format('F j'),
+            $label($change['pending']),
+            $change['effective_from']->format('F j')
+        );
     }
 
     /**
@@ -1408,13 +1470,24 @@ class SettingsController extends Controller
             }
 
             if ($result['skipped'] > 0) {
-                $message .= ", skipped {$result['skipped']} unreadable row(s)";
+                $message .= ", and left out {$result['skipped']} row(s): records only the install it came from keeps, copies nothing reads, or rows it could not read";
             }
 
             if ($result['legacy']) {
                 $message .= '. This file predates per-corporation export, so everything'
                     . ' was applied globally. Re-export from the source install to keep'
                     . ' corporation settings separate.';
+            }
+
+            if (!empty($result['periods'])) {
+                $byDate = [];
+                foreach ($result['periods'] as $change) {
+                    $byDate[$change['from']->format('F j')][] = $change['profile'];
+                }
+
+                $message .= '. Billing periods from the file start later, so that no part of a month is billed twice or not at all: '
+                    . implode('; ', array_map(fn (string $date, array $profiles) => "{$this->profileNames($profiles)} on {$date}", array_keys($byDate), $byDate))
+                    . '.';
             }
 
             return redirect()->route('mining-manager.settings.index')

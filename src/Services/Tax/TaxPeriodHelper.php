@@ -5,11 +5,25 @@ namespace MiningManager\Services\Tax;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use MiningManager\Models\MiningTax;
 use MiningManager\Services\Character\CorporationOnDate;
 use MiningManager\Services\Configuration\SettingsManagerService;
 
 class TaxPeriodHelper
 {
+    /**
+     * The day of the month a queued change of billing period takes effect,
+     * the day after the tax run bills the period before (see
+     * shouldCalculateToday()).
+     */
+    public const PERIOD_CHANGE_DAY = 3;
+
+    /**
+     * The last day of the month a billing period can change on the day: the
+     * run on the 16th bills the first half of a twice-a-month month.
+     */
+    public const LAST_SAME_DAY_PERIOD_CHANGE = 15;
+
     protected SettingsManagerService $settingsService;
 
     public function __construct(SettingsManagerService $settingsService)
@@ -21,13 +35,12 @@ class TaxPeriodHelper
      * Get the configured tax calculation period type.
      *
      * Respects a "queued switch" via tax_calculation_period_pending +
-     * tax_calculation_period_effective_from. Period changes are always
-     * deferred to the first of a future calendar month to avoid colliding
-     * with tax rows whose unique key is (character_id, period_start):
-     * biweekly H1 and monthly both target period_start = 1st of month,
-     * so switching mid-month would either orphan the shorter periods or
-     * silently overwrite their period_type under --force recalc. Queueing
-     * to a month boundary sidesteps both failure modes.
+     * tax_calculation_period_effective_from. A period change waits for
+     * nextSafeEffectiveDate() unless canChangePeriodToday() allows it on the
+     * day. Tax rows are keyed on (character_id, period_start), and biweekly
+     * H1 and monthly both start on the 1st, so a switch part way through a
+     * month would find the first half's bill in the way of the month's, or
+     * bill the second half alone.
      *
      * Legacy 'weekly' auto-heal: 'weekly' as an active period type was
      * removed in v1.0.3+ because weekly ISO periods cross calendar-month
@@ -312,35 +325,68 @@ class TaxPeriodHelper
      * or silently fails to fire (shouldCalculateToday returns false for
      * the new scheme on the old scheme's calc day).
      *
-     * Both remaining period types (monthly and biweekly) schedule their
-     * "previous-period" calc on DAY 2 of next month. Day 3 lets that
-     * calc run under the old scheme, then promotes.
-     *
-     * The match structure is intentionally kept forward-compatible: if
-     * the cron schedule in ScheduleSeeder ever shifts to day N, update
-     * this to day N+1. If a new period type with a different calc day is
-     * ever introduced, add a match arm.
+     * Both period types run their "previous-period" calc on day 2, so day
+     * 3 lets that calc run under the old scheme, then promotes. Asked for
+     * on the 1st or the 2nd, that is this month's 3rd, since nothing of the
+     * month has been billed yet; asked for later, next month's. If the cron
+     * schedule in ScheduleSeeder ever shifts to day N, PERIOD_CHANGE_DAY
+     * becomes N+1.
      *
      * @return \Carbon\Carbon
      */
     public function nextSafeEffectiveDate(): Carbon
     {
-        // Read the CURRENT active period, not the pending one. We're
-        // deciding how long the old scheme should keep running.
-        $rates = $this->settingsService->getTaxRates();
-        $active = $rates['tax_calculation_period'] ?? 'monthly';
+        $today = Carbon::today();
+        $month = $today->day < self::PERIOD_CHANGE_DAY
+            ? $today->copy()->startOfMonth()
+            : $today->copy()->addMonthNoOverflow()->startOfMonth();
 
-        $nextMonthStart = Carbon::today()->addMonthNoOverflow()->startOfMonth();
+        return $month->day(self::PERIOD_CHANGE_DAY);
+    }
 
-        return match ($active) {
-            // Both monthly and biweekly fire their previous-period calc on
-            // day 2 of next month. Day 3 is the first safe cutover.
-            'monthly', 'biweekly' => $nextMonthStart->addDays(2),
-            // Defensive fallback — unknown/legacy value, use the conservative
-            // day 3 rule. (A legacy 'weekly' value is auto-healed by
-            // getConfiguredPeriodType() before this method gets called.)
-            default => $nextMonthStart->addDays(2),
-        };
+    /**
+     * Whether a tax profile's billing period can change today rather than
+     * on nextSafeEffectiveDate().
+     *
+     * Only from the 3rd, once last month's last bills have gone out under
+     * the old period, to the 15th, before the run on the 16th bills a first
+     * half, and only while the profile has made no bill for this month, early
+     * or by hand. Any later, a move to monthly would find the first half's
+     * bill in the way and never bill the second half, and a move to twice a
+     * month would bill the second half alone.
+     */
+    public function canChangePeriodToday(?int $profile): bool
+    {
+        $today = Carbon::today();
+
+        if ($today->day < self::PERIOD_CHANGE_DAY || $today->day > self::LAST_SAME_DAY_PERIOD_CHANGE) {
+            return false;
+        }
+
+        return !$this->billedThisMonth($profile);
+    }
+
+    /**
+     * Whether a tax profile has made a bill for this month. Deleted bills
+     * count, since they still hold their period, and so do bills that do not
+     * say which profile made them, from before tax profiles.
+     */
+    private function billedThisMonth(?int $profile): bool
+    {
+        $month = Carbon::today()->startOfMonth();
+
+        $bills = MiningTax::withTrashed()
+            ->where(fn ($bills) => $bills
+                ->whereBetween('period_start', [$month->toDateString(), $month->copy()->endOfMonth()->toDateString()])
+                ->orWhere(fn ($older) => $older->whereNull('period_start')->where('month', $month->toDateString())));
+
+        if (MiningTax::recordsTaxProfile()) {
+            $bills->where(fn ($bills) => $bills
+                ->whereNull('tax_profile')
+                ->orWhere('tax_profile', $profile === null ? MiningTax::GLOBAL_PROFILE : (string) $profile));
+        }
+
+        return $bills->exists();
     }
 
     /**

@@ -1,5 +1,7 @@
 @php
     $configured = count($profiles) > 1;
+    // Whether today is a day a billing period can change on the day at all.
+    $sameDayChange = collect($profiles)->contains(fn ($profile) => $profile['change_today']);
     $rarities = ['r4' => 'R4', 'r8' => 'R8', 'r16' => 'R16', 'r32' => 'R32', 'r64' => 'R64'];
     $others = ['ore' => 'Ore', 'ice' => 'Ice', 'gas' => 'Gas', 'abyssal_ore' => 'Abyssal ore', 'triglavian_ore' => 'Triglavian ore'];
     $moonChoices = ['all' => 'All moon ore', 'ours' => 'Only at your refineries', 'none' => 'Not taxed'];
@@ -104,6 +106,10 @@
                                 <small class="text-warning d-block mt-1">
                                     {{ $profile['period'] === 'biweekly' ? 'Twice a month' : 'Monthly' }} until {{ \Carbon\Carbon::parse($profile['pending_from'])->subDay()->format('M j') }}
                                 </small>
+                            @elseif($sameDayChange && !$profile['change_today'])
+                                <small class="text-muted d-block mt-1">
+                                    Has billed part of this month, so a new period starts on {{ $periodChangeDate->format('M j') }}
+                                </small>
                             @endif
                         </td>
                     @endforeach
@@ -181,13 +187,22 @@
         </table>
     </div>
 
-    <div class="custom-control custom-checkbox mb-2">
-        <input type="checkbox" class="custom-control-input" id="apply_period_now" name="apply_period_now" value="1">
-        <label class="custom-control-label" for="apply_period_now">Change billing periods today</label>
-        <small class="form-text text-muted">
-            Left unticked, a new billing period starts on the 3rd of next month, after the bills for this one have gone out under the old period. Changing it today can leave part of a period billed twice or not at all.
-        </small>
-    </div>
+    @if($sameDayChange)
+        <div class="custom-control custom-checkbox mb-2">
+            <input type="checkbox" class="custom-control-input" id="apply_period_now" name="apply_period_now" value="1">
+            <label class="custom-control-label" for="apply_period_now">Change billing periods today</label>
+            <small class="form-text text-muted">
+                Left unticked, a new billing period starts on {{ $periodChangeDate->format('F j') }}, after the bills for this one have gone out under the old period.
+                Ticked, it starts today for every profile that has not billed any of this month yet. That is only possible up to the 15th: later, part of the month would be billed twice or not at all.
+            </small>
+        </div>
+    @else
+        <p class="text-muted small mb-2">
+            <i class="fas fa-calendar-alt"></i>
+            A new billing period starts on {{ $periodChangeDate->format('F j') }}, after the bills for this one have gone out under the old period.
+            It can only start on the day from the 3rd to the 15th of a month, while none of the month has been billed. Before the 3rd, last month's bills have not gone out yet, and after the 15th part of the month would be billed twice or not at all.
+        </p>
+    @endif
 
     <button type="submit" class="btn btn-mm-primary">
         <i class="fas fa-save"></i> Save tax profiles

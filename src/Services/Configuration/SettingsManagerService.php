@@ -22,6 +22,16 @@ class SettingsManagerService
     const CACHE_PREFIX = 'mining_manager_settings_';
 
     /**
+     * A tax profile's billing period and its queued change, which an import
+     * applies through setPeriodFor() rather than writing straight in.
+     */
+    private const PERIOD_KEYS = [
+        'tax_rates.tax_calculation_period',
+        'tax_rates.tax_calculation_period_pending',
+        'tax_rates.tax_calculation_period_effective_from',
+    ];
+
+    /**
      * Active corporation ID for settings context
      *
      * @var int|null
@@ -721,12 +731,15 @@ class SettingsManagerService
      * Change a tax profile's billing period, the profile for a corporation's
      * members as everywhere else.
      *
-     * Queued to the first safe day unless asked for now: see
-     * TaxPeriodHelper::nextSafeEffectiveDate() for why that is day 3 of next
-     * month rather than day 1. Choosing the period already in force clears
-     * any queued change.
+     * Queued to TaxPeriodHelper::nextSafeEffectiveDate(), the 3rd, unless
+     * asked for today and TaxPeriodHelper::canChangePeriodToday() allows it:
+     * changed on any other day, part of the month would be billed twice or
+     * not at all. Choosing the period already in force clears any queued
+     * change.
+     *
+     * @return string|null 'today' or 'queued', or null when the period stays as it is
      */
-    public function setPeriodFor(?int $corporationId, string $requested, bool $applyNow): void
+    public function setPeriodFor(?int $corporationId, string $requested, bool $applyNow): ?string
     {
         // Defense in depth: weekly was removed as a selectable period
         // type in v1.0.3+. If a caller somehow passes 'weekly' (e.g.
@@ -737,28 +750,61 @@ class SettingsManagerService
             $requested = 'monthly';
         }
 
+        $periods = app(\MiningManager\Services\Tax\TaxPeriodHelper::class);
         $write = fn (string $key, $value) => $this->updateSettingForCorporation($key, $value, 'string', $corporationId);
         $current = $this->getSettingForCorporation('tax_rates.tax_calculation_period', $corporationId, 'monthly');
         $pending = $this->getSettingForCorporation('tax_rates.tax_calculation_period_pending', $corporationId);
-
-        // Asking again for a change already queued keeps its date. Queued
-        // afresh, a save between the 1st and the 3rd would push it a month.
-        if ($requested === $pending && !$applyNow) {
-            return;
-        }
+        $effectiveFrom = $this->getSettingForCorporation('tax_rates.tax_calculation_period_effective_from', $corporationId);
 
         if ($requested === $current) {
             $write('tax_rates.tax_calculation_period_pending', null);
             $write('tax_rates.tax_calculation_period_effective_from', null);
-        } elseif ($applyNow) {
+
+            return null;
+        }
+
+        if ($applyNow && $periods->canChangePeriodToday($corporationId)) {
             $write('tax_rates.tax_calculation_period', $requested);
             $write('tax_rates.tax_calculation_period_pending', null);
             $write('tax_rates.tax_calculation_period_effective_from', null);
-        } else {
-            $effectiveFrom = app(\MiningManager\Services\Tax\TaxPeriodHelper::class)->nextSafeEffectiveDate()->toDateString();
-            $write('tax_rates.tax_calculation_period_pending', $requested);
-            $write('tax_rates.tax_calculation_period_effective_from', $effectiveFrom);
+
+            return 'today';
         }
+
+        // Asking again for a change already queued keeps its date. Queued
+        // afresh on the day it takes effect, before anything has read the
+        // period, it would wait another month.
+        if ($requested !== $pending || !$effectiveFrom) {
+            $write('tax_rates.tax_calculation_period_pending', $requested);
+            $write('tax_rates.tax_calculation_period_effective_from', $periods->nextSafeEffectiveDate()->toDateString());
+        }
+
+        return 'queued';
+    }
+
+    /**
+     * Give a corporation configured part way through a month the billing
+     * period its members were on until now, Global's, with the one its
+     * profile came with queued like any change of period, unless the change
+     * can be made today. Taking the new period at once could leave part of
+     * the month billed twice or not at all for them.
+     */
+    private function startOnMembersPeriod(int $corporationId): void
+    {
+        $periods = app(\MiningManager\Services\Tax\TaxPeriodHelper::class);
+        $read = fn (string $key, $default = null) => $this->getSettingForCorporation($key, $corporationId, $default);
+        $write = fn (string $key, $value) => $this->updateSettingForCorporation($key, $value, 'string', $corporationId);
+
+        $active = (string) $read('tax_rates.tax_calculation_period', 'monthly');
+        $target = $read('tax_rates.tax_calculation_period_pending') ?: $active;
+
+        if (!$periods->canChangePeriodToday(null)) {
+            $active = $periods->periodTypeFor(null);
+        }
+
+        $write('tax_rates.tax_calculation_period', $active);
+        $write('tax_rates.tax_calculation_period_pending', $target === $active ? null : $target);
+        $write('tax_rates.tax_calculation_period_effective_from', $target === $active ? null : $periods->nextSafeEffectiveDate()->toDateString());
     }
 
     /**
@@ -766,8 +812,9 @@ class SettingsManagerService
      * corporation is null, else that configured corporation's own.
      *
      * @param array{prefix?: string, moon?: string, rates?: array<string, mixed>, taxed?: array<string, mixed>, period?: string} $values
+     * @return string|null what became of the billing period, as setPeriodFor() says
      */
-    public function saveProfile(?int $corporationId, array $values, bool $applyPeriodNow): void
+    public function saveProfile(?int $corporationId, array $values, bool $applyPeriodNow): ?string
     {
         $write = fn (string $key, $value, string $type) => $this->updateSettingForCorporation($key, $value, $type, $corporationId);
 
@@ -789,9 +836,7 @@ class SettingsManagerService
             $write("tax_selector.{$key}", (bool) $taxed, 'boolean');
         }
 
-        if (isset($values['period'])) {
-            $this->setPeriodFor($corporationId, $values['period'], $applyPeriodNow);
-        }
+        return isset($values['period']) ? $this->setPeriodFor($corporationId, $values['period'], $applyPeriodNow) : null;
     }
 
     /**
@@ -819,6 +864,7 @@ class SettingsManagerService
         }
 
         $this->addConfiguredCorporation($corporationId);
+        $this->startOnMembersPeriod($corporationId);
     }
 
     /**
@@ -1584,14 +1630,16 @@ class SettingsManagerService
      * Understands both shapes: the current one, where settings are rows that
      * each name their own corporation, and the original flat key => value map,
      * which had no corporation information at all and is therefore treated as
-     * global. Files produced before this change still import exactly as they
-     * did before.
+     * global. Once settings are in tax profiles, only files exported from them
+     * are taken.
      *
      * Additive. Nothing is deleted, so importing a partial file tops up a
-     * configuration rather than replacing it.
+     * configuration rather than replacing it. Billing periods change as they
+     * do on the Tax profiles page: today when that is safe, otherwise from
+     * the next safe day, listed under 'periods'.
      *
      * @param array $data
-     * @return array{settings:int,webhooks:int,skipped:int,legacy:bool}
+     * @return array{settings:int,webhooks:int,skipped:int,legacy:bool,periods:array<int, array{profile: int|null, from: \Carbon\Carbon}>}
      */
     public function importSettings(array $data): array
     {
@@ -1614,6 +1662,8 @@ class SettingsManagerService
         $skipped = 0;
         $webhooks = 0;
         $savedContext = $this->activeCorporationId;
+        $configuredBefore = $profiles ? $this->getHomeCorporationIds() : [];
+        $periodRows = [];
 
         DB::beginTransaction();
 
@@ -1662,6 +1712,15 @@ class SettingsManagerService
                         if ($scope === SettingsRegistry::PROFILE && !empty($row['corporation_id'])) {
                             $this->addConfiguredCorporation((int) $row['corporation_id']);
                         }
+
+                        // A billing period this install already has changes
+                        // below, the way a change on the Tax profiles page does.
+                        $profile = empty($row['corporation_id']) ? null : (int) $row['corporation_id'];
+                        if (in_array($row['key'], self::PERIOD_KEYS, true) && ($profile === null || in_array($profile, $configuredBefore, true))) {
+                            $periodRows[$profile ?? 'global'][$row['key']] = $row['value'] ?? null;
+                            $imported++;
+                            continue;
+                        }
                     }
 
                     // Write in the row's own context, not the caller's.
@@ -1687,6 +1746,32 @@ class SettingsManagerService
 
                     $imported++;
                 }
+            }
+
+            // A billing period changes today only when that is safe, so an
+            // import part way through a month cannot leave part of it billed
+            // twice or not at all. A change queued in the file is queued again
+            // from this install's next safe day, not the file's.
+            $this->activeCorporationId = null;
+            foreach ($periodRows as $profile => $period) {
+                $profile = $profile === 'global' ? null : (int) $profile;
+                $active = $period['tax_rates.tax_calculation_period'] ?? null;
+                $pending = $period['tax_rates.tax_calculation_period_pending'] ?? null;
+
+                if (in_array($active, ['monthly', 'biweekly', 'weekly'], true)) {
+                    $this->setPeriodFor($profile, $active, true);
+                }
+
+                if (in_array($pending, ['monthly', 'biweekly', 'weekly'], true) && !empty($period['tax_rates.tax_calculation_period_effective_from'])) {
+                    $this->setPeriodFor($profile, $pending, false);
+                }
+            }
+
+            // A corporation the file configures starts on the period its
+            // members were on, as one added on the Setup page does.
+            $added = $profiles ? array_diff($this->getHomeCorporationIds(), $configuredBefore) : [];
+            foreach ($added as $corporationId) {
+                $this->startOnMembersPeriod($corporationId);
             }
 
             if (!empty($data['webhooks']) && is_array($data['webhooks'])) {
@@ -1729,11 +1814,22 @@ class SettingsManagerService
             'legacy_format' => $legacy,
         ]);
 
+        // The profiles whose billing period from the file is still to come.
+        $periods = app(\MiningManager\Services\Tax\TaxPeriodHelper::class);
+        $waiting = [];
+        foreach (array_merge(array_keys($periodRows), $added) as $profile) {
+            $profile = $profile === 'global' ? null : (int) $profile;
+            if ($change = $periods->pendingPeriodChangeFor($profile)) {
+                $waiting[] = ['profile' => $profile, 'from' => $change['effective_from']];
+            }
+        }
+
         return [
             'settings' => $imported,
             'webhooks' => $webhooks,
             'skipped' => $skipped,
             'legacy' => $legacy,
+            'periods' => $waiting,
         ];
     }
 

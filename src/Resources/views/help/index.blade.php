@@ -1187,7 +1187,7 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                             <li>On the first tax-page load or daily cron after upgrading, the <code>tax_calculation_period</code> setting is rewritten from <code>weekly</code> to <code>monthly</code> automatically. A warning line is written to the log explaining why.</li>
                             <li>Any <strong>historical</strong> <code>mining_taxes</code> rows with <code>period_type='weekly'</code> stay in the database forever. They remain visible in Tax History, Tax Details, My Taxes breakdown, and CSV exports &mdash; rendered with their original weekly labels (e.g. "Mar 3&ndash;9, 2026").</li>
                             <li>Going forward, the plugin writes only <code>monthly</code> or <code>biweekly</code> rows. No new weekly rows are created.</li>
-                            <li>If you want biweekly instead of monthly, open <em>Settings &rarr; Tax profiles</em> and change the profile's billing period. The switch will queue to day 3 of next month (safe cutover to avoid collisions with the auto-migrated monthly setting).</li>
+                            <li>If you want biweekly instead of monthly, open <em>Settings &rarr; Tax profiles</em> and change the profile's billing period. The change starts on the 3rd, after the month&rsquo;s monthly bills have gone out, or on the day if you make it between the 3rd and the 15th, before any of the month is billed.</li>
                         </ol>
                         <p class="mb-0 text-muted small">
                             No database migration, no data loss, no downtime &mdash; the settings key-value store handles the legacy value at read time.
