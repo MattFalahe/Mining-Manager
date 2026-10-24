@@ -251,6 +251,35 @@ class PriceProviderService
     }
 
     /**
+     * One provider's prices for a test, changing nothing: no fallback, no
+     * cached prices standing in, no record of how the provider did and no
+     * alert, so the provider in use and its status stay as they are. The
+     * error says why the provider gave nothing, when it gave nothing.
+     *
+     * @return array{prices: array<int, float>, error: string|null}
+     */
+    public function tryProvider(string $provider, array $typeIds): array
+    {
+        $this->lastRequestErrors = 0;
+        $this->lastRequestError = null;
+
+        try {
+            $prices = $this->fetchFrom($provider, $typeIds);
+        } catch (Exception $e) {
+            return ['prices' => [], 'error' => $e->getMessage()];
+        }
+
+        $answered = count(array_filter($prices, fn ($price) => $price > 0));
+
+        return [
+            'prices' => $prices,
+            'error' => $answered === 0 && $this->lastRequestErrors > 0
+                ? ($this->lastRequestError ?? 'The provider did not answer')
+                : null,
+        ];
+    }
+
+    /**
      * One provider's prices, for whatever market and side are in force.
      */
     protected function fetchFrom(string $provider, array $typeIds): array

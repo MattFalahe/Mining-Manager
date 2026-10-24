@@ -986,7 +986,6 @@ class DiagnosticController extends Controller
         ]);
 
         $provider = $request->input('provider', 'seat');
-        $originalProvider = null;
 
         try {
             // Check if Janice API key is configured when testing Janice
@@ -1028,22 +1027,18 @@ class DiagnosticController extends Controller
 
             $startTime = microtime(true);
 
-            // Temporarily set provider via settings service (ensures cache invalidation)
-            $pricingSettings = $this->settingsService->getPricingSettings();
-            $originalProvider = $pricingSettings['price_provider'] ?? 'seat';
-            $this->settingsService->updateSetting('price_provider', $provider, 'string');
-
-            $prices = $this->priceService->getPrices($testTypeIds);
+            // Asked directly, so the provider in use, its status and its alerts
+            // stay as they are while the test runs.
+            $test = $this->priceService->tryProvider($provider, $testTypeIds);
+            $prices = $test['prices'];
 
             $endTime = microtime(true);
             $duration = round(($endTime - $startTime) * 1000, 2); // milliseconds
 
-            // A provider that failed outright still hands back the cached
-            // prices, which would read here as a passing test.
-            if ($this->priceService->lastFetchStoodIn()) {
+            if ($test['error'] !== null) {
                 return response()->json([
                     'success' => false,
-                    'error' => $this->priceService->standInNotice(),
+                    'error' => $test['error'],
                     'provider' => $provider,
                 ]);
             }
@@ -1088,11 +1083,6 @@ class DiagnosticController extends Controller
                 'error' => $e->getMessage(),
                 'provider' => $provider
             ], 500);
-        } finally {
-            // Always restore original provider
-            if ($originalProvider !== null) {
-                $this->settingsService->updateSetting('price_provider', $originalProvider, 'string');
-            }
         }
     }
 
@@ -1169,7 +1159,6 @@ class DiagnosticController extends Controller
     {
         $provider = $request->input('provider', 'seat');
         $oreCategory = $request->input('category', 'all');
-        $originalProvider = null;
 
         try {
             // Check if Janice API key is configured when testing Janice
@@ -1236,20 +1225,18 @@ class DiagnosticController extends Controller
 
             $startTime = microtime(true);
 
-            // Temporarily set provider via settings service (ensures cache invalidation)
-            $pricingSettings = $this->settingsService->getPricingSettings();
-            $originalProvider = $pricingSettings['price_provider'] ?? 'seat';
-            $this->settingsService->updateSetting('price_provider', $provider, 'string');
-
-            $prices = $this->priceService->getPrices($typeIds);
+            // Asked directly, so the provider in use, its status and its alerts
+            // stay as they are while the test runs.
+            $test = $this->priceService->tryProvider($provider, $typeIds);
+            $prices = $test['prices'];
 
             $endTime = microtime(true);
             $duration = round(($endTime - $startTime) * 1000, 2);
 
-            if ($this->priceService->lastFetchStoodIn()) {
+            if ($test['error'] !== null) {
                 return response()->json([
                     'success' => false,
-                    'error' => $this->priceService->standInNotice(),
+                    'error' => $test['error'],
                     'provider' => $provider,
                 ]);
             }
@@ -1300,11 +1287,6 @@ class DiagnosticController extends Controller
                 'success' => false,
                 'error' => $e->getMessage()
             ], 500);
-        } finally {
-            // Always restore original provider
-            if ($originalProvider !== null) {
-                $this->settingsService->updateSetting('price_provider', $originalProvider, 'string');
-            }
         }
     }
 
