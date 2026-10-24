@@ -195,7 +195,9 @@ class SettingsHealth
         $valuation = $this->settings->getSettingForCorporation(SettingsTransfer::VALUATION_KEY, null);
 
         $message = "Moved on {$at} UTC";
-        if ($report) {
+        if ($report && !SettingsMovedNotice::movedAnything($report)) {
+            $message = "In tax profiles since {$at} UTC. Nothing needed moving, as no Moon Owner Corporation was set and no corporation had settings of its own then";
+        } elseif ($report) {
             $message .= sprintf(', %d values written where they now live and %d already there', $report['written'] ?? 0, $report['kept'] ?? 0);
         }
         $message .= '.';
@@ -221,7 +223,7 @@ class SettingsHealth
         }
 
         $report = (new SettingsTransfer())->storedReport();
-        if (!$report || empty($report['transferred_at']) || (int) ($report['written'] ?? 0) + (int) ($report['kept'] ?? 0) === 0) {
+        if (!$report || empty($report['transferred_at']) || !SettingsMovedNotice::movedAnything($report)) {
             return null;
         }
 

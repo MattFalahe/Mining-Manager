@@ -90,6 +90,18 @@ class SettingsMovedNotice
     }
 
     /**
+     * Whether a move had anything to move: a Moon Owner Corporation, or a
+     * corporation with settings of its own. On a new install, or one that
+     * never taxed anyone, every setting stayed where it was, so there is
+     * nothing to say. The list of configured corporations is written either
+     * way, so a count of what was written cannot tell.
+     */
+    public static function movedAnything(array $report): bool
+    {
+        return !empty($report['configured']);
+    }
+
+    /**
      * The move's report while it still needs saying: settings moved in the
      * last two weeks, there was something to move, and no message has gone
      * out. Null otherwise.
@@ -102,8 +114,7 @@ class SettingsMovedNotice
         }
 
         $report = $transfer->storedReport();
-        if (!$report || empty($report['transferred_at'])
-            || (int) ($report['written'] ?? 0) + (int) ($report['kept'] ?? 0) === 0) {
+        if (!$report || empty($report['transferred_at']) || !self::movedAnything($report)) {
             return null;
         }
 

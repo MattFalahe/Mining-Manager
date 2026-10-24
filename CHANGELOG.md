@@ -102,7 +102,7 @@ This release also brings tax periods to the ledger, My Mining and the dashboards
 
 ### Notifications
 
-- **One message says the move happened**, to the webhooks that take Price Provider Trouble or Moon Scan Missing, with what changed and a link to the report. It goes out once. Until it has, admins see the same on the settings page and the director dashboard, for two weeks after the update.
+- **One message says the move happened**, to the webhooks that take Price Provider Trouble or Moon Scan Missing, with what changed and a link to the report. It goes out once. Until it has, admins see the same on the settings page and the director dashboard, for two weeks after the update. A new install, or one with no Moon Owner and no corporation settings, had nothing to move and gets neither.
 - The Discord ping test on the Diagnostic page follows each notification type's own ping settings.
 
 ### Events

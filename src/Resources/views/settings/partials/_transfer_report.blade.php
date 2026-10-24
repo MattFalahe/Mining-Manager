@@ -19,7 +19,12 @@
         </h5>
     </div>
     <div class="card-body">
-        @if($transferReport)
+        @if($transferReport && !\MiningManager\Services\Configuration\SettingsMovedNotice::movedAnything($transferReport))
+            <p class="mb-0">
+                Settings have been in tax profiles since <strong>{{ $transferReport['transferred_at'] }}</strong> UTC.
+                No Moon Owner Corporation was set then and no corporation had settings of its own, as on a new install, so there was nothing to move.
+            </p>
+        @elseif($transferReport)
             <p>
                 Settings moved into tax profiles on <strong>{{ $transferReport['transferred_at'] }}</strong> UTC, when the plugin updated.
                 {{ $transferReport['written'] }} values were written where they now live and {{ $transferReport['kept'] }} were there already.
