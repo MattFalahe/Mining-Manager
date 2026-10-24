@@ -249,22 +249,14 @@ class TaxController extends Controller
             });
         }
 
-        // Filter by miner type (corp member vs guest) - uses configured corporations list
+        // Members' bills or non-members', by the tax profile that billed each
+        // one. A bill from before tax profiles goes by its main's corporation
+        // now.
         $homeCorporationIds = $this->settingsService->getHomeCorporationIds();
         if ($minerType === 'corp' && !empty($homeCorporationIds)) {
-            // Only show corp members (characters in any configured corporation)
-            $query->whereIn('character_id', function($q) use ($homeCorporationIds) {
-                $q->select('character_id')
-                    ->from('character_affiliations')
-                    ->whereIn('corporation_id', $homeCorporationIds);
-            });
+            $query->billedToMembers($homeCorporationIds);
         } elseif ($minerType === 'guest' && !empty($homeCorporationIds)) {
-            // Only show guest miners (characters NOT in any configured corporation)
-            $query->whereIn('character_id', function($q) use ($homeCorporationIds) {
-                $q->select('character_id')
-                    ->from('character_affiliations')
-                    ->whereNotIn('corporation_id', $homeCorporationIds);
-            });
+            $query->billedToNonMembers($homeCorporationIds);
         }
 
         // Scope data: members/directors (default) see own data; admin/directors (toggled) see all
@@ -299,17 +291,8 @@ class TaxController extends Controller
 
         if (!empty($homeCorporationIds) && $viewAll) {
             // Corp vs guest breakdown only shown to directors
-            $corpSummaryQuery = MiningTax::whereIn('character_id', function($q) use ($homeCorporationIds) {
-                $q->select('character_id')
-                    ->from('character_affiliations')
-                    ->whereIn('corporation_id', $homeCorporationIds);
-            });
-
-            $guestSummaryQuery = MiningTax::whereIn('character_id', function($q) use ($homeCorporationIds) {
-                $q->select('character_id')
-                    ->from('character_affiliations')
-                    ->whereNotIn('corporation_id', $homeCorporationIds);
-            });
+            $corpSummaryQuery = MiningTax::billedToMembers($homeCorporationIds);
+            $guestSummaryQuery = MiningTax::billedToNonMembers($homeCorporationIds);
         }
 
         // What is left to pay, part-paid bills included, and what actually
@@ -408,6 +391,7 @@ class TaxController extends Controller
             'corporationId',
             'minerType',
             'moonOwnerCorpId',
+            'homeCorporationIds',
             'isAdmin',
             'isDirector',
             'viewAll',

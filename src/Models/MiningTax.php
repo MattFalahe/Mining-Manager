@@ -33,6 +33,13 @@ class MiningTax extends Model
     public const OUTSTANDING_STATUSES = ['unpaid', 'partial', 'overdue'];
 
     /**
+     * tax_profile on a bill billed by the Global profile. A bill billed by a
+     * configured corporation's profile holds that corporation's id, and one
+     * from before tax profiles holds nothing.
+     */
+    public const GLOBAL_PROFILE = 'global';
+
+    /**
      * The attributes that are mass assignable.
      *
      * @var array
@@ -54,6 +61,7 @@ class MiningTax extends Model
         'notes',
         'due_date',
         'triggered_by',
+        'tax_profile',
     ];
 
     /**
@@ -80,6 +88,55 @@ class MiningTax extends Model
     public function character()
     {
         return $this->belongsTo(CharacterInfo::class, 'character_id', 'character_id');
+    }
+
+    /**
+     * Members' bills: billed by a configured corporation's profile, or for a
+     * bill from before tax profiles, whose main is in one now.
+     *
+     * @param array<int, int> $memberCorporationIds
+     */
+    public function scopeBilledToMembers($query, array $memberCorporationIds)
+    {
+        return $query->where(function ($bills) use ($memberCorporationIds) {
+            $bills->where(fn ($billed) => $billed->whereNotNull('tax_profile')->where('tax_profile', '!=', self::GLOBAL_PROFILE))
+                ->orWhere(fn ($older) => $older->whereNull('tax_profile')->whereIn('character_id', fn ($members) => $members
+                    ->select('character_id')
+                    ->from('character_affiliations')
+                    ->whereIn('corporation_id', $memberCorporationIds)));
+        });
+    }
+
+    /**
+     * Non-members' bills: billed by the Global profile, or for a bill from
+     * before tax profiles, whose main is outside the configured corporations
+     * now.
+     *
+     * @param array<int, int> $memberCorporationIds
+     */
+    public function scopeBilledToNonMembers($query, array $memberCorporationIds)
+    {
+        return $query->where(function ($bills) use ($memberCorporationIds) {
+            $bills->where('tax_profile', self::GLOBAL_PROFILE)
+                ->orWhere(fn ($older) => $older->whereNull('tax_profile')->whereIn('character_id', fn ($others) => $others
+                    ->select('character_id')
+                    ->from('character_affiliations')
+                    ->whereNotIn('corporation_id', $memberCorporationIds)));
+        });
+    }
+
+    /**
+     * Whether this is a member's bill, by the same rule as billedToMembers().
+     *
+     * @param array<int, int> $memberCorporationIds
+     */
+    public function isBilledToMember(array $memberCorporationIds): bool
+    {
+        if ($this->tax_profile !== null) {
+            return $this->tax_profile !== self::GLOBAL_PROFILE;
+        }
+
+        return in_array($this->corporation_id, $memberCorporationIds, true);
     }
 
     /**

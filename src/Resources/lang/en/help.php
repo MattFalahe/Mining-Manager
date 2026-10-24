@@ -263,7 +263,7 @@ return [
     'guest_rates_config' => 'Global\'s moon rates decide what non-members may do. Between 0% and 100% they pay those rates, and a bill they leave unpaid more than Days Overdue Before Theft (Settings, Features) counts as theft. The Tax profiles page says which of these applies.',
     'guest_mining_switch' => 'At 100% for every rarity, only configured corporations may mine your moons. A non-member\'s mining there is billed in full and flagged as theft as soon as it is imported, and paying the bill closes the incident.',
     'guest_zero_rate' => 'At 0%, non-members mine for free. That is a real 0%, not "use the member rate", and theft detection cannot flag anyone who never owes anything.',
-    'guest_detection' => 'Each day of mining is placed by the corporation the pilot was in that day, from SeAT\'s corporation history, so someone who joins or leaves is taxed as a member for the days they were one.',
+    'guest_detection' => 'Each day of mining is placed by the corporation the pilot was in that day, from SeAT\'s corporation history, so someone who joins or leaves is taxed as a member for the days they were one. Tax Overview counts each bill with the profile that made it, so a member who leaves keeps their member bills on the members\' side.',
 
     // Event Tax Modifiers
     'event_modifiers_explained' => 'Mining Event Tax Modifiers',

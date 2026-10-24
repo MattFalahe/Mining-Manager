@@ -256,12 +256,17 @@ class TaxCalculationService
             // Each account is billed on its own profile's period. A run for
             // another period leaves it alone, so a monthly run can never fold
             // a fortnightly account's first half into a month.
-            if ($profiles && $periodHelper->periodTypeFor($periodHelper->accountProfile((int) $mainCharacterId, $startDate)) !== $periodType) {
+            $accountProfile = $profiles ? $periodHelper->accountProfile((int) $mainCharacterId, $startDate) : null;
+            if ($profiles && $periodHelper->periodTypeFor($accountProfile) !== $periodType) {
                 continue;
             }
 
+            // The profile the bill is made by, recorded on it. Nothing before
+            // tax profiles.
+            $billedBy = $profiles ? ($accountProfile === null ? MiningTax::GLOBAL_PROFILE : (string) $accountProfile) : null;
+
             try {
-                DB::transaction(function () use ($mainCharacterId, $characterIds, $startDate, $endDate, $calendarMonth, $periodType, $dueDate, $recalculate, $triggeredBy, &$calculated, &$totalTaxAmount) {
+                DB::transaction(function () use ($mainCharacterId, $characterIds, $startDate, $endDate, $calendarMonth, $periodType, $dueDate, $recalculate, $triggeredBy, $billedBy, &$calculated, &$totalTaxAmount) {
                     // Check if tax already exists for this character + period
                     // Use withTrashed() because soft-deleted records still hold the unique constraint
                     $existingTax = MiningTax::withTrashed()
@@ -363,7 +368,8 @@ class TaxCalculationService
                             return;
                         }
 
-                        // Update existing
+                        // Update existing. A bill from before tax profiles keeps
+                        // no profile, worked out again or not.
                         $existingTax->update([
                             'amount_owed' => round($combinedTaxAmount, 2),
                             'calculated_at' => Carbon::now(),
@@ -373,7 +379,7 @@ class TaxCalculationService
                             'period_start' => $startDate->format('Y-m-d'),
                             'period_end' => $endDate->format('Y-m-d'),
                             'due_date' => $dueDate->format('Y-m-d'),
-                        ]);
+                        ] + ($existingTax->tax_profile !== null ? ['tax_profile' => $billedBy] : []));
                         Log::info("Mining Manager: Recalculated accumulated tax for main character {$mainCharacterId}: " . number_format($combinedTaxAmount, 2) . " ISK (from " . count($characterIds) . " characters)");
                     } else {
                         // Create new tax record
@@ -390,6 +396,7 @@ class TaxCalculationService
                             'due_date' => $dueDate->format('Y-m-d'),
                             'notes' => $notes,
                             'triggered_by' => $triggeredBy,
+                            'tax_profile' => $billedBy,
                         ]);
                         Log::info("Mining Manager: Calculated accumulated tax for main character {$mainCharacterId}: " . number_format($combinedTaxAmount, 2) . " ISK (from " . count($characterIds) . " characters)");
 

@@ -376,8 +376,8 @@
                                             {{ $tax->character_info['name'] ?? $tax->character_name }}
                                         </a>
                                         @if($moonOwnerCorpId)
-                                            @php $taxCorpId = $tax->character_info['corporation_id'] ?? $tax->corporation_id ?? null; @endphp
-                                            @if($taxCorpId == $moonOwnerCorpId)
+                                            {{-- The same split as the cards above: by the profile that billed it. --}}
+                                            @if($tax->isBilledToMember($homeCorporationIds))
                                                 <span class="badge badge-primary ml-1" data-toggle="tooltip" title="{{ trans('mining-manager::taxes.corporation_member') }}">
                                                     <i class="fas fa-building"></i>
                                                 </span>
