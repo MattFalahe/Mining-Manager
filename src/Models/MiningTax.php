@@ -6,6 +6,7 @@ use MiningManager\Models\Concerns\HasCharacterName;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Facades\Schema;
 use MiningManager\Services\Tax\PartPaymentEpoch;
 use MiningManager\Services\Tax\TaxPeriodHelper;
 use Seat\Eveapi\Models\Character\CharacterInfo;
@@ -38,6 +39,9 @@ class MiningTax extends Model
      * from before tax profiles holds nothing.
      */
     public const GLOBAL_PROFILE = 'global';
+
+    private static bool $recordsTaxProfile = false;
+    private static int $recordsTaxProfileCheckedAt = 0;
 
     /**
      * The attributes that are mass assignable.
@@ -91,6 +95,26 @@ class MiningTax extends Model
     }
 
     /**
+     * Whether bills record the tax profile that made them yet. A queue worker
+     * can start on the new code before the update's migrations have added
+     * tax_profile, so a "no" is asked again after a while. A "yes" stays.
+     */
+    public static function recordsTaxProfile(): bool
+    {
+        if (!self::$recordsTaxProfile && time() - self::$recordsTaxProfileCheckedAt >= 30) {
+            self::$recordsTaxProfileCheckedAt = time();
+
+            try {
+                self::$recordsTaxProfile = Schema::hasColumn('mining_taxes', 'tax_profile');
+            } catch (\Throwable $e) {
+                self::$recordsTaxProfile = false;
+            }
+        }
+
+        return self::$recordsTaxProfile;
+    }
+
+    /**
      * Members' bills: billed by a configured corporation's profile, or for a
      * bill from before tax profiles, whose main is in one now.
      *
@@ -98,12 +122,18 @@ class MiningTax extends Model
      */
     public function scopeBilledToMembers($query, array $memberCorporationIds)
     {
-        return $query->where(function ($bills) use ($memberCorporationIds) {
+        $inMemberCorporationNow = fn ($bills) => $bills->whereIn('character_id', fn ($members) => $members
+            ->select('character_id')
+            ->from('character_affiliations')
+            ->whereIn('corporation_id', $memberCorporationIds));
+
+        if (!self::recordsTaxProfile()) {
+            return $query->where($inMemberCorporationNow);
+        }
+
+        return $query->where(function ($bills) use ($inMemberCorporationNow) {
             $bills->where(fn ($billed) => $billed->whereNotNull('tax_profile')->where('tax_profile', '!=', self::GLOBAL_PROFILE))
-                ->orWhere(fn ($older) => $older->whereNull('tax_profile')->whereIn('character_id', fn ($members) => $members
-                    ->select('character_id')
-                    ->from('character_affiliations')
-                    ->whereIn('corporation_id', $memberCorporationIds)));
+                ->orWhere(fn ($older) => $inMemberCorporationNow($older->whereNull('tax_profile')));
         });
     }
 
@@ -116,12 +146,18 @@ class MiningTax extends Model
      */
     public function scopeBilledToNonMembers($query, array $memberCorporationIds)
     {
-        return $query->where(function ($bills) use ($memberCorporationIds) {
+        $outsideMemberCorporationsNow = fn ($bills) => $bills->whereIn('character_id', fn ($others) => $others
+            ->select('character_id')
+            ->from('character_affiliations')
+            ->whereNotIn('corporation_id', $memberCorporationIds));
+
+        if (!self::recordsTaxProfile()) {
+            return $query->where($outsideMemberCorporationsNow);
+        }
+
+        return $query->where(function ($bills) use ($outsideMemberCorporationsNow) {
             $bills->where('tax_profile', self::GLOBAL_PROFILE)
-                ->orWhere(fn ($older) => $older->whereNull('tax_profile')->whereIn('character_id', fn ($others) => $others
-                    ->select('character_id')
-                    ->from('character_affiliations')
-                    ->whereNotIn('corporation_id', $memberCorporationIds)));
+                ->orWhere(fn ($older) => $outsideMemberCorporationsNow($older->whereNull('tax_profile')));
         });
     }
 

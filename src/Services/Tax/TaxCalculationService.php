@@ -262,8 +262,10 @@ class TaxCalculationService
             }
 
             // The profile the bill is made by, recorded on it. Nothing before
-            // tax profiles.
-            $billedBy = $profiles ? ($accountProfile === null ? MiningTax::GLOBAL_PROFILE : (string) $accountProfile) : null;
+            // tax profiles, or before the column for it exists.
+            $billedBy = $profiles && MiningTax::recordsTaxProfile()
+                ? ($accountProfile === null ? MiningTax::GLOBAL_PROFILE : (string) $accountProfile)
+                : null;
 
             try {
                 DB::transaction(function () use ($mainCharacterId, $characterIds, $startDate, $endDate, $calendarMonth, $periodType, $dueDate, $recalculate, $triggeredBy, $billedBy, &$calculated, &$totalTaxAmount) {
@@ -396,8 +398,7 @@ class TaxCalculationService
                             'due_date' => $dueDate->format('Y-m-d'),
                             'notes' => $notes,
                             'triggered_by' => $triggeredBy,
-                            'tax_profile' => $billedBy,
-                        ]);
+                        ] + ($billedBy !== null ? ['tax_profile' => $billedBy] : []));
                         Log::info("Mining Manager: Calculated accumulated tax for main character {$mainCharacterId}: " . number_format($combinedTaxAmount, 2) . " ISK (from " . count($characterIds) . " characters)");
 
                         // Mint the payment code now, before anything can change
