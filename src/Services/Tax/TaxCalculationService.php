@@ -371,7 +371,8 @@ class TaxCalculationService
                         }
 
                         // Update existing. A bill from before tax profiles keeps
-                        // no profile, worked out again or not.
+                        // no profile, worked out again or not, and a recorded
+                        // profile is only ever replaced, never cleared.
                         $existingTax->update([
                             'amount_owed' => round($combinedTaxAmount, 2),
                             'calculated_at' => Carbon::now(),
@@ -381,7 +382,7 @@ class TaxCalculationService
                             'period_start' => $startDate->format('Y-m-d'),
                             'period_end' => $endDate->format('Y-m-d'),
                             'due_date' => $dueDate->format('Y-m-d'),
-                        ] + ($existingTax->tax_profile !== null ? ['tax_profile' => $billedBy] : []));
+                        ] + ($existingTax->tax_profile !== null && $billedBy !== null ? ['tax_profile' => $billedBy] : []));
                         Log::info("Mining Manager: Recalculated accumulated tax for main character {$mainCharacterId}: " . number_format($combinedTaxAmount, 2) . " ISK (from " . count($characterIds) . " characters)");
                     } else {
                         // Create new tax record
