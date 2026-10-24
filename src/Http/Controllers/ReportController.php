@@ -55,7 +55,17 @@ class ReportController extends Controller
             $query->where('report_type', $type);
         }
 
-        $reports = $query->orderBy('generated_at', 'desc')->paginate(20);
+        // The search box looks for a date or a type, as it says.
+        $search = trim((string) $request->input('search', ''));
+        if ($search !== '') {
+            $query->where(function ($reports) use ($search) {
+                foreach (['report_type', 'format', 'start_date', 'end_date', 'generated_at'] as $column) {
+                    $reports->orWhere($column, 'like', '%' . $search . '%');
+                }
+            });
+        }
+
+        $reports = $query->orderBy('generated_at', 'desc')->paginate(20)->withQueryString();
 
         return view('mining-manager::reports.index', compact('reports', 'type'));
     }
@@ -433,23 +443,27 @@ class ReportController extends Controller
      */
     public function storeSchedule(Request $request)
     {
-        try {
-            $validated = $request->validate([
-                'name' => 'required|string|max:255',
-                'description' => 'nullable|string|max:1000',
-                'report_type' => 'required|in:daily,weekly,monthly',
-                'format' => 'required|in:json,csv,pdf',
-                'frequency' => 'required|in:daily,weekly,monthly',
-                'run_time' => 'required|date_format:H:i',
-                'is_active' => 'nullable',
-                'send_to_discord' => 'nullable',
-                'webhook_id' => 'nullable|exists:webhook_configurations,id',
-            ]);
+        // A failed check goes back to the page with the reasons, or comes back
+        // as JSON when that is what was asked for.
+        $validated = $request->validate([
+            'name' => 'required|string|max:255',
+            'description' => 'nullable|string|max:1000',
+            // What each run covers: yesterday, the last 7 days or last month.
+            // The form only asks how often it runs, and a run covers that much.
+            'report_type' => 'nullable|in:daily,weekly,monthly',
+            'format' => 'required|in:json,csv,pdf',
+            'frequency' => 'required|in:daily,weekly,monthly',
+            'run_time' => 'required|date_format:H:i',
+            'is_active' => 'nullable',
+            'send_to_discord' => 'nullable',
+            'webhook_id' => 'nullable|exists:webhook_configurations,id',
+        ]);
 
+        try {
             $schedule = ReportSchedule::create([
                 'name' => $validated['name'],
                 'description' => $validated['description'] ?? null,
-                'report_type' => $validated['report_type'],
+                'report_type' => $validated['report_type'] ?? $validated['frequency'],
                 'format' => $validated['format'],
                 'frequency' => $validated['frequency'],
                 'run_time' => $validated['run_time'],
@@ -462,19 +476,28 @@ class ReportController extends Controller
             // Calculate initial next_run
             $schedule->calculateNextRun();
             $schedule->save();
+        } catch (\Exception $e) {
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Error creating schedule: ' . $e->getMessage(),
+                ], 500);
+            }
 
+            return redirect()->back()->withInput()->with('error', 'Error creating schedule: ' . $e->getMessage());
+        }
+
+        // The page's form posts as a browser form, so it gets a page back.
+        if ($request->expectsJson()) {
             return response()->json([
                 'status' => 'success',
                 'message' => 'Report schedule created successfully',
                 'schedule' => $schedule,
             ]);
-
-        } catch (\Exception $e) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Error creating schedule: ' . $e->getMessage(),
-            ], 500);
         }
+
+        return redirect()->route('mining-manager.reports.scheduled')
+            ->with('success', 'Report schedule created successfully');
     }
 
     /**

@@ -109,6 +109,11 @@ This release also brings tax periods to the ledger, My Mining and the dashboards
 
 - **Event mining follows the profiles of the miners it covers.** A corporation's event counts what that corporation's profile taxes, and an event open to everyone counts what any profile taxes. Each miner's discount is still worked out by their own profile. The event form offers the configured corporations.
 
+### Reports
+
+- Fixed: **creating a report schedule always failed.** The form never sent the kind of report the schedule needed, and the error came back as a page of JSON. A schedule now reports on the period its frequency covers, a day, a week or a month, and the page comes back with the result.
+- Fixed: **the reports search box did nothing.** It now finds reports by date or type, and moving between pages keeps the search.
+
 ### Import and Export
 
 - **Settings files are format 3.** A file exported before the move is refused after it, since its global moon rates were what members paid and are now what non-members pay. Exports leave out the plugin's own records and copies nothing reads.
