@@ -12,6 +12,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
 use MiningManager\Services\OreClassifier;
+use MiningManager\Services\Character\AffiliationResolutionService;
+use MiningManager\Services\Character\CorporationOnDate;
 
 /**
  * EventMiningAggregator
@@ -36,8 +38,9 @@ use MiningManager\Services\OreClassifier;
  * Corp filter
  * ===========
  * Matches the semantic used by LedgerSummaryService::getEventAttributionForLedgerRow():
- * an event with a specific corporation_id applies to miners whose *current*
- * corporation_id (from character_infos) matches; null corp means global.
+ * an event with a specific corporation_id applies to miners who were in that
+ * corporation on the day they mined, placed by CorporationOnDate the way the
+ * daily summaries place them; null corp means global.
  *
  * Called from:
  *   - UpdateMiningEventsCommand cron (for every active event, every tick)
@@ -59,6 +62,9 @@ class EventMiningAggregator
      * @var SettingsManagerService
      */
     protected $settingsService;
+
+    /** @var array<int, int>|null the corporations whose members are members, for one run */
+    private ?array $memberCorporations = null;
 
     public function __construct(
         OreValuationService $valuationService,
@@ -171,7 +177,7 @@ class EventMiningAggregator
      * =================
      * Applied on top of the source pool:
      *   • Corp-scoped event (event.corporation_id set) →
-     *       miner's current corp == event.corporation_id
+     *       the miner was in event.corporation_id that day
      *   • Global event (event.corporation_id null) →
      *       no miner-corp filter (anyone's moon mining counts)
      *
@@ -226,23 +232,14 @@ class EventMiningAggregator
             return ['created' => 0, 'updated' => 0, 'skipped' => 0];
         }
 
-        // Miner-corp lookup (in PHP) for corp-scoped events. Unused for
-        // global events but cheap enough that we always resolve it.
-        $characterCorps = $this->resolveCharacterCorps(
-            $rows->pluck('character_id')->unique()->all()
-        );
-
         $created = 0; $updated = 0; $skipped = 0;
 
         foreach ($rows as $row) {
-            // Corp-scoped event: require miner's current corp = event corp.
-            // Global event: no miner-corp filter.
-            if ($event->corporation_id !== null) {
-                $charCorp = $characterCorps[$row->character_id] ?? null;
-                if ($charCorp !== (int) $event->corporation_id) {
-                    $skipped++;
-                    continue;
-                }
+            // Corp-scoped event: the miner must have been in the event's
+            // corporation that day. Global event: no miner-corp filter.
+            if ($event->corporation_id !== null && !$this->minedFor($event, (int) $row->character_id, $row->date)) {
+                $skipped++;
+                continue;
             }
 
             $record = EventMiningRecord::updateOrCreate(
@@ -303,16 +300,11 @@ class EventMiningAggregator
         // Location scope on character_minings.solar_system_id.
         $event->applyLocationFilter($query, 'solar_system_id');
 
-        // Corp filter via JOIN to character_affiliations on the miner's
-        // current corp. corporation_id was dropped from character_infos in
-        // SeAT 2019 and now lives only in character_affiliations.
+        // Corp-scoped event: only characters who have ever been in the
+        // corporation can have mined for it. Each of their days is placed
+        // below, by the corporation they were in on it.
         if ($event->corporation_id !== null) {
-            $query->whereExists(function ($sub) use ($event) {
-                $sub->select(DB::raw(1))
-                    ->from('character_affiliations')
-                    ->whereColumn('character_affiliations.character_id', 'character_minings.character_id')
-                    ->where('character_affiliations.corporation_id', $event->corporation_id);
-            });
+            $query->whereIn('character_id', $this->everInCorporation((int) $event->corporation_id));
         }
 
         $rows = $query->get();
@@ -336,6 +328,11 @@ class EventMiningAggregator
             // reads SeAT's own table, so skipping it at import alone would not
             // keep it out.
             if (OreClassifier::isIgnored((int) $row->type_id)) {
+                $skipped++;
+                continue;
+            }
+
+            if ($event->corporation_id !== null && !$this->minedFor($event, (int) $row->character_id, $row->date)) {
                 $skipped++;
                 continue;
             }
@@ -575,29 +572,34 @@ class EventMiningAggregator
     }
 
     /**
-     * Look up current corporation_id for each character in bulk.
+     * Whether a miner's day counts for a corporation's event: they were in
+     * the event's corporation that day, placed exactly as the daily summaries
+     * place them when they apply the event's discount. A member who leaves
+     * keeps the event mining they did as a member, however often the event
+     * is gathered again.
      *
-     * Current affiliation (corp, alliance, faction) lives in the
-     * character_affiliations table — NOT character_infos. The corporation_id
-     * column was removed from character_infos in SeAT 2019 and migrated
-     * to character_affiliations. Other parts of this plugin (AnalyticsController,
-     * DashboardController, etc.) already use DB::table('character_affiliations')
-     * for this — we match that pattern rather than introducing a new model.
-     *
-     * @param array $characterIds
-     * @return array<int, int> Map of character_id => corporation_id
+     * @param mixed $date
      */
-    private function resolveCharacterCorps(array $characterIds): array
+    private function minedFor(MiningEvent $event, int $characterId, $date): bool
     {
-        if (empty($characterIds)) {
-            return [];
-        }
+        $this->memberCorporations ??= $this->settingsService->getHomeCorporationIds();
 
-        return DB::table('character_affiliations')
-            ->whereIn('character_id', $characterIds)
-            ->pluck('corporation_id', 'character_id')
-            ->map(fn($v) => (int) $v)
-            ->toArray();
+        return app(CorporationOnDate::class)->forDay($characterId, $date, $this->memberCorporations) === (int) $event->corporation_id;
+    }
+
+    /**
+     * Every character known to have been in a corporation: by SeAT's
+     * corporation history, its affiliation, or the plugin's own lookups.
+     *
+     * @return array<int, int>
+     */
+    private function everInCorporation(int $corporationId): array
+    {
+        $ids = DB::table('character_corporation_histories')->where('corporation_id', $corporationId)->pluck('character_id')
+            ->merge(DB::table('character_affiliations')->where('corporation_id', $corporationId)->pluck('character_id'))
+            ->merge(DB::table(AffiliationResolutionService::TABLE)->where('corporation_id', $corporationId)->pluck('character_id'));
+
+        return $ids->map(fn ($id) => (int) $id)->unique()->values()->all();
     }
 
     /**
