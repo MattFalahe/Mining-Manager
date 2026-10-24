@@ -64,6 +64,13 @@
                     <i class="fas fa-sync-alt"></i> {{ trans('mining-manager::moons.refresh_data') }}
                 </button>
             </form>
+
+            {{-- An event on this refinery, over the days the chunk's belt can last --}}
+            @if($extraction->status !== 'cancelled' && $extraction->chunk_arrival_time)
+                <a href="{{ route('mining-manager.events.create', ['refinery' => $extraction->structure_id, 'arrival' => $extraction->chunk_arrival_time->toDateString()]) }}" class="btn btn-mm-primary">
+                    <i class="fas fa-calendar-plus"></i> {{ trans('mining-manager::events.make_event') }}
+                </a>
+            @endif
             @endcan
 
             {{-- Report Jackpot Button (only for ready/fractured extractions — chunk must have arrived) --}}

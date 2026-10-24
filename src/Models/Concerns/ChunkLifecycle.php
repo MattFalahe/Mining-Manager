@@ -116,6 +116,20 @@ trait ChunkLifecycle
     }
 
     /**
+     * The latest the chunk can be gone by: from its fracture when that is
+     * known, otherwise as if nobody fires the laser and it fractures on its
+     * own. A moon event covering the days up to here covers the whole belt,
+     * however early or late it is fractured.
+     */
+    public function getLatestExpiryTime(): ?Carbon
+    {
+        $fracture = $this->fractured_at
+            ?? $this->chunk_arrival_time?->copy()->addSeconds((int) round($this->getAutoFractureDelayMinutes() * 60));
+
+        return $fracture?->copy()->addHours($this->getReadyDurationHours() + MoonDrillingRigs::UNSTABLE_HOURS);
+    }
+
+    /**
      * Check if moon is in unstable state: the last 2 hours of the chunk's life.
      */
     public function isUnstable(): bool

@@ -5,7 +5,6 @@
 
 @push('head')
 <link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=10">
-<script src="{{ asset('vendor/mining-manager/js/eve-time.js') }}?v=1" defer></script>
 @endpush
 
 @section('full')
@@ -17,496 +16,49 @@
     <div class="card-header p-0 pt-1">
         <ul class="nav nav-tabs">
             <li class="nav-item">
-                <a class="nav-link {{ Request::is('*/events') && !Request::is('*/events/*') ? 'active' : '' }}" href="{{ route('mining-manager.events.index') }}">
+                <a class="nav-link" href="{{ route('mining-manager.events.index') }}">
                     <i class="fas fa-list"></i> {{ trans('mining-manager::menu.all_events') }}
                 </a>
             </li>
             <li class="nav-item">
-                <a class="nav-link {{ Request::is('*/events/active') ? 'active' : '' }}" href="{{ route('mining-manager.events.active') }}">
+                <a class="nav-link" href="{{ route('mining-manager.events.active') }}">
                     <i class="fas fa-play-circle"></i> {{ trans('mining-manager::menu.active_events') }}
                 </a>
             </li>
             @can('mining-manager.director')
             <li class="nav-item">
-                <a class="nav-link {{ Request::is('*/events/create') ? 'active' : '' }}" href="{{ route('mining-manager.events.create') }}">
+                <a class="nav-link active" href="{{ route('mining-manager.events.create') }}">
                     <i class="fas fa-plus-circle"></i> {{ trans('mining-manager::menu.create_event') }}
                 </a>
             </li>
             @endcan
             <li class="nav-item">
-                <a class="nav-link {{ Request::is('*/events/calendar') ? 'active' : '' }}" href="{{ route('mining-manager.events.calendar') }}">
+                <a class="nav-link" href="{{ route('mining-manager.events.calendar') }}">
                     <i class="fas fa-calendar-alt"></i> {{ trans('mining-manager::menu.event_calendar') }}
                 </a>
             </li>
             <li class="nav-item">
-                <a class="nav-link {{ Request::is('*/events/my-events') ? 'active' : '' }}" href="{{ route('mining-manager.events.my-events') }}">
+                <a class="nav-link" href="{{ route('mining-manager.events.my-events') }}">
                     <i class="fas fa-user-check"></i> {{ trans('mining-manager::menu.my_events') }}
                 </a>
             </li>
         </ul>
     </div>
     <div class="card-body">
+        <form id="eventForm" action="{{ route('mining-manager.events.store') }}" method="POST">
+            @csrf
 
+            @include('mining-manager::events._form')
 
-<div class="create-event">
-    
-    <form id="eventForm" action="{{ route('mining-manager.events.store') }}" method="POST">
-        @csrf
-        
-        <div class="row">
-            {{-- Basic Information --}}
-            <div class="col-md-8">
-                <div class="card card-primary">
-                    <div class="card-header">
-                        <h3 class="card-title">{{ trans('mining-manager::events.basic_information') }}</h3>
-                    </div>
-                    <div class="card-body">
-                        <div class="form-group">
-                            <label for="name">{{ trans('mining-manager::events.event_name') }} <span class="text-danger">*</span></label>
-                            <input type="text" class="form-control @error('name') is-invalid @enderror" id="name" name="name" value="{{ old('name') }}" required>
-                            @error('name')
-                            <span class="invalid-feedback">{{ $message }}</span>
-                            @enderror
-                        </div>
-
-                        <div class="form-group">
-                            <label for="description">{{ trans('mining-manager::events.description') }}</label>
-                            <textarea class="form-control @error('description') is-invalid @enderror" id="description" name="description" rows="4">{{ old('description') }}</textarea>
-                            @error('description')
-                            <span class="invalid-feedback">{{ $message }}</span>
-                            @enderror
-                        </div>
-
-                        <div class="form-group">
-                            <label for="type">{{ trans('mining-manager::events.event_type') }} <span class="text-danger">*</span></label>
-                            <select class="form-control @error('type') is-invalid @enderror" id="type" name="type" required>
-                                <option value="">{{ trans('mining-manager::events.select_type') }}</option>
-                                <option value="mining_op" {{ old('type') == 'mining_op' ? 'selected' : '' }}>{{ trans('mining-manager::events.mining_op') }}</option>
-                                <option value="moon_extraction" {{ old('type') == 'moon_extraction' ? 'selected' : '' }}>{{ trans('mining-manager::events.moon_extraction') }}</option>
-                                <option value="ice_mining" {{ old('type') == 'ice_mining' ? 'selected' : '' }}>{{ trans('mining-manager::events.ice_mining') }}</option>
-                                <option value="gas_huffing" {{ old('type') == 'gas_huffing' ? 'selected' : '' }}>{{ trans('mining-manager::events.gas_huffing') }}</option>
-                                <option value="special" {{ old('type') == 'special' ? 'selected' : '' }}>{{ trans('mining-manager::events.special') }}</option>
-                            </select>
-                            @error('type')
-                            <span class="invalid-feedback">{{ $message }}</span>
-                            @enderror
-                            <small class="form-text text-info">
-                                <i class="fas fa-info-circle"></i>
-                                <strong>Tax modifier scope depends on event type:</strong>
-                                <ul class="mb-0 mt-1">
-                                    <li><strong>Mining Operation</strong> — applies to <em>regular asteroid ore</em> only</li>
-                                    <li><strong>Moon Extraction</strong> — applies to <em>moon ore</em> (R4 through R64) only</li>
-                                    <li><strong>Ice Mining</strong> — applies to <em>ice</em> only</li>
-                                    <li><strong>Gas Huffing</strong> — applies to <em>gas</em> only</li>
-                                    <li><strong>Special Event</strong> — applies to <em>all currently-taxed ore categories</em> (whichever of ore, moon, ice, gas, abyssal, triglavian your plugin is set to tax). Use for incentives, holidays, or competitions.</li>
-                                </ul>
-                            </small>
-
-                            @include('mining-manager::events._tax_compatibility_panel')
-                        </div>
-
-                        <div class="row">
-                            <div class="col-md-4">
-                                <div class="form-group">
-                                    <label for="location_scope">{{ trans('mining-manager::events.location_scope') }}</label>
-                                    <select class="form-control @error('location_scope') is-invalid @enderror" id="location_scope" name="location_scope">
-                                        <option value="any" {{ old('location_scope', 'any') == 'any' ? 'selected' : '' }}>{{ trans('mining-manager::events.scope_any') }}</option>
-                                        <option value="region" {{ old('location_scope') == 'region' ? 'selected' : '' }}>{{ trans('mining-manager::events.scope_region') }}</option>
-                                        <option value="constellation" {{ old('location_scope') == 'constellation' ? 'selected' : '' }}>{{ trans('mining-manager::events.scope_constellation') }}</option>
-                                        <option value="system" {{ old('location_scope') == 'system' ? 'selected' : '' }}>{{ trans('mining-manager::events.scope_system') }}</option>
-                                    </select>
-                                    @error('location_scope')
-                                    <span class="invalid-feedback">{{ $message }}</span>
-                                    @enderror
-                                </div>
-                            </div>
-                            <div class="col-md-8">
-                                <div class="form-group" id="location-select-group" style="{{ old('location_scope', 'any') == 'any' ? 'display:none;' : '' }}">
-                                    <label for="solar_system_id">{{ trans('mining-manager::events.location') }}</label>
-                                    <select class="form-control select2-location @error('solar_system_id') is-invalid @enderror" id="solar_system_id" name="solar_system_id" style="width: 100%;">
-                                        @if(old('solar_system_id'))
-                                        <option value="{{ old('solar_system_id') }}" selected>{{ old('location_name', 'Selected Location') }}</option>
-                                        @endif
-                                    </select>
-                                    @error('solar_system_id')
-                                    <span class="invalid-feedback">{{ $message }}</span>
-                                    @enderror
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="row">
-                            <div class="col-md-6">
-                                <div class="form-group">
-                                    <label for="start_time">
-                                        {{ trans('mining-manager::events.start_time') }}
-                                        <span class="text-muted" id="startModeHint">(EVE Time / UTC)</span>
-                                        <span class="text-danger">*</span>
-                                    </label>
-                                    <input type="datetime-local" class="form-control @error('start_time') is-invalid @enderror" id="start_time" name="start_time" value="{{ old('start_time') }}" required>
-                                    <small class="form-text text-muted" id="startModeHelp">All times are in EVE Time (UTC)</small>
-                                    @error('start_time')
-                                    <span class="invalid-feedback">{{ $message }}</span>
-                                    @enderror
-                                </div>
-                            </div>
-                            <div class="col-md-6">
-                                <div class="form-group">
-                                    <label for="end_time">
-                                        {{ trans('mining-manager::events.end_time') }}
-                                        <span class="text-muted" id="endModeHint">(EVE Time / UTC)</span>
-                                    </label>
-                                    <input type="datetime-local" class="form-control" id="end_time" name="end_time" value="{{ old('end_time') }}">
-                                    <small class="form-text text-muted">Leave empty for open-ended events</small>
-                                </div>
-                            </div>
-                        </div>
-
-                        {{-- Time input mode toggle: EVE/UTC (default) vs Local --}}
-                        <div class="form-group">
-                            <div class="time-mode-toggle">
-                                <label style="font-size: 0.9em; margin-right: 0.5rem;">Enter time in:</label>
-                                <div class="btn-group btn-group-toggle btn-group-sm" data-toggle="buttons">
-                                    <label class="btn btn-outline-secondary active">
-                                        <input type="radio" name="time_input_mode" value="eve" checked> EVE / UTC
-                                    </label>
-                                    <label class="btn btn-outline-secondary">
-                                        <input type="radio" name="time_input_mode" value="local"> My local time
-                                    </label>
-                                </div>
-                                <small class="form-text text-muted" style="margin-top: 0.35rem;">
-                                    <i class="fas fa-globe"></i>
-                                    Browser timezone: <code id="detected-tz">detecting&hellip;</code>
-                                </small>
-                            </div>
-
-                            {{-- Live confirmation box: shows both EVE and local interpretations --}}
-                            <div class="card card-dark mt-2" id="time-confirmation" style="display: none;">
-                                <div class="card-body py-2 px-3" style="font-size: 0.9em;">
-                                    <strong><i class="fas fa-calendar-check"></i> Time confirmation:</strong><br>
-                                    <span><strong>EVE Time:</strong> <span id="eve-time-display">--</span></span><br>
-                                    <span><strong>Your Local Time:</strong> <span id="local-time-display">--</span></span>
-                                    <span id="end-confirmation" style="display: none;">
-                                        <hr class="my-1">
-                                        <span><strong>Ends EVE:</strong> <span id="end-eve-display">--</span></span><br>
-                                        <span><strong>Ends Local:</strong> <span id="end-local-display">--</span></span>
-                                    </span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            {{-- Settings --}}
-            <div class="col-md-4">
-                <div class="card card-info">
-                    <div class="card-header">
-                        <h3 class="card-title">{{ trans('mining-manager::events.event_settings') }}</h3>
-                    </div>
-                    <div class="card-body">
-                        <div class="form-group">
-                            <label for="tax_modifier">{{ trans('mining-manager::events.tax_modifier') }}</label>
-                            <select class="form-control @error('tax_modifier') is-invalid @enderror" id="tax_modifier" name="tax_modifier" required>
-                                <option value="-100" {{ old('tax_modifier') == -100 ? 'selected' : '' }}>{{ trans('mining-manager::events.modifier_tax_free') }}</option>
-                                <option value="-75" {{ old('tax_modifier') == -75 ? 'selected' : '' }}>{{ trans('mining-manager::events.modifier_reduced_75') }}</option>
-                                <option value="-50" {{ old('tax_modifier') == -50 ? 'selected' : '' }}>{{ trans('mining-manager::events.modifier_reduced_50') }}</option>
-                                <option value="-25" {{ old('tax_modifier') == -25 ? 'selected' : '' }}>{{ trans('mining-manager::events.modifier_reduced_25') }}</option>
-                                <option value="0" {{ old('tax_modifier', 0) == 0 ? 'selected' : '' }}>{{ trans('mining-manager::events.modifier_normal') }}</option>
-                                <option value="25" {{ old('tax_modifier') == 25 ? 'selected' : '' }}>{{ trans('mining-manager::events.modifier_increase_25') }}</option>
-                                <option value="50" {{ old('tax_modifier') == 50 ? 'selected' : '' }}>{{ trans('mining-manager::events.modifier_increase_50') }}</option>
-                                <option value="75" {{ old('tax_modifier') == 75 ? 'selected' : '' }}>{{ trans('mining-manager::events.modifier_increase_75') }}</option>
-                                <option value="100" {{ old('tax_modifier') == 100 ? 'selected' : '' }}>{{ trans('mining-manager::events.modifier_double') }}</option>
-                            </select>
-                            @error('tax_modifier')
-                            <span class="invalid-feedback">{{ $message }}</span>
-                            @enderror
-                            <small class="form-text text-muted">{{ trans('mining-manager::events.tax_modifier_help') }}</small>
-                        </div>
-
-                        <div class="form-group">
-                            <label for="corporation_id">{{ trans('mining-manager::events.corporation_scope') }}</label>
-                            <select class="form-control @error('corporation_id') is-invalid @enderror" id="corporation_id" name="corporation_id">
-                                <option value="">{{ trans('mining-manager::events.all_corporations') }}</option>
-                                @if(isset($corporations))
-                                    @foreach($corporations as $corp)
-                                        <option value="{{ $corp->corporation_id }}" {{ old('corporation_id') == $corp->corporation_id ? 'selected' : '' }}>
-                                            [{{ $corp->ticker }}] {{ $corp->name }}
-                                        </option>
-                                    @endforeach
-                                @endif
-                            </select>
-                            @error('corporation_id')
-                            <span class="invalid-feedback">{{ $message }}</span>
-                            @enderror
-                            <small class="form-text text-muted">{{ trans('mining-manager::events.corporation_scope_help') }}</small>
-                        </div>
-
-                        <div class="form-check mb-3">
-                            <input type="checkbox" class="form-check-input" id="send_notifications" name="send_notifications" value="1" {{ old('send_notifications', true) ? 'checked' : '' }}>
-                            <label class="form-check-label" for="send_notifications">
-                                {{ trans('mining-manager::events.send_notifications') }}
-                            </label>
-                        </div>
-                    </div>
-                </div>
-
-            </div>
-        </div>
-
-        <div class="row">
-            <div class="col-12">
-                <div class="card card-dark">
-                    <div class="card-footer">
-                        <button type="submit" class="btn btn-success">
-                            <i class="fas fa-check"></i> {{ trans('mining-manager::events.create_event') }}
-                        </button>
-                        <a href="{{ route('mining-manager.events.index') }}" class="btn btn-secondary">
-                            <i class="fas fa-times"></i> {{ trans('mining-manager::events.cancel') }}
-                        </a>
-                        <button type="button" class="btn btn-info float-right" id="previewEvent">
-                            <i class="fas fa-eye"></i> {{ trans('mining-manager::events.preview') }}
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </form>
-
+            <button type="submit" class="btn btn-mm-primary">
+                <i class="fas fa-check"></i> {{ trans('mining-manager::events.create_event') }}
+            </button>
+            <a href="{{ route('mining-manager.events.index') }}" class="btn btn-outline-secondary ml-2">
+                <i class="fas fa-times"></i> {{ trans('mining-manager::events.cancel') }}
+            </a>
+        </form>
+    </div>
 </div>
-
-@push('javascript')
-<script>
-$(document).ready(function() {
-    // Initialize Select2 for location search
-    $('.select2-location').select2({
-        theme: 'bootstrap4',
-        ajax: {
-            url: '{{ route("mining-manager.events.search-locations") }}',
-            dataType: 'json',
-            delay: 300,
-            data: function(params) {
-                return {
-                    q: params.term,
-                    scope: $('#location_scope').val()
-                };
-            },
-            processResults: function(data) {
-                return { results: data };
-            },
-            cache: true
-        },
-        placeholder: '{{ trans("mining-manager::events.search_location") }}',
-        minimumInputLength: 2,
-        allowClear: true
-    });
-
-    // Toggle location selector based on scope
-    $('#location_scope').on('change', function() {
-        if ($(this).val() === 'any') {
-            $('#location-select-group').hide();
-            $('#solar_system_id').val(null).trigger('change');
-        } else {
-            $('#location-select-group').show();
-            // Clear the current selection when scope changes
-            $('#solar_system_id').val(null).trigger('change');
-        }
-    });
-
-    // Form submission
-    $('#eventForm').on('submit', function(e) {
-        e.preventDefault();
-
-        $.ajax({
-            url: $(this).attr('action'),
-            method: 'POST',
-            data: $(this).serialize(),
-            success: function(response) {
-                if (typeof toastr !== 'undefined') {
-                    toastr.success(response.message || '{{ trans("mining-manager::events.created_success") }}');
-                }
-                setTimeout(() => window.location.href = '{{ route("mining-manager.events.index") }}', 1000);
-            },
-            error: function(xhr) {
-                if (xhr.status === 422) {
-                    const errors = xhr.responseJSON.errors;
-                    Object.keys(errors).forEach(key => {
-                        if (typeof toastr !== 'undefined') {
-                            toastr.error(errors[key][0]);
-                        } else {
-                            alert('Error: ' + errors[key][0]);
-                        }
-                    });
-                } else {
-                    const errorMsg = xhr.responseJSON?.message || '{{ trans("mining-manager::events.create_failed") }}';
-                    if (typeof toastr !== 'undefined') {
-                        toastr.error(errorMsg);
-                    } else {
-                        alert('Error: ' + errorMsg);
-                    }
-                }
-            }
-        });
-    });
-
-    // Preview event
-    $('#previewEvent').on('click', function() {
-        let preview = 'Event Preview:\n\n';
-        preview += 'Name: ' + $('#name').val() + '\n';
-        preview += 'Description: ' + $('#description').val() + '\n';
-        preview += 'Type: ' + $('#type option:selected').text() + '\n';
-        preview += 'Location: ' + ($('#location_scope').val() === 'any' ? 'Any Location' : ($('#solar_system_id option:selected').text() || 'Not Selected')) + '\n';
-        preview += 'Start: ' + $('#start_time').val() + '\n';
-        preview += 'Tax Modifier: ' + $('#tax_modifier option:selected').text();
-
-        alert(preview);
-    });
-
-    // ============================================================
-    // Time input mode: EVE/UTC (default) vs Local
-    //
-    // The visible datetime-local input is interpreted differently
-    // based on the toggle:
-    //   - EVE mode (default): value is UTC ("18:00" means 18:00 EVE)
-    //   - Local mode: value is browser-local ("18:00" means 18:00
-    //     in whatever timezone the browser is set to)
-    //
-    // On submit, JS rewrites the input value to its UTC datetime-local
-    // equivalent so the server (which expects UTC) sees the right
-    // instant regardless of mode. DST-safe via Intl.DateTimeFormat
-    // against the browser-detected IANA timezone.
-    // ============================================================
-
-    try {
-        $('#detected-tz').text(Intl.DateTimeFormat().resolvedOptions().timeZone || 'unknown');
-    } catch (e) {
-        $('#detected-tz').text('unknown');
-    }
-
-    function getInputMode() {
-        var checked = document.querySelector('input[name="time_input_mode"]:checked');
-        return checked ? checked.value : 'eve';
-    }
-
-    // Parse a "YYYY-MM-DDTHH:mm" datetime-local string as UTC.
-    function parseAsUTC(value) {
-        if (!value) return null;
-        var parts = value.split('T');
-        if (parts.length !== 2) return null;
-        var d = parts[0].split('-').map(Number);
-        var t = parts[1].split(':').map(Number);
-        return new Date(Date.UTC(d[0], d[1] - 1, d[2], t[0] || 0, t[1] || 0, 0, 0));
-    }
-
-    // Parse the input by active mode → return Date pinned to a UTC instant.
-    function parseByMode(value) {
-        if (!value) return null;
-        if (getInputMode() === 'local') {
-            // Native Date on "YYYY-MM-DDTHH:mm" parses as LOCAL per spec.
-            var d = new Date(value);
-            return isNaN(d.getTime()) ? null : d;
-        }
-        return parseAsUTC(value);
-    }
-
-    // UTC formatted as "YYYY-MM-DDTHH:mm" (datetime-local shape, UTC).
-    function toUtcDatetimeLocal(date) {
-        return date.getUTCFullYear() + '-' +
-            String(date.getUTCMonth() + 1).padStart(2, '0') + '-' +
-            String(date.getUTCDate()).padStart(2, '0') + 'T' +
-            String(date.getUTCHours()).padStart(2, '0') + ':' +
-            String(date.getUTCMinutes()).padStart(2, '0');
-    }
-
-    function formatLocal(date) {
-        try {
-            return new Intl.DateTimeFormat(undefined, {
-                year:   'numeric',
-                month:  '2-digit',
-                day:    '2-digit',
-                hour:   '2-digit',
-                minute: '2-digit',
-                timeZoneName: 'short',
-            }).format(date);
-        } catch (e) {
-            return date.toString();
-        }
-    }
-
-    function formatEve(date) {
-        return toUtcDatetimeLocal(date).replace('T', ' ') + ' EVE';
-    }
-
-    function applyModeLabels() {
-        var mode = getInputMode();
-        if (mode === 'local') {
-            $('#startModeHint, #endModeHint').text('(your local time)');
-            $('#startModeHelp').html('<i class="fas fa-info-circle"></i> Enter the time in <strong>your local time</strong> &mdash; we convert to EVE on submit.');
-        } else {
-            $('#startModeHint, #endModeHint').text('(EVE Time / UTC)');
-            $('#startModeHelp').html('<i class="fas fa-info-circle"></i> All times are in EVE Time (UTC).');
-        }
-    }
-
-    function updateConfirmation() {
-        var startVal = $('#start_time').val();
-        var endVal   = $('#end_time').val();
-
-        if (!startVal) {
-            $('#time-confirmation').hide();
-            return;
-        }
-        $('#time-confirmation').show();
-
-        var startDate = parseByMode(startVal);
-        if (startDate && !isNaN(startDate.getTime())) {
-            $('#eve-time-display').text(formatEve(startDate));
-            $('#local-time-display').text(formatLocal(startDate));
-        } else {
-            $('#eve-time-display, #local-time-display').text('Invalid date');
-        }
-
-        if (endVal) {
-            $('#end-confirmation').show();
-            var endDate = parseByMode(endVal);
-            if (endDate && !isNaN(endDate.getTime())) {
-                $('#end-eve-display').text(formatEve(endDate));
-                $('#end-local-display').text(formatLocal(endDate));
-            } else {
-                $('#end-eve-display, #end-local-display').text('Invalid date');
-            }
-        } else {
-            $('#end-confirmation').hide();
-        }
-    }
-
-    $('#start_time, #end_time').on('change input', updateConfirmation);
-    $('input[name="time_input_mode"]').on('change', function () {
-        applyModeLabels();
-        updateConfirmation();
-    });
-    applyModeLabels();
-    updateConfirmation();
-
-    // On submit, rewrite the input values to UTC-as-datetime-local so the
-    // server (which expects UTC) sees the right instant regardless of mode.
-    $('#eventForm').on('submit', function () {
-        $('#start_time, #end_time').each(function () {
-            var $input = $(this);
-            var value  = $input.val();
-            if (!value) return;
-            var d = parseByMode(value);
-            if (d && !isNaN(d.getTime())) {
-                $input.val(toUtcDatetimeLocal(d));
-            }
-        });
-    });
-});
-</script>
-@endpush
-
-    </div>{{-- /.card-body --}}
-</div>{{-- /.card-tabs --}}
 
 </div>{{-- /.mining-manager-wrapper --}}
 @endsection

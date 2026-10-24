@@ -8,8 +8,11 @@ use Seat\Web\Http\Controllers\Controller;
 use MiningManager\Services\Events\EventManagementService;
 use MiningManager\Services\Notification\NotificationService;
 use MiningManager\Models\MiningEvent;
+use MiningManager\Models\EventMoon;
 use MiningManager\Models\EventParticipant;
 use MiningManager\Models\EventSignup;
+use MiningManager\Services\Events\EventMiningAggregator;
+use MiningManager\Services\Events\EventRefineries;
 use Seat\Eveapi\Models\Character\CharacterInfo;
 use Seat\Eveapi\Models\Sde\MapDenormalize;
 use Carbon\Carbon;
@@ -120,7 +123,7 @@ class EventController extends Controller
      *
      * @return \Illuminate\View\View
      */
-    public function create()
+    public function create(Request $request)
     {
         $features = app(\MiningManager\Services\Configuration\SettingsManagerService::class)->getFeatureFlags();
         if (!($features['enable_events'] ?? true) || !($features['allow_event_creation'] ?? true)) {
@@ -138,8 +141,192 @@ class EventController extends Controller
         $corporations = $this->getEventDropdownCorporations();
 
         $taxCompat = $this->buildTaxCompatibilityMap();
+        $refineries = app(EventRefineries::class)->choices();
+        $prefill = $this->prefillFromChunk($request, $refineries);
 
-        return view('mining-manager::events.create', compact('corporations', 'taxCompat'));
+        return view('mining-manager::events.create', compact('corporations', 'taxCompat', 'refineries', 'prefill'));
+    }
+
+    /**
+     * What the form starts with when it is opened from a chunk: a moon event
+     * on that refinery, over the days its belt can last.
+     *
+     * @param array<int, array<string, mixed>> $refineries
+     * @return array<string, mixed>
+     */
+    private function prefillFromChunk(Request $request, array $refineries): array
+    {
+        $structureId = (int) $request->query('refinery');
+        $refinery = collect($refineries)->firstWhere('structure_id', $structureId);
+
+        if (!$structureId || !$refinery) {
+            return [];
+        }
+
+        $chunks = collect($refinery['chunks']);
+        $chunk = $chunks->firstWhere('arrival_day', (string) $request->query('arrival'))
+            ?? $chunks->first(fn ($chunk) => $chunk['gone'] >= Carbon::now()->toIso8601String());
+
+        return [
+            'type' => 'moon_extraction',
+            'name' => ($refinery['moon'] ?? $refinery['name']) . ' chunk',
+            'refineries' => [$structureId],
+            'start_day' => $chunk['arrival_day'] ?? null,
+            'end_day' => $chunk['gone_day'] ?? null,
+        ];
+    }
+
+    /**
+     * Check the event form and turn it into the event's attributes and the
+     * refineries it is narrowed to.
+     *
+     * @return array{0: array<string, mixed>, 1: array<int, int>}
+     */
+    private function eventFromForm(Request $request, ?MiningEvent $event = null): array
+    {
+        $type = (string) $request->input('type');
+        $moon = $type === 'moon_extraction';
+
+        $request->validate([
+            'name' => 'required|string|max:255',
+            'description' => 'nullable|string',
+            'type' => 'required|string|in:' . implode(',', array_keys(MiningEvent::EVENT_TYPES)),
+            'start_day' => $moon ? 'required|date_format:Y-m-d' : 'nullable',
+            'end_day' => $moon ? 'nullable|date_format:Y-m-d|after_or_equal:start_day' : 'nullable',
+            'start_time' => $moon ? 'nullable' : 'required|date',
+            'end_time' => $moon ? 'nullable' : 'nullable|date|after:start_time',
+            // Not sent when refineries narrow the event, which leaves its
+            // location fields off.
+            'location_scope' => 'nullable|string|in:any,system,constellation,region',
+            'solar_system_id' => 'nullable|integer',
+            'refineries' => 'nullable|array',
+            'refineries.*' => 'integer',
+            'ore_categories' => 'nullable|array',
+            'ore_categories.*' => 'string',
+            'audience' => 'required|string',
+            'participation' => 'required|in:' . MiningEvent::PARTICIPATION_EVERYONE . ',' . MiningEvent::PARTICIPATION_SIGNED_UP,
+            'tax_modifier' => 'required|integer|min:-100|max:100',
+            'status' => $event ? 'required|in:planned,active,completed,cancelled' : 'nullable',
+        ]);
+
+        $errors = [];
+
+        // Narrowed to refineries, a moon event ignores its location.
+        $refineries = $moon ? array_values(array_unique(array_map('intval', (array) $request->input('refineries', [])))) : [];
+        if ($refineries) {
+            $known = array_column(app(EventRefineries::class)->choices($event ? $event->refineryIds() : []), 'structure_id');
+            if (array_diff($refineries, $known)) {
+                $errors['refineries'] = 'Pick refineries from the list. Only our own refineries can be counted.';
+            }
+        }
+
+        // The location must be the kind of place the scope says: a
+        // constellation or region id is not a solar system.
+        $scope = $refineries ? 'any' : (string) $request->input('location_scope', 'any');
+        $locationId = $scope !== 'any' ? (int) $request->input('solar_system_id') : null;
+        if ($scope !== 'any') {
+            $group = ['system' => 5, 'constellation' => 4, 'region' => 3][$scope];
+            if (!$locationId || !MapDenormalize::where('itemID', $locationId)->where('groupID', $group)->exists()) {
+                $errors['solar_system_id'] = "Pick a {$scope} from the list.";
+            }
+        }
+
+        $audience = (string) $request->input('audience');
+        $corporationId = null;
+        if (ctype_digit($audience)) {
+            $corporationId = (int) $audience;
+            $allowed = $this->getEventDropdownCorporations((int) ($event->corporation_id ?? 0))->pluck('corporation_id')->map(fn ($id) => (int) $id)->all();
+            if (!in_array($corporationId, $allowed, true)) {
+                $errors['audience'] = 'Pick one of the corporations on the list.';
+            }
+        } elseif (!in_array($audience, ['everyone', 'members'], true)) {
+            $errors['audience'] = 'Pick who the event is for.';
+        }
+
+        // Ore narrowed within what the type covers; all of it, or a type
+        // with no choice, is stored as no narrowing.
+        $covered = MiningEvent::EVENT_TYPE_ORE_CATEGORIES[$type] ?? [];
+        $categories = null;
+        if (in_array($type, ['moon_extraction', 'special'], true) && $request->boolean('ore_categories_shown')) {
+            $picked = array_values(array_intersect($covered, (array) $request->input('ore_categories', [])));
+            if ($picked === []) {
+                $errors['ore_categories'] = 'Pick at least one kind of ore for the event to count.';
+            } elseif (count($picked) < count($covered)) {
+                $categories = $picked;
+            }
+        }
+
+        if ($errors) {
+            throw \Illuminate\Validation\ValidationException::withMessages($errors);
+        }
+
+        if ($moon) {
+            $start = Carbon::createFromFormat('Y-m-d', $request->input('start_day'))->startOfDay();
+            $end = $request->filled('end_day') ? Carbon::createFromFormat('Y-m-d', $request->input('end_day'))->endOfDay() : null;
+        } else {
+            $start = Carbon::parse($request->input('start_time'));
+            $end = $request->filled('end_time') ? Carbon::parse($request->input('end_time')) : null;
+        }
+
+        $attributes = [
+            'name' => $request->input('name'),
+            'description' => $request->input('description'),
+            'type' => $type,
+            'start_time' => $start,
+            'end_time' => $end,
+            'location_scope' => $scope,
+            'solar_system_id' => $locationId,
+            'tax_modifier' => (int) $request->input('tax_modifier'),
+            'corporation_id' => $corporationId,
+        ];
+
+        if (MiningEvent::hasRules()) {
+            $attributes += [
+                'participation' => $request->input('participation'),
+                'members_only' => $audience === 'members',
+                'ore_categories' => $categories,
+            ];
+        }
+
+        if ($event) {
+            $attributes['status'] = $request->input('status');
+        }
+
+        return [$attributes, $refineries];
+    }
+
+    /**
+     * Put the event's refineries in line with the form, and say whether they
+     * changed, so the event can be gathered again.
+     *
+     * @param array<int, int> $structureIds
+     */
+    private function syncRefineries(MiningEvent $event, array $structureIds): bool
+    {
+        if (!MiningEvent::hasRules()) {
+            return false;
+        }
+
+        $current = $event->refineryIds();
+        sort($current);
+        sort($structureIds);
+
+        if ($current === $structureIds) {
+            return false;
+        }
+
+        $event->moons()->whereNotIn('structure_id', $structureIds ?: [0])->delete();
+        $moonIds = app(\MiningManager\Services\Moon\RefineryService::class)->moonIdsForStructures($structureIds);
+
+        foreach (array_diff($structureIds, $current) as $structureId) {
+            EventMoon::create([
+                'event_id' => $event->id,
+                'structure_id' => $structureId,
+                'moon_id' => $moonIds[$structureId] ?? null,
+            ]);
+        }
+
+        return true;
     }
 
     /**
@@ -150,37 +337,18 @@ class EventController extends Controller
      */
     public function store(Request $request)
     {
-        $request->validate([
-            'name' => 'required|string|max:255',
-            'description' => 'nullable|string',
-            'type' => 'required|string|in:mining_op,moon_extraction,ice_mining,gas_huffing,special',
-            'start_time' => 'required|date',
-            'end_time' => 'nullable|date|after:start_time',
-            'location_scope' => 'required|string|in:any,system,constellation,region',
-            // Reference checks: accepting any integer lets a typo or stale
-            // form replay persist a row pointing at a non-existent system or
-            // corp. Display code joins `solar_systems` later and silently
-            // renders "Unknown", confusing reports / charts — so reject at
-            // save time instead.
-            'solar_system_id' => 'nullable|integer|exists:solar_systems,system_id',
-            'tax_modifier' => 'required|integer|min:-100|max:100',
-            'corporation_id' => 'nullable|integer|exists:corporation_infos,corporation_id',
-        ]);
+        [$attributes, $refineries] = $this->eventFromForm($request);
 
         try {
-            $event = MiningEvent::create([
-                'name' => $request->input('name'),
-                'description' => $request->input('description'),
-                'type' => $request->input('type', 'mining_op'),
-                'start_time' => Carbon::parse($request->input('start_time')),
-                'end_time' => $request->input('end_time') ? Carbon::parse($request->input('end_time')) : null,
-                'location_scope' => $request->input('location_scope', 'any'),
-                'solar_system_id' => $request->input('location_scope') !== 'any' ? $request->input('solar_system_id') : null,
-                'tax_modifier' => $request->input('tax_modifier', 0),
-                'corporation_id' => $request->input('corporation_id'),
-                'status' => 'planned',
-                'created_by' => auth()->user()->id,
-            ]);
+            $event = DB::transaction(function () use ($attributes, $refineries) {
+                $event = MiningEvent::create($attributes + [
+                    'status' => 'planned',
+                    'created_by' => auth()->user()->id,
+                ]);
+                $this->syncRefineries($event, $refineries);
+
+                return $event;
+            });
 
             // Send notifications if requested
             if ($request->input('send_notifications')) {
@@ -265,8 +433,9 @@ class EventController extends Controller
         $corporations = $this->getEventDropdownCorporations((int) ($event->corporation_id ?? 0));
 
         $taxCompat = $this->buildTaxCompatibilityMap();
+        $refineries = app(EventRefineries::class)->choices($event->refineryIds());
 
-        return view('mining-manager::events.edit', compact('event', 'corporations', 'taxCompat'));
+        return view('mining-manager::events.edit', compact('event', 'corporations', 'taxCompat', 'refineries'));
     }
 
     /**
@@ -317,37 +486,21 @@ class EventController extends Controller
      */
     public function update(Request $request, $id)
     {
-        $request->validate([
-            'name' => 'required|string|max:255',
-            'description' => 'nullable|string',
-            'type' => 'required|string|in:mining_op,moon_extraction,ice_mining,gas_huffing,special',
-            'start_time' => 'required|date',
-            'end_time' => 'nullable|date|after:start_time',
-            'location_scope' => 'required|string|in:any,system,constellation,region',
-            // Existence checks — symmetric with store(). Accepting any
-            // integer lets stale form replays / typos persist pointers to
-            // non-existent systems / corps.
-            'solar_system_id' => 'nullable|integer|exists:solar_systems,system_id',
-            'tax_modifier' => 'required|integer|min:-100|max:100',
-            'corporation_id' => 'nullable|integer|exists:corporation_infos,corporation_id',
-            'status' => 'required|in:planned,active,completed,cancelled',
-        ]);
+        $event = MiningEvent::findOrFail($id);
+        [$attributes, $refineries] = $this->eventFromForm($request, $event);
 
         try {
-            $event = MiningEvent::findOrFail($id);
+            DB::transaction(function () use ($event, $attributes, $refineries) {
+                // Refineries first, so a scope edit gathers the event with
+                // them. Refineries alone changing is not a change to the
+                // event row, so it gathers the event itself.
+                $refineriesChanged = $this->syncRefineries($event, $refineries);
+                $event->update($attributes);
 
-            $event->update([
-                'name' => $request->input('name'),
-                'description' => $request->input('description'),
-                'type' => $request->input('type', 'mining_op'),
-                'start_time' => Carbon::parse($request->input('start_time')),
-                'end_time' => $request->input('end_time') ? Carbon::parse($request->input('end_time')) : null,
-                'location_scope' => $request->input('location_scope', 'any'),
-                'solar_system_id' => $request->input('location_scope') !== 'any' ? $request->input('solar_system_id') : null,
-                'tax_modifier' => $request->input('tax_modifier', 0),
-                'corporation_id' => $request->input('corporation_id'),
-                'status' => $request->input('status'),
-            ]);
+                if ($refineriesChanged && !$event->wasChanged(MiningEvent::SCOPE_AFFECTING_FIELDS)) {
+                    app(EventMiningAggregator::class)->aggregate($event, true);
+                }
+            });
 
             return redirect()->route('mining-manager.events.show', $event->id)
                 ->with('success', 'Event updated successfully');
