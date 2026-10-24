@@ -208,9 +208,9 @@ trait WebhookDispatchTrait
      * by unrelated directors with separate moons/wallets that shouldn't
      * receive this corp's alerts.
      *
-     * Event notifications (event_created/started/completed) are GLOBAL and
-     * should NOT use this helper — they fire to every enabled subscribed
-     * webhook regardless of corporation_id.
+     * Event notifications (event_created/started/completed) pass the event's
+     * corporation as `$extraCorpId`; an event for no one corporation asks
+     * once per configured corporation (see sendViaWebhooks).
      *
      * Individual tax notifications (tax_reminder / tax_invoice / tax_overdue)
      * can pass the miner's corporation_id as `$extraCorpId` to ALSO include

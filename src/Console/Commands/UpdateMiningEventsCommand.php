@@ -9,6 +9,7 @@ use MiningManager\Services\Events\EventManagementService;
 use MiningManager\Services\Events\EventMiningAggregator;
 use MiningManager\Services\Events\EventTrackingService;
 use MiningManager\Services\Ledger\PersonalMiningReconciler;
+use MiningManager\Services\Notification\NotificationService;
 use Carbon\Carbon;
 
 class UpdateMiningEventsCommand extends Command
@@ -82,6 +83,11 @@ class UpdateMiningEventsCommand extends Command
             }
             if ($statusResult['completed'] > 0) {
                 $this->info("Auto-completed {$statusResult['completed']} event(s)");
+            }
+
+            $posted = $this->postFinalResults();
+            if ($posted > 0) {
+                $this->info("Posted the final results of {$posted} event(s)");
             }
 
             // Build query for participant tracking
@@ -191,5 +197,49 @@ class UpdateMiningEventsCommand extends Command
     private function neverGathered(MiningEvent $event): bool
     {
         return $event->status === 'completed' && $event->last_updated === null;
+    }
+
+    /**
+     * Post each event's final results once refinery reports for its last day
+     * can no longer come in, to wherever Event Completed goes. Only an event
+     * whose reporting window closed in the last two days is posted, so the
+     * update that brings this in posts nothing for events long over.
+     *
+     * @return int events posted
+     */
+    private function postFinalResults(): int
+    {
+        if (!MiningEvent::hasRules()) {
+            return 0;
+        }
+
+        $closed = Carbon::now()->subDays(PersonalMiningReconciler::DEFAULT_DAYS);
+        $events = MiningEvent::where('status', 'completed')
+            ->whereNull('results_sent_at')
+            ->whereBetween('end_time', [$closed->copy()->subDays(2), $closed])
+            ->get();
+
+        $posted = 0;
+
+        foreach ($events as $event) {
+            // Claimed first, so a run that overlaps this one cannot post it too.
+            $claimed = MiningEvent::where('id', $event->id)
+                ->whereNull('results_sent_at')
+                ->update(['results_sent_at' => Carbon::now()]);
+
+            if ($claimed === 0) {
+                continue;
+            }
+
+            try {
+                $this->eventService->updateEventTracking($event->fresh());
+                app(NotificationService::class)->sendEventResults($event->fresh());
+                $posted++;
+            } catch (\Throwable $e) {
+                $this->error("Could not post the results of event '{$event->name}': {$e->getMessage()}");
+            }
+        }
+
+        return $posted;
     }
 }

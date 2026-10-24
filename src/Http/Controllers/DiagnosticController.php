@@ -3888,6 +3888,7 @@ class DiagnosticController extends Controller
             'corporation_id' => (int) $this->settingsService->getSetting('general.moon_owner_corporation_id', 0),
             'status' => 'active',
             'total_mined' => (float) ($data['total_mined'] ?? 150000000),
+            'total_mined_value' => (float) ($data['total_mined'] ?? 150000000),
             'participant_count' => (int) ($data['participants'] ?? 12),
             'start_time' => \Carbon\Carbon::parse($data['start_date'] ?? now()),
             'end_time' => \Carbon\Carbon::parse($data['end_date'] ?? now()->addHours(4)),
