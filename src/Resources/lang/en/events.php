@@ -28,7 +28,8 @@ return [
     'mining_right_now' => 'Mining Right Now',
     'total_mined' => 'Total Mined',
     'avg_per_event' => 'Avg Per Event',
-    'registered_participants' => 'Registered Participants',
+    'registered_participants' => 'Signed Up',
+    'no_end' => 'No end',
     
     // Event Information
     'event_information' => 'Event Information',
@@ -160,7 +161,7 @@ return [
     'browse_events' => 'Browse Events',
     'join' => 'Sign Up',
     'leave' => 'Withdraw',
-    'unregister' => 'Unregister',
+    'unregister' => 'Withdraw',
     'close' => 'Close',
     
     // Calendar
@@ -173,12 +174,12 @@ return [
     'no_active_events' => 'No Active Events',
     'check_upcoming' => 'Check the event calendar for upcoming mining operations.',
     'no_upcoming_events' => 'No upcoming events scheduled',
-    'not_in_active_events' => 'You are not participating in any active events',
-    'join_active_event' => 'View active events and join one to start mining!',
-    'no_upcoming_registrations' => 'You have no upcoming event registrations',
-    'browse_upcoming' => 'Browse the event calendar to find and register for upcoming events.',
+    'not_in_active_events' => 'You are not in any active events',
+    'join_active_event' => 'Look at the active events to see what counts right now.',
+    'no_upcoming_registrations' => 'You have not signed up for any upcoming events',
+    'browse_upcoming' => 'Browse the events to find one to sign up for.',
     'no_completed_events' => 'No completed events yet',
-    'participate_to_see_history' => 'Participate in events to build your mining history!',
+    'participate_to_see_history' => 'Events you mine for show up here once they end.',
     
     // Confirmations
     'confirm_leave' => 'Withdraw your sign-up for this event?',
