@@ -246,11 +246,6 @@
                         <span class="badge badge-primary">
                             {{ $event->getTypeLabel() }}
                         </span>
-                        @if($event->is_mandatory)
-                            <span class="badge badge-warning">
-                                <i class="fas fa-exclamation-circle"></i> {{ trans('mining-manager::events.mandatory') }}
-                            </span>
-                        @endif
                     </div>
 
                     {{-- Description --}}

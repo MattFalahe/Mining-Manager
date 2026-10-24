@@ -206,12 +206,6 @@
                     </div>
                     <div class="card-body">
                         <div class="form-group">
-                            <label for="max_participants">{{ trans('mining-manager::events.max_participants') }}</label>
-                            <input type="number" class="form-control" id="max_participants" name="max_participants" value="{{ old('max_participants') }}" min="1" placeholder="{{ trans('mining-manager::events.unlimited') }}">
-                            <small class="form-text text-muted">{{ trans('mining-manager::events.leave_empty_unlimited') }}</small>
-                        </div>
-
-                        <div class="form-group">
                             <label for="tax_modifier">{{ trans('mining-manager::events.tax_modifier') }}</label>
                             <select class="form-control @error('tax_modifier') is-invalid @enderror" id="tax_modifier" name="tax_modifier" required>
                                 <option value="-100" {{ old('tax_modifier') == -100 ? 'selected' : '' }}>{{ trans('mining-manager::events.modifier_tax_free') }}</option>
@@ -249,20 +243,6 @@
                         </div>
 
                         <div class="form-check mb-3">
-                            <input type="checkbox" class="form-check-input" id="is_mandatory" name="is_mandatory" value="1" {{ old('is_mandatory') ? 'checked' : '' }}>
-                            <label class="form-check-label" for="is_mandatory">
-                                {{ trans('mining-manager::events.mandatory_event') }}
-                            </label>
-                        </div>
-
-                        <div class="form-check mb-3">
-                            <input type="checkbox" class="form-check-input" id="auto_start" name="auto_start" value="1" {{ old('auto_start', true) ? 'checked' : '' }}>
-                            <label class="form-check-label" for="auto_start">
-                                {{ trans('mining-manager::events.auto_start') }}
-                            </label>
-                        </div>
-
-                        <div class="form-check mb-3">
                             <input type="checkbox" class="form-check-input" id="send_notifications" name="send_notifications" value="1" {{ old('send_notifications', true) ? 'checked' : '' }}>
                             <label class="form-check-label" for="send_notifications">
                                 {{ trans('mining-manager::events.send_notifications') }}
@@ -271,22 +251,6 @@
                     </div>
                 </div>
 
-                <div class="card card-success">
-                    <div class="card-header">
-                        <h3 class="card-title">{{ trans('mining-manager::events.organizer') }}</h3>
-                    </div>
-                    <div class="card-body">
-                        <div class="form-group">
-                            <label for="organizer_id">{{ trans('mining-manager::events.event_organizer') }}</label>
-                            <select class="form-control" id="organizer_id" name="organizer_id">
-                                <option value="{{ auth()->user()->id }}" selected>{{ auth()->user()->name }}</option>
-                                @foreach($directors ?? [] as $director)
-                                <option value="{{ $director->id }}">{{ $director->name }}</option>
-                                @endforeach
-                            </select>
-                        </div>
-                    </div>
-                </div>
             </div>
         </div>
 

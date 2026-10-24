@@ -108,6 +108,7 @@ This release also brings tax periods to the ledger, My Mining and the dashboards
 ### Events
 
 - **Event mining follows the profiles of the miners it covers.** A corporation's event counts what that corporation's profile taxes, and an event open to everyone counts what any profile taxes. Each miner's discount is still worked out by their own profile. The event form offers the configured corporations.
+- The event form no longer offers options that did nothing: a participant limit, a mandatory flag, an organizer, and auto start, since an event always starts at its start time. Editing an event no longer offers to notify participants, which it never did.
 
 ### Reports
 

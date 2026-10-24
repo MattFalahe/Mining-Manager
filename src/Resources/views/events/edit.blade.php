@@ -168,7 +168,7 @@
                         </div>
 
                         <div class="row">
-                            <div class="col-md-6">
+                            <div class="col-md-12">
                                 <div class="form-group">
                                     <label for="status">{{ trans('mining-manager::events.status') }}</label>
                                     <select class="form-control" id="status" name="status">
@@ -177,12 +177,6 @@
                                         <option value="completed" {{ $event->status == 'completed' ? 'selected' : '' }}>{{ trans('mining-manager::events.completed') }}</option>
                                         <option value="cancelled" {{ $event->status == 'cancelled' ? 'selected' : '' }}>{{ trans('mining-manager::events.cancelled') }}</option>
                                     </select>
-                                </div>
-                            </div>
-                            <div class="col-md-6">
-                                <div class="form-group">
-                                    <label for="max_participants">{{ trans('mining-manager::events.max_participants') }}</label>
-                                    <input type="number" class="form-control" id="max_participants" name="max_participants" value="{{ old('max_participants', $event->max_participants) }}">
                                 </div>
                             </div>
                         </div>
@@ -222,16 +216,6 @@
                             <span class="invalid-feedback">{{ $message }}</span>
                             @enderror
                             <small class="form-text text-muted">{{ trans('mining-manager::events.corporation_scope_help') }}</small>
-                        </div>
-
-                        <div class="form-check mb-2">
-                            <input type="checkbox" class="form-check-input" id="is_mandatory" name="is_mandatory" value="1" {{ $event->is_mandatory ? 'checked' : '' }}>
-                            <label class="form-check-label" for="is_mandatory">{{ trans('mining-manager::events.mandatory_event') }}</label>
-                        </div>
-
-                        <div class="form-check">
-                            <input type="checkbox" class="form-check-input" id="send_notifications" name="send_notifications" value="1" checked>
-                            <label class="form-check-label" for="send_notifications">{{ trans('mining-manager::events.notify_participants') }}</label>
                         </div>
                     </div>
                 </div>
