@@ -78,6 +78,20 @@ class MiningEvent extends Model
     /** The moon ore rarities, cheapest first. */
     public const MOON_CATEGORIES = ['moon_r4', 'moon_r8', 'moon_r16', 'moon_r32', 'moon_r64'];
 
+    /** What each ore category is called on the event pages. */
+    public const ORE_CATEGORY_LABELS = [
+        'ore' => 'Belt ore',
+        'moon_r4' => 'R4 Ubiquitous',
+        'moon_r8' => 'R8 Common',
+        'moon_r16' => 'R16 Uncommon',
+        'moon_r32' => 'R32 Rare',
+        'moon_r64' => 'R64 Exceptional',
+        'ice' => 'Ice',
+        'gas' => 'Gas',
+        'abyssal' => 'Abyssal ore',
+        'triglavian' => 'Triglavian ore',
+    ];
+
     private static bool $hasRules = false;
     private static int $hasRulesCheckedAt = 0;
 

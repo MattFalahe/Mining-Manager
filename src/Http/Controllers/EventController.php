@@ -12,6 +12,7 @@ use MiningManager\Models\EventMoon;
 use MiningManager\Models\EventParticipant;
 use MiningManager\Models\EventSignup;
 use MiningManager\Services\Events\EventMiningAggregator;
+use MiningManager\Services\Events\EventPeople;
 use MiningManager\Services\Events\EventRefineries;
 use Seat\Eveapi\Models\Character\CharacterInfo;
 use Seat\Eveapi\Models\Sde\MapDenormalize;
@@ -386,25 +387,34 @@ class EventController extends Controller
     public function show($id)
     {
         try {
-            $event = MiningEvent::with(['participants', 'creator'])->findOrFail($id);
+            $event = MiningEvent::with('creator')->findOrFail($id);
 
-            // Get participants sorted by quantity mined
-            $participants = $event->participants()
-                ->orderBy('quantity_mined', 'desc')
-                ->get();
+            $eventPeople = app(EventPeople::class);
+            $people = $eventPeople->people($event);
+            $byDay = $eventPeople->byDay($event);
+            $byRefinery = $eventPeople->byRefinery($event);
+            $reportingUntil = $eventPeople->stillReportingUntil($event);
 
-            // Calculate statistics
-            $stats = [
-                'total_mined' => $participants->sum('quantity_mined'),
-                'participant_count' => $participants->count(),
-                'average_per_miner' => $participants->count() > 0
-                    ? $participants->sum('quantity_mined') / $participants->count()
-                    : 0,
-                'tax_modifier' => $event->tax_modifier,
-                'tax_modifier_label' => $event->getTaxModifierLabel(),
+            // The refineries the event is narrowed to, or for one that is
+            // not, the ones its mining came from.
+            $refineries = app(EventRefineries::class)->forEvent(
+                $event->refineryIds() ?: array_keys($byRefinery),
+                $event->start_time,
+                $event->end_time
+            );
+
+            $mined = array_filter($people, fn ($person) => $person['characters'] !== []);
+            $totals = [
+                'people' => count($mined),
+                'characters' => array_sum(array_map(fn ($person) => count($person['characters']), $people)),
+                'signups' => count(array_filter($people, fn ($person) => in_array($person['status'], [EventPeople::SIGNED_UP, EventPeople::SIGNED_UP_WAITING], true))),
+                'value' => array_sum(array_column($people, 'value')),
+                'qualifying' => array_sum(array_column($people, 'qualifying')),
+                'discount' => array_sum(array_column($people, 'discount')),
             ];
+            $signedUp = $event->isSignedUp(auth()->user());
 
-            return view('mining-manager::events.show', compact('event', 'participants', 'stats'));
+            return view('mining-manager::events.show', compact('event', 'people', 'byDay', 'byRefinery', 'refineries', 'reportingUntil', 'totals', 'signedUp'));
         } catch (\Exception $e) {
             \Log::error('EventController: Error showing event', [
                 'event_id' => $id,

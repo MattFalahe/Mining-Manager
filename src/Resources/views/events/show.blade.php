@@ -6,11 +6,56 @@
 @push('head')
 <link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=10">
 <script src="{{ asset('vendor/mining-manager/js/eve-time.js') }}?v=1" defer></script>
-<script src="{{ asset('vendor/mining-manager/js/eve-countdown.js') }}?v=1" defer></script>
+<style>
+    .mining-manager-wrapper .event-rules dt { color: var(--mm-text-muted); font-weight: 600; }
+    .mining-manager-wrapper .event-rules dd { margin-bottom: 0.6rem; }
+    .mining-manager-wrapper .event-person-alts { font-size: 0.85em; color: var(--mm-text-muted); }
+    .mining-manager-wrapper .event-total { font-size: 1.15rem; font-weight: 600; color: #f9fafb; }
+</style>
 @endpush
 
 @section('full')
 @include('mining-manager::partials.toastr')
+@php
+    $statuses = \MiningManager\Services\Events\EventPeople::class;
+
+    $isk = fn ($value) => number_format((float) $value, 0) . ' ISK';
+    $statusBadge = [
+        $statuses::SIGNED_UP => ['badge-success', trans('mining-manager::events.status_signed_up')],
+        $statuses::SIGNED_UP_WAITING => ['badge-info', trans('mining-manager::events.status_signed_up_waiting')],
+        $statuses::ADDED => ['badge-secondary', trans('mining-manager::events.status_added')],
+        $statuses::NOT_SIGNED_UP => ['badge-warning', trans('mining-manager::events.status_not_signed_up')],
+    ];
+    $statusColour = ['active' => 'success', 'cancelled' => 'danger', 'completed' => 'secondary'][$event->status] ?? 'info';
+
+    if ($event->countsWholeDays()) {
+        $when = $event->end_time
+            ? trans('mining-manager::events.rule_when_days', ['from' => $event->start_time->format('D j M Y'), 'to' => $event->end_time->format('D j M Y')])
+            : trans('mining-manager::events.rule_when_days_open', ['from' => $event->start_time->format('D j M Y')]);
+    } else {
+        $when = $event->end_time
+            ? trans('mining-manager::events.rule_when_times', ['from' => $event->start_time->format('D j M Y H:i'), 'to' => $event->end_time->format('D j M Y H:i')])
+            : trans('mining-manager::events.rule_when_times_open', ['from' => $event->start_time->format('D j M Y H:i')]);
+    }
+
+    $refineryCount = count($event->refineryIds());
+    if ($refineryCount > 0) {
+        $where = trans('mining-manager::events.rule_where_refineries', ['count' => $refineryCount]);
+    } elseif ($event->getLocationName()) {
+        $where = trans('mining-manager::events.rule_where_place', ['place' => $event->getLocationName(), 'scope' => strtolower($event->getLocationScopeLabel())]);
+    } else {
+        $where = trans('mining-manager::events.rule_where_any');
+    }
+
+    $ore = implode(', ', array_map(fn ($category) => \MiningManager\Models\MiningEvent::ORE_CATEGORY_LABELS[$category] ?? $category, $event->oreCategories()));
+
+    if ($event->corporation_id) {
+        $corporationName = $event->corporation ? '[' . $event->corporation->ticker . '] ' . $event->corporation->name : (string) $event->corporation_id;
+        $who = trans('mining-manager::events.audience_corporation', ['corporation' => $corporationName]);
+    } else {
+        $who = trans('mining-manager::events.' . ($event->members_only ? 'audience_members' : 'audience_everyone'));
+    }
+@endphp
 <div class="mining-manager-wrapper mining-dashboard events-show-page">
 
 {{-- TAB NAVIGATION --}}
@@ -18,29 +63,29 @@
     <div class="card-header p-0 pt-1">
         <ul class="nav nav-tabs">
             <li class="nav-item">
-                <a class="nav-link {{ Request::is('*/events') && !Request::is('*/events/*') ? 'active' : '' }}" href="{{ route('mining-manager.events.index') }}">
+                <a class="nav-link" href="{{ route('mining-manager.events.index') }}">
                     <i class="fas fa-list"></i> {{ trans('mining-manager::menu.all_events') }}
                 </a>
             </li>
             <li class="nav-item">
-                <a class="nav-link {{ Request::is('*/events/active') ? 'active' : '' }}" href="{{ route('mining-manager.events.active') }}">
+                <a class="nav-link" href="{{ route('mining-manager.events.active') }}">
                     <i class="fas fa-play-circle"></i> {{ trans('mining-manager::menu.active_events') }}
                 </a>
             </li>
             @can('mining-manager.director')
             <li class="nav-item">
-                <a class="nav-link {{ Request::is('*/events/create') ? 'active' : '' }}" href="{{ route('mining-manager.events.create') }}">
+                <a class="nav-link" href="{{ route('mining-manager.events.create') }}">
                     <i class="fas fa-plus-circle"></i> {{ trans('mining-manager::menu.create_event') }}
                 </a>
             </li>
             @endcan
             <li class="nav-item">
-                <a class="nav-link {{ Request::is('*/events/calendar') ? 'active' : '' }}" href="{{ route('mining-manager.events.calendar') }}">
+                <a class="nav-link" href="{{ route('mining-manager.events.calendar') }}">
                     <i class="fas fa-calendar-alt"></i> {{ trans('mining-manager::menu.event_calendar') }}
                 </a>
             </li>
             <li class="nav-item">
-                <a class="nav-link {{ Request::is('*/events/my-events') ? 'active' : '' }}" href="{{ route('mining-manager.events.my-events') }}">
+                <a class="nav-link" href="{{ route('mining-manager.events.my-events') }}">
                     <i class="fas fa-user-check"></i> {{ trans('mining-manager::menu.my_events') }}
                 </a>
             </li>
@@ -48,95 +93,126 @@
     </div>
     <div class="card-body">
 
+    {{-- The event --}}
+    <div class="card card-dark">
+        <div class="card-header">
+            <h3 class="card-title">
+                <i class="fas fa-flag"></i> {{ $event->name }}
+                <span class="badge badge-{{ $statusColour }} ml-2">{{ trans('mining-manager::events.' . $event->status) }}</span>
+                <span class="badge badge-dark ml-1">{{ $event->getTypeLabel() }}</span>
+            </h3>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-8">
+                    @if ($event->description)
+                        <p class="lead mb-3">{{ $event->description }}</p>
+                    @endif
+                    <p class="mb-0 text-muted">
+                        {{ trans('mining-manager::events.created_by', ['name' => $event->creator->name ?? trans('mining-manager::events.unknown')]) }}
+                    </p>
+                </div>
+                <div class="col-md-4">
+                    @if ($event->takesSignUps())
+                        @if ($signedUp)
+                            <p class="mb-2"><i class="fas fa-check-circle text-success"></i> {{ trans('mining-manager::events.you_are_signed_up') }}</p>
+                            <button class="btn btn-outline-secondary btn-block leave-event" data-event-id="{{ $event->id }}">
+                                <i class="fas fa-sign-out-alt"></i> {{ trans('mining-manager::events.leave_event') }}
+                            </button>
+                        @else
+                            <button class="btn btn-mm-primary btn-block join-event" data-event-id="{{ $event->id }}">
+                                <i class="fas fa-sign-in-alt"></i> {{ trans('mining-manager::events.join_event') }}
+                            </button>
+                        @endif
+                        <small class="form-text text-muted">
+                            {{ trans('mining-manager::events.' . ($event->needsSignUp() ? 'signup_hint_signed_up' : 'signup_hint_everyone')) }}
+                        </small>
+                    @elseif ($event->status !== 'cancelled')
+                        <p class="text-muted mb-2">{{ trans('mining-manager::events.signups_closed') }}</p>
+                    @endif
 
-<div class="event-details">
-    
-    {{-- Event Header --}}
+                    @can('mining-manager.director')
+                        <hr>
+                        <a href="{{ route('mining-manager.events.edit', $event->id) }}" class="btn btn-outline-secondary btn-block">
+                            <i class="fas fa-edit"></i> {{ trans('mining-manager::events.edit') }}
+                        </a>
+                        <form method="POST" action="{{ route('mining-manager.events.update-data', $event->id) }}" class="mt-2">
+                            @csrf
+                            <button type="submit" class="btn btn-outline-secondary btn-block">
+                                <i class="fas fa-sync-alt"></i> {{ trans('mining-manager::events.update_data') }}
+                            </button>
+                        </form>
+                    @endcan
+                    @can('mining-manager.admin')
+                        <form method="POST" action="{{ route('mining-manager.events.destroy', $event->id) }}" class="mt-2" onsubmit='return confirm(@json(trans('mining-manager::events.confirm_delete_warning')));'>
+                            @csrf
+                            @method('DELETE')
+                            <button type="submit" class="btn btn-outline-danger btn-block">
+                                <i class="fas fa-trash"></i> {{ trans('mining-manager::events.delete') }}
+                            </button>
+                        </form>
+                    @endcan
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="row">
-        <div class="col-12">
-            <div class="card card-{{ $event->status === 'active' ? 'success' : ($event->status === 'cancelled' ? 'danger' : 'primary') }} card-outline">
+        {{-- Rules --}}
+        <div class="col-lg-7">
+            <div class="card card-dark">
                 <div class="card-header">
-                    <h3 class="card-title">
-                        <i class="fas fa-{{ $event->icon ?? 'calendar' }}"></i>
-                        {{ $event->name }}
-                    </h3>
-                    <div class="card-tools">
-                        <span class="badge badge-{{ $event->status === 'active' ? 'success' : ($event->status === 'cancelled' ? 'danger' : 'info') }}">
-                            {{ trans('mining-manager::events.' . $event->status) }}
-                        </span>
-                    </div>
+                    <h3 class="card-title"><i class="fas fa-list-ul"></i> {{ trans('mining-manager::events.rules') }}</h3>
+                </div>
+                <div class="card-body">
+                    <dl class="event-rules mb-0">
+                        <dt>{{ trans('mining-manager::events.when') }}</dt>
+                        <dd>{{ $when }}</dd>
+                        <dt>{{ trans('mining-manager::events.where') }}</dt>
+                        <dd>{{ $where }}</dd>
+                        <dt>{{ trans('mining-manager::events.what_ore') }}</dt>
+                        <dd>{{ $ore }}</dd>
+                        <dt>{{ trans('mining-manager::events.who') }}</dt>
+                        <dd>
+                            {{ $who }}.
+                            {{ trans('mining-manager::events.' . ($event->needsSignUp() ? 'rule_participation_signed_up' : 'rule_participation_everyone')) }}
+                        </dd>
+                        <dt>{{ trans('mining-manager::events.rate') }}</dt>
+                        <dd class="mb-0">
+                            <span class="badge badge-{{ $event->tax_modifier < 0 ? 'success' : ($event->tax_modifier > 0 ? 'warning' : 'secondary') }}">{{ $event->getTaxModifierLabel() }}</span>
+                        </dd>
+                    </dl>
+                </div>
+            </div>
+        </div>
+
+        {{-- Totals --}}
+        <div class="col-lg-5">
+            <div class="card card-dark">
+                <div class="card-header">
+                    <h3 class="card-title"><i class="fas fa-calculator"></i> {{ trans('mining-manager::events.totals') }}</h3>
                 </div>
                 <div class="card-body">
                     <div class="row">
-                        <div class="col-md-8">
-                            <p class="lead">{{ $event->description }}</p>
-                            
-                            <div class="row mt-3">
-                                <div class="col-md-6">
-                                    <h5>{{ trans('mining-manager::events.event_information') }}</h5>
-                                    <p><i class="fas fa-tag"></i> <strong>{{ trans('mining-manager::events.type') }}:</strong> {{ $event->getTypeLabel() }}</p>
-                                    <p><i class="fas fa-calendar-alt"></i> <strong>{{ trans('mining-manager::events.starts') }}:</strong>
-                                        <span class="eve-time" data-eve-time="{{ $event->start_time->toIso8601String() }}" data-show-local>
-                                            {{ $event->start_time->format('F d, Y H:i') }} EVE
-                                        </span>
-                                        <span class="eve-countdown" data-target="{{ $event->start_time->toIso8601String() }}">
-                                            ({{ $event->start_time->diffForHumans() }})
-                                        </span>
-                                    </p>
-                                    @if($event->end_time)
-                                    <p><i class="fas fa-clock"></i> <strong>{{ trans('mining-manager::events.ends') }}:</strong>
-                                        <span class="eve-time" data-eve-time="{{ $event->end_time->toIso8601String() }}" data-show-local>
-                                            {{ $event->end_time->format('F d, Y H:i') }} EVE
-                                        </span>
-                                        <span class="eve-countdown" data-target="{{ $event->end_time->toIso8601String() }}">
-                                            ({{ $event->end_time->diffForHumans() }})
-                                        </span>
-                                    </p>
-                                    @endif
-                                    @if($event->getLocationName())
-                                    <p><i class="fas fa-map-marker-alt"></i> <strong>{{ trans('mining-manager::events.location') }}:</strong> {{ $event->getLocationName() }} ({{ $event->getLocationScopeLabel() }})</p>
-                                    @else
-                                    <p><i class="fas fa-globe"></i> <strong>{{ trans('mining-manager::events.location') }}:</strong> {{ trans('mining-manager::events.scope_any') }}</p>
-                                    @endif
-                                    <p><i class="fas fa-user"></i> <strong>{{ trans('mining-manager::events.organizer') }}:</strong> {{ $event->creator->name ?? 'Unknown' }}</p>
-                                </div>
-                                <div class="col-md-6">
-                                    <h5>{{ trans('mining-manager::events.statistics') }}</h5>
-                                    <p><i class="fas fa-users"></i> <strong>{{ trans('mining-manager::events.participants') }}:</strong> {{ $event->participant_count ?? 0 }}</p>
-                                    <p><i class="fas fa-cubes"></i> <strong>Total Quantity Mined:</strong> {{ number_format($event->total_mined ?? 0, 0) }} units</p>
-                                    <p><i class="fas fa-coins"></i> <strong>{{ trans('mining-manager::events.total_mined') }}:</strong> {{ number_format($event->total_mined_value ?? 0, 0) }} ISK</p>
-                                    <p><i class="fas fa-percentage"></i> <strong>{{ trans('mining-manager::events.tax_modifier') }}:</strong>
-                                        <span class="badge badge-{{ $event->tax_modifier < 0 ? 'success' : ($event->tax_modifier > 0 ? 'warning' : 'secondary') }}">
-                                            {{ $event->getTaxModifierLabel() }}
-                                        </span>
-                                    </p>
-                                </div>
-                            </div>
+                        <div class="col-6 mb-3">
+                            <div class="text-muted small">{{ trans('mining-manager::events.people') }}</div>
+                            <div class="event-total">{{ $totals['people'] }}</div>
+                            <div class="text-muted small">{{ trans('mining-manager::events.characters_count', ['count' => $totals['characters']]) }}</div>
                         </div>
-                        <div class="col-md-4">
-                            <div class="text-center">
-                                @if($event->takesSignUps())
-                                    @if($event->isSignedUp(auth()->user()))
-                                        <button class="btn btn-danger btn-lg btn-block leave-event" data-event-id="{{ $event->id }}">
-                                            <i class="fas fa-sign-out-alt"></i> {{ trans('mining-manager::events.leave_event') }}
-                                        </button>
-                                    @else
-                                        <button class="btn btn-success btn-lg btn-block join-event" data-event-id="{{ $event->id }}">
-                                            <i class="fas fa-sign-in-alt"></i> {{ trans('mining-manager::events.join_event') }}
-                                        </button>
-                                    @endif
-                                @endif
-                                
-                                @can('mining-manager.director')
-                                <hr>
-                                <a href="{{ route('mining-manager.events.edit', $event->id) }}" class="btn btn-warning btn-block">
-                                    <i class="fas fa-edit"></i> {{ trans('mining-manager::events.edit') }}
-                                </a>
-                                <button class="btn btn-danger btn-block delete-event" data-event-id="{{ $event->id }}">
-                                    <i class="fas fa-trash"></i> {{ trans('mining-manager::events.delete') }}
-                                </button>
-                                @endcan
-                            </div>
+                        <div class="col-6 mb-3">
+                            <div class="text-muted small">{{ trans('mining-manager::events.signed_up_count') }}</div>
+                            <div class="event-total">{{ $totals['signups'] }}</div>
+                        </div>
+                        <div class="col-6">
+                            <div class="text-muted small">{{ trans('mining-manager::events.mined_total') }}</div>
+                            <div class="event-total">{{ $isk($totals['value']) }}</div>
+                            @if ($event->needsSignUp())
+                                <div class="text-muted small">{{ trans('mining-manager::events.at_event_rate_amount', ['amount' => $isk($totals['qualifying'])]) }}</div>
+                            @endif
+                        </div>
+                        <div class="col-6">
+                            <div class="text-muted small">{{ trans('mining-manager::events.discount_given') }}</div>
+                            <div class="event-total">{{ $isk($totals['discount']) }}</div>
                         </div>
                     </div>
                 </div>
@@ -144,122 +220,181 @@
         </div>
     </div>
 
-    {{-- Participants --}}
-    <div class="row">
-        <div class="col-12">
-            <div class="card card-dark">
-                <div class="card-header">
-                    <h3 class="card-title">{{ trans('mining-manager::events.participants') }}</h3>
-                </div>
-                <div class="card-body p-0">
-                    <table class="table table-dark table-striped">
-                        <thead>
-                            <tr>
-                                <th>{{ trans('mining-manager::events.rank') }}</th>
-                                <th>{{ trans('mining-manager::events.character') }}</th>
-                                <th class="text-right">{{ trans('mining-manager::events.mined_value') }}</th>
-                                <th class="text-right">{{ trans('mining-manager::events.quantity') }}</th>
-                                <th>{{ trans('mining-manager::events.joined_at') }}</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @forelse($event->participants->sortByDesc('value_mined') as $index => $participant)
-                            <tr>
-                                <td>
-                                    @if($index < 3)
-                                        <i class="fas fa-trophy text-{{ ['warning', 'secondary', 'orange'][$index] }}"></i> #{{ $index + 1 }}
-                                    @else
-                                        #{{ $index + 1 }}
-                                    @endif
-                                </td>
-                                <td>
-                                    <img src="https://images.evetech.net/characters/{{ $participant->character_id }}/portrait?size=32" class="img-circle" style="width: 32px;">
-                                    {{ $participant->character_name }}
-                                </td>
-                                <td class="text-right">{{ number_format($participant->value_mined ?? 0, 0) }} ISK</td>
-                                <td class="text-right">{{ number_format($participant->quantity_mined ?? 0, 0) }}</td>
-                                <td>
-                                    @if($participant->joined_at)
-                                        <span class="eve-time" data-eve-time="{{ $participant->joined_at->toIso8601String() }}">
-                                            <span class="eve-countdown" data-target="{{ $participant->joined_at->toIso8601String() }}">
-                                                {{ $participant->joined_at->diffForHumans() }}
-                                            </span>
-                                        </span>
-                                    @else
-                                        N/A
-                                    @endif
-                                </td>
-                            </tr>
-                            @empty
-                            <tr>
-                                <td colspan="5" class="text-center text-muted">{{ trans('mining-manager::events.no_participants_yet') }}</td>
-                            </tr>
-                            @endforelse
-                        </tbody>
-                    </table>
-                </div>
+    @if ($reportingUntil)
+        <div class="mm-notice">
+            <i class="fas fa-hourglass-half"></i>
+            {{ trans('mining-manager::events.reporting_until', ['until' => $reportingUntil->format('D j M H:i')]) }}
+        </div>
+    @endif
+
+    {{-- Refineries --}}
+    @if (!empty($refineries))
+        <div class="card card-dark">
+            <div class="card-header">
+                <h3 class="card-title"><i class="fas fa-industry"></i> {{ trans('mining-manager::events.refineries') }}</h3>
             </div>
+            <div class="card-body p-0">
+                <table class="table table-dark table-striped mb-0">
+                    <thead>
+                        <tr>
+                            <th>{{ trans('mining-manager::events.refinery') }}</th>
+                            <th>{{ trans('mining-manager::events.chunk') }}</th>
+                            <th class="text-right">{{ trans('mining-manager::events.mined_total') }}</th>
+                            <th class="text-right">{{ trans('mining-manager::events.pilots') }}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach ($refineries as $refinery)
+                            @php $figures = $byRefinery[$refinery['structure_id']] ?? null; @endphp
+                            <tr>
+                                <td>
+                                    <strong>{{ $refinery['moon'] ?? $refinery['name'] }}</strong>
+                                    <div class="event-person-alts">{{ $refinery['name'] }}{{ $refinery['system'] ? ' · ' . $refinery['system'] : '' }}</div>
+                                </td>
+                                <td>
+                                    @forelse ($refinery['chunks'] as $chunk)
+                                        <div>{{ trans('mining-manager::events.chunk_line', [
+                                            'arrives' => \Carbon\Carbon::parse($chunk['arrival'])->format('D j M H:i'),
+                                            'gone' => \Carbon\Carbon::parse($chunk['gone'])->format('D j M'),
+                                        ]) }}</div>
+                                    @empty
+                                        <span class="text-muted">{{ trans('mining-manager::events.no_chunk_found') }}</span>
+                                    @endforelse
+                                </td>
+                                <td class="text-right">{{ $figures ? $isk($figures['value']) : '-' }}</td>
+                                <td class="text-right">{{ $figures['pilots'] ?? 0 }}</td>
+                            </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    @endif
+
+    {{-- People --}}
+    <div class="card card-dark">
+        <div class="card-header">
+            <h3 class="card-title"><i class="fas fa-users"></i> {{ trans('mining-manager::events.people') }}</h3>
+        </div>
+        <div class="card-body p-0">
+            <table class="table table-dark table-striped mb-0">
+                <thead>
+                    <tr>
+                        <th style="width: 50px;">#</th>
+                        <th>{{ trans('mining-manager::events.pilot') }}</th>
+                        <th>{{ trans('mining-manager::events.status') }}</th>
+                        <th class="text-right">{{ trans('mining-manager::events.mined_total') }}</th>
+                        @if ($event->needsSignUp())
+                            <th class="text-right">{{ trans('mining-manager::events.at_event_rate') }}</th>
+                        @endif
+                        <th class="text-right">{{ trans('mining-manager::events.discount_given') }}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @forelse ($people as $index => $person)
+                        <tr>
+                            <td>{{ $index + 1 }}</td>
+                            <td>
+                                @if ($person['main'])
+                                    <img src="https://images.evetech.net/characters/{{ $person['main'] }}/portrait?size=32" class="img-circle mr-1" style="width: 28px;" alt="">
+                                @endif
+                                {{ $person['name'] }}
+                                @if (count($person['characters']) > 1 || (count($person['characters']) === 1 && $person['characters'][0]['id'] !== $person['main']))
+                                    <div class="event-person-alts">
+                                        {{ implode(', ', array_map(fn ($character) => $character['name'] . ' ' . number_format($character['value'], 0), $person['characters'])) }}
+                                    </div>
+                                @endif
+                            </td>
+                            <td>
+                                <span class="badge {{ $statusBadge[$person['status']][0] }}" @if ($person['status'] === $statuses::NOT_SIGNED_UP) title="{{ trans('mining-manager::events.status_not_signed_up_help') }}" @endif>{{ $statusBadge[$person['status']][1] }}</span>
+                            </td>
+                            <td class="text-right">{{ $isk($person['value']) }}</td>
+                            @if ($event->needsSignUp())
+                                <td class="text-right">{{ $isk($person['qualifying']) }}</td>
+                            @endif
+                            <td class="text-right">{{ $isk($person['discount']) }}</td>
+                        </tr>
+                    @empty
+                        <tr>
+                            <td colspan="{{ $event->needsSignUp() ? 6 : 5 }}" class="text-center text-muted">{{ trans('mining-manager::events.no_people_yet') }}</td>
+                        </tr>
+                    @endforelse
+                </tbody>
+            </table>
         </div>
     </div>
 
-</div>
+    {{-- By day --}}
+    @if (!empty($byDay))
+        <div class="card card-dark mb-0">
+            <div class="card-header">
+                <h3 class="card-title"><i class="fas fa-calendar-day"></i> {{ trans('mining-manager::events.by_day') }}</h3>
+            </div>
+            <div class="card-body p-0">
+                <table class="table table-dark table-striped mb-0">
+                    <thead>
+                        <tr>
+                            <th>{{ trans('mining-manager::events.day') }}</th>
+                            <th class="text-right">{{ trans('mining-manager::events.pilots') }}</th>
+                            <th class="text-right">{{ trans('mining-manager::events.mined_total') }}</th>
+                            @if ($event->needsSignUp())
+                                <th class="text-right">{{ trans('mining-manager::events.at_event_rate') }}</th>
+                            @endif
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach ($byDay as $day => $figures)
+                            <tr>
+                                <td>{{ \Carbon\Carbon::parse($day)->format('D j M Y') }}</td>
+                                <td class="text-right">{{ $figures['pilots'] }}</td>
+                                <td class="text-right">{{ $isk($figures['value']) }}</td>
+                                @if ($event->needsSignUp())
+                                    <td class="text-right">{{ $isk($figures['qualifying']) }}</td>
+                                @endif
+                            </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    @endif
+
+    </div>{{-- /.card-body --}}
+</div>{{-- /.card-tabs --}}
+
+</div>{{-- /.mining-manager-wrapper --}}
+@endsection
 
 @push('javascript')
 <script>
-$(document).ready(function() {
-    $('.join-event, .leave-event, .delete-event').on('click', function(e) {
+$(function () {
+    $('.join-event, .leave-event').on('click', function (e) {
         e.preventDefault();
-        const btn = $(this);
-        const eventId = btn.data('event-id');
-        const action = btn.hasClass('join-event') ? 'join' : btn.hasClass('leave-event') ? 'leave' : 'delete';
+        const button = $(this);
+        const joining = button.hasClass('join-event');
 
-        console.log('Event action:', action, 'Event ID:', eventId);
-
-        let route, method, confirmMsg;
-        if (action === 'join') {
-            route = '{{ route("mining-manager.events.join", ":id") }}'.replace(':id', eventId);
-            method = 'POST';
-        } else if (action === 'leave') {
-            route = '{{ route("mining-manager.events.leave", ":id") }}'.replace(':id', eventId);
-            method = 'POST';
-            confirmMsg = '{{ trans("mining-manager::events.confirm_leave") }}';
-        } else {
-            route = '{{ route("mining-manager.events.destroy", ":id") }}'.replace(':id', eventId);
-            method = 'POST';
-            confirmMsg = '{{ trans("mining-manager::events.confirm_delete") }}';
+        if (!joining && !confirm(@json(trans('mining-manager::events.confirm_leave')))) {
+            return;
         }
 
-        if (confirmMsg && !confirm(confirmMsg)) return;
-
-        // Disable button to prevent double-clicks
-        btn.prop('disabled', true);
-
-        var ajaxData = {};
-        if (action === 'delete') {
-            ajaxData._method = 'DELETE';
-        }
-
+        button.prop('disabled', true);
         $.ajax({
-            url: route,
-            method: method,
-            data: ajaxData,
+            url: joining ? @json(route('mining-manager.events.join', $event->id)) : @json(route('mining-manager.events.leave', $event->id)),
+            method: 'POST',
             headers: { 'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content') },
-            success: function(response) {
+            success: function (response) {
                 if (typeof toastr !== 'undefined') {
-                    toastr.success(response.message || 'Action completed successfully');
-                } else {
-                    alert(response.message || 'Action completed successfully');
+                    toastr.success(response.message);
                 }
-                setTimeout(() => location.reload(), 1000);
+                setTimeout(function () { location.reload(); }, 1000);
             },
-            error: function(xhr) {
-                btn.prop('disabled', false);
-                const errorMsg = xhr.responseJSON?.message || 'An error occurred. Please try again.';
-                console.error('Event action error:', xhr.status, errorMsg);
+            error: function (xhr) {
+                button.prop('disabled', false);
+                const message = (xhr.responseJSON && xhr.responseJSON.message) || @json(trans('mining-manager::events.join_failed'));
                 if (typeof toastr !== 'undefined') {
-                    toastr.error(errorMsg);
+                    toastr.error(message);
                 } else {
-                    alert('Error: ' + errorMsg);
+                    alert(message);
                 }
             }
         });
@@ -267,9 +402,3 @@ $(document).ready(function() {
 });
 </script>
 @endpush
-
-    </div>{{-- /.card-body --}}
-</div>{{-- /.card-tabs --}}
-
-</div>{{-- /.mining-manager-wrapper --}}
-@endsection

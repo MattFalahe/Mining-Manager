@@ -1902,6 +1902,43 @@ class LedgerSummaryService
     }
 
     /**
+     * One event's tax savings per character, from the same daily summary
+     * entries getEventSavingsByEvent() reads: what each character's days
+     * were actually charged less because of this event.
+     *
+     * @param array<int> $characterIds
+     * @return array<int, float> character_id => total discount in ISK
+     */
+    public function getEventSavingsByCharacter(int $eventId, array $characterIds, ?Carbon $startDate = null, ?Carbon $endDate = null): array
+    {
+        if (empty($characterIds)) {
+            return [];
+        }
+
+        $query = MiningLedgerDailySummary::whereIn('character_id', $characterIds)
+            ->whereNotNull('ore_types')
+            ->where('event_discount_total', '>', 0);
+
+        if ($startDate) {
+            $query->where('date', '>=', $startDate->toDateString());
+        }
+        if ($endDate) {
+            $query->where('date', '<=', $endDate->toDateString());
+        }
+
+        $byCharacter = [];
+        foreach ($query->select('character_id', 'ore_types')->get() as $row) {
+            foreach (is_array($row->ore_types) ? $row->ore_types : [] as $entry) {
+                if ((int) ($entry['event_id'] ?? 0) === $eventId) {
+                    $byCharacter[(int) $row->character_id] = ($byCharacter[(int) $row->character_id] ?? 0) + (float) ($entry['event_discount_amount'] ?? 0);
+                }
+            }
+        }
+
+        return $byCharacter;
+    }
+
+    /**
      * Total event tax savings across a character set (optional date bounds).
      *
      * Sum of mining_ledger_daily_summaries.event_discount_total — faster

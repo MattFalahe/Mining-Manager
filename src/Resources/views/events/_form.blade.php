@@ -33,14 +33,8 @@
     $participationValue = old('participation', $event->participation ?? $everyoneKey);
     $modifierValue = (int) old('tax_modifier', $event->tax_modifier ?? 0);
 
-    $rarities = [
-        'moon_r4' => 'R4 Ubiquitous',
-        'moon_r8' => 'R8 Common',
-        'moon_r16' => 'R16 Uncommon',
-        'moon_r32' => 'R32 Rare',
-        'moon_r64' => 'R64 Exceptional',
-    ];
-    $everything = ['ore' => 'Belt ore'] + $rarities + ['ice' => 'Ice', 'gas' => 'Gas', 'abyssal' => 'Abyssal ore', 'triglavian' => 'Triglavian ore'];
+    $everything = \MiningManager\Models\MiningEvent::ORE_CATEGORY_LABELS;
+    $rarities = array_intersect_key($everything, array_flip(\MiningManager\Models\MiningEvent::MOON_CATEGORIES));
     $modifiers = [
         -100 => 'modifier_tax_free', -75 => 'modifier_reduced_75', -50 => 'modifier_reduced_50', -25 => 'modifier_reduced_25',
         0 => 'modifier_normal', 25 => 'modifier_increase_25', 50 => 'modifier_increase_50', 75 => 'modifier_increase_75', 100 => 'modifier_double',
