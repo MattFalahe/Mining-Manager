@@ -138,7 +138,7 @@ class TaxCalculationService
                     'count' => 0,
                     'total' => 0,
                     'errors' => [],
-                    'message' => 'No corporation configured. Set moon_owner_corporation_id in General settings to enable tax calculation.',
+                    'message' => 'No corporation configured. Choose the Moon Owner Corporation under Settings, Setup to enable tax calculation.',
                 ];
             }
 

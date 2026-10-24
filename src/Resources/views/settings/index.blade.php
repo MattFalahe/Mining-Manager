@@ -359,14 +359,14 @@
                                 <div class="card bg-dark">
                                     <div class="card-body">
                                         <h5>
-                                            <i class="fas fa-cog text-primary"></i>
-                                            {{ trans('mining-manager::settings.help_general') }}
+                                            <i class="fas fa-coins text-primary"></i>
+                                            {{ trans('mining-manager::settings.help_taxes') }}
                                         </h5>
-                                        <p>{{ trans('mining-manager::settings.help_general_desc') }}</p>
+                                        <p>{{ trans('mining-manager::settings.help_taxes_desc') }}</p>
                                         <ul>
-                                            <li>{{ trans('mining-manager::settings.help_general_1') }}</li>
-                                            <li>{{ trans('mining-manager::settings.help_general_2') }}</li>
-                                            <li>{{ trans('mining-manager::settings.help_general_3') }}</li>
+                                            <li>{{ trans('mining-manager::settings.help_taxes_1') }}</li>
+                                            <li>{{ trans('mining-manager::settings.help_taxes_2') }}</li>
+                                            <li>{{ trans('mining-manager::settings.help_taxes_3') }}</li>
                                         </ul>
                                     </div>
                                 </div>
@@ -376,14 +376,14 @@
                                 <div class="card bg-dark">
                                     <div class="card-body">
                                         <h5>
-                                            <i class="fas fa-coins text-success"></i>
-                                            {{ trans('mining-manager::settings.help_tax') }}
+                                            <i class="fas fa-moon text-success"></i>
+                                            {{ trans('mining-manager::settings.help_moons') }}
                                         </h5>
-                                        <p>{{ trans('mining-manager::settings.help_tax_desc') }}</p>
+                                        <p>{{ trans('mining-manager::settings.help_moons_desc') }}</p>
                                         <ul>
-                                            <li>{{ trans('mining-manager::settings.help_tax_1') }}</li>
-                                            <li>{{ trans('mining-manager::settings.help_tax_2') }}</li>
-                                            <li>{{ trans('mining-manager::settings.help_tax_3') }}</li>
+                                            <li>{{ trans('mining-manager::settings.help_moons_1') }}</li>
+                                            <li>{{ trans('mining-manager::settings.help_moons_2') }}</li>
+                                            <li>{{ trans('mining-manager::settings.help_moons_3') }}</li>
                                         </ul>
                                     </div>
                                 </div>
@@ -393,14 +393,14 @@
                                 <div class="card bg-dark">
                                     <div class="card-body">
                                         <h5>
-                                            <i class="fas fa-chart-line text-warning"></i>
-                                            {{ trans('mining-manager::settings.help_pricing') }}
+                                            <i class="fas fa-bell text-warning"></i>
+                                            {{ trans('mining-manager::settings.help_alerts') }}
                                         </h5>
-                                        <p>{{ trans('mining-manager::settings.help_pricing_desc') }}</p>
+                                        <p>{{ trans('mining-manager::settings.help_alerts_desc') }}</p>
                                         <ul>
-                                            <li>{{ trans('mining-manager::settings.help_pricing_1') }}</li>
-                                            <li>{{ trans('mining-manager::settings.help_pricing_2') }}</li>
-                                            <li>{{ trans('mining-manager::settings.help_pricing_3') }}</li>
+                                            <li>{{ trans('mining-manager::settings.help_alerts_1') }}</li>
+                                            <li>{{ trans('mining-manager::settings.help_alerts_2') }}</li>
+                                            <li>{{ trans('mining-manager::settings.help_alerts_3') }}</li>
                                         </ul>
                                     </div>
                                 </div>
@@ -410,14 +410,14 @@
                                 <div class="card bg-dark">
                                     <div class="card-body">
                                         <h5>
-                                            <i class="fas fa-toggle-on text-info"></i>
-                                            {{ trans('mining-manager::settings.help_features') }}
+                                            <i class="fas fa-puzzle-piece text-info"></i>
+                                            {{ trans('mining-manager::settings.help_plugin') }}
                                         </h5>
-                                        <p>{{ trans('mining-manager::settings.help_features_desc') }}</p>
+                                        <p>{{ trans('mining-manager::settings.help_plugin_desc') }}</p>
                                         <ul>
-                                            <li>{{ trans('mining-manager::settings.help_features_1') }}</li>
-                                            <li>{{ trans('mining-manager::settings.help_features_2') }}</li>
-                                            <li>{{ trans('mining-manager::settings.help_features_3') }}</li>
+                                            <li>{{ trans('mining-manager::settings.help_plugin_1') }}</li>
+                                            <li>{{ trans('mining-manager::settings.help_plugin_2') }}</li>
+                                            <li>{{ trans('mining-manager::settings.help_plugin_3') }}</li>
                                         </ul>
                                     </div>
                                 </div>
@@ -434,7 +434,7 @@
                                 <i class="fas fa-question-circle"></i>
                                 Full Documentation
                             </a>
-                            <a href="https://github.com/MattFalahe/seat-corp-mining-manager"
+                            <a href="https://github.com/MattFalahe/Mining-Manager"
                                target="_blank"
                                class="btn btn-info">
                                 <i class="fab fa-github"></i>
