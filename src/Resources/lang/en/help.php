@@ -261,7 +261,7 @@ return [
     'guest_mining_explained' => 'Non-Members and the Global Profile',
     'guest_mining_desc' => 'A non-member is anyone whose corporation was not on the Setup list on the day they mined. With corporations configured, the Global profile taxes non-members for their mining at your refineries only, never for their own mining elsewhere. With none configured, Global taxes everyone, for all of their mining.',
     'guest_rates_config' => 'Global\'s moon rates decide what non-members may do. Between 0% and 100% they pay those rates, and a bill they leave unpaid more than Days Overdue Before Theft (Settings, Features) counts as theft. The Tax profiles page says which of these applies.',
-    'guest_mining_switch' => 'At 100% for every rarity, only configured corporations may mine your moons. A non-member\'s mining there is billed in full and flagged as theft as soon as it is imported, and paying the bill closes the incident. This is what Allow Guest Mining switched off became.',
+    'guest_mining_switch' => 'At 100% for every rarity, only configured corporations may mine your moons. A non-member\'s mining there is billed in full and flagged as theft as soon as it is imported, and paying the bill closes the incident.',
     'guest_zero_rate' => 'At 0%, non-members mine for free. That is a real 0%, not "use the member rate", and theft detection cannot flag anyone who never owes anything.',
     'guest_detection' => 'Each day of mining is placed by the corporation the pilot was in that day, from SeAT\'s corporation history, so someone who joins or leaves is taxed as a member for the days they were one.',
 
@@ -437,7 +437,7 @@ return [
     'theft_step_1' => 'Every night the scan reads the mining ledger for moon ore mined at the moon owner\'s refineries by non-members. A character not placed in any corporation yet is left out until the lookup places them. While non-members may not mine, the same check also runs after each refinery import.',
     'theft_step_2' => 'That mining is theft when a bill on the player\'s account (the main and alts, or the character alone if SeAT does not know it) is more than Days Overdue Before Theft past its due date and still unpaid, or at once when the Global profile\'s moon rates are 100%, which means non-members may not mine. Days Overdue Before Theft is under Settings, Features, and the rates under Settings, Tax profiles.',
     'theft_step_3' => 'Each player has one incident open at a time, named after the character caught mining. Every night the previous day\'s mining is added to it, and the 6-hourly check sends an Active Theft alert when they mine again.',
-    'theft_step_4' => 'An incident comes off the list once nothing on the player\'s account is overdue. One raised while non-members may not mine closes once all the mining in it has been billed and paid. One raised before the update, while Allow Guest Mining was off, waits for a director to resolve it.',
+    'theft_step_4' => 'An incident comes off the list once nothing on the player\'s account is overdue. One raised while non-members may not mine closes once all the mining in it has been billed and paid.',
     'theft_commands' => 'Theft Detection Commands',
     'theft_detect_desc' => 'Adds the previous day\'s mining to open incidents, takes players with nothing overdue off the list, and opens incidents for new theft. Runs daily.',
     'theft_monitor_desc' => 'Sends an Active Theft alert when a player on the list mines again. Runs every 6 hours.',

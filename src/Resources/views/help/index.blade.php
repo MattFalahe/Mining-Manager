@@ -882,6 +882,35 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                         </li>
                     </ul>
 
+                    <h4><i class="fas fa-calendar-alt"></i> Tax periods and tax on every page</h4>
+                    <ul>
+                        <li>
+                            My Mining, the Mining Summary, a character's ledger and the dashboards follow tax
+                            periods. On twice-a-month billing they show half a month at a time, and My Mining opens
+                            on <strong>This period</strong> and <strong>Last period</strong>.
+                        </li>
+                        <li>
+                            A character's ledger shows the tax on each row, and a <strong>Tax on this mining</strong>
+                            card says what was taxed, what was not, and why.
+                        </li>
+                        <li>
+                            An invoice lists only the mining it taxed, with a <strong>Tax by category</strong> card
+                            adding it up by kind of ore.
+                        </li>
+                    </ul>
+
+                    <h4><i class="fas fa-user-secret"></i> Theft detection follows players</h4>
+                    <ul>
+                        <li>
+                            A player, main and alts together, has one incident, and each night adds the day's
+                            mining to it.
+                        </li>
+                        <li>
+                            A bill counts as theft once it is <strong>Days Overdue Before Theft</strong> past its
+                            due date, set under Settings, Features. Members are never flagged.
+                        </li>
+                    </ul>
+
                     <h4><i class="fas fa-sliders-h"></i> Settings say where they apply</h4>
                     <ul>
                         <li>
