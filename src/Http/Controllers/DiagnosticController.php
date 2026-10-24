@@ -2580,6 +2580,7 @@ class DiagnosticController extends Controller
                 return response()->json([
                     'success' => true,
                     'mode' => 'single_event',
+                    'checks' => $this->eventSchemaChecks(),
                     'event' => [
                         'id' => $event->id, 'name' => $event->name, 'type' => $event->type, 'status' => $event->status,
                         'start_time' => $event->start_time?->toIso8601String(), 'end_time' => $event->end_time?->toIso8601String(),
@@ -2605,6 +2606,7 @@ class DiagnosticController extends Controller
                 return response()->json([
                     'success' => true,
                     'mode' => 'overview',
+                    'checks' => $this->eventSchemaChecks(),
                     'active_events' => $active->map(fn($e) => [
                         'id' => $e->id, 'name' => $e->name, 'status' => $e->status,
                         'participant_count' => $e->participant_count, 'total_mined' => $e->total_mined,
@@ -2625,6 +2627,31 @@ class DiagnosticController extends Controller
             Log::error('Event diagnostic failed', ['error' => $e->getMessage()]);
             return response()->json(['success' => false, 'error' => $e->getMessage()], 500);
         }
+    }
+
+    /**
+     * Whether the database has what events need for refineries, sign-ups and
+     * narrowed ore.
+     */
+    private function eventSchemaChecks(): array
+    {
+        $missing = array_values(array_filter([
+            \Schema::hasColumn('mining_events', 'participation') ? null : 'mining_events.participation',
+            \Schema::hasColumn('mining_events', 'members_only') ? null : 'mining_events.members_only',
+            \Schema::hasColumn('mining_events', 'ore_categories') ? null : 'mining_events.ore_categories',
+            \Schema::hasColumn('mining_events', 'results_sent_at') ? null : 'mining_events.results_sent_at',
+            \Schema::hasColumn('event_mining_records', 'qualifies') ? null : 'event_mining_records.qualifies',
+            \Schema::hasTable('mining_manager_event_moons') ? null : 'mining_manager_event_moons',
+            \Schema::hasTable('mining_manager_event_signups') ? null : 'mining_manager_event_signups',
+        ]));
+
+        return [[
+            'label' => 'Migration 000041: event rules, refineries and sign-ups',
+            'status' => $missing ? 'fail' : 'ok',
+            'message' => $missing
+                ? 'Missing: ' . implode(', ', $missing) . '. Run migrations. Until then events count as they used to: no narrowing to refineries or ore, and signing up changes nobody\'s rate.'
+                : 'Present: events can be narrowed to refineries and ore, and can count only the people who signed up.',
+        ]];
     }
 
     /**

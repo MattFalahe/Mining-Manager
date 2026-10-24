@@ -4,7 +4,9 @@ namespace MiningManager\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use MiningManager\Services\Events\EventMiningAggregator;
 use Seat\Eveapi\Models\Character\CharacterInfo;
 use Seat\Eveapi\Models\Sde\MapDenormalize;
@@ -41,6 +43,10 @@ class MiningEvent extends Model
         'corporation_id',
         'created_by',
         'last_updated',
+        'participation',
+        'members_only',
+        'ore_categories',
+        'results_sent_at',
     ];
 
     /**
@@ -57,7 +63,23 @@ class MiningEvent extends Model
         'tax_modifier' => 'integer',
         'corporation_id' => 'integer',
         'last_updated' => 'datetime',
+        'members_only' => 'boolean',
+        'ore_categories' => 'array',
+        'results_sent_at' => 'datetime',
     ];
+
+    /**
+     * Who gets an event's rate: everybody whose mining meets its rules, or
+     * only the accounts that signed up.
+     */
+    public const PARTICIPATION_EVERYONE = 'everyone';
+    public const PARTICIPATION_SIGNED_UP = 'signed_up';
+
+    /** The moon ore rarities, cheapest first. */
+    public const MOON_CATEGORIES = ['moon_r4', 'moon_r8', 'moon_r16', 'moon_r32', 'moon_r64'];
+
+    private static bool $hasRules = false;
+    private static int $hasRulesCheckedAt = 0;
 
     /**
      * Event type constants.
@@ -124,6 +146,132 @@ class MiningEvent extends Model
     public function participants()
     {
         return $this->hasMany(EventParticipant::class, 'event_id');
+    }
+
+    /**
+     * The refineries a moon event is narrowed to.
+     */
+    public function moons()
+    {
+        return $this->hasMany(EventMoon::class, 'event_id');
+    }
+
+    /**
+     * The accounts that signed up.
+     */
+    public function signups()
+    {
+        return $this->hasMany(EventSignup::class, 'event_id');
+    }
+
+    /**
+     * Whether the database has what events need for refineries, sign-ups and
+     * narrowed ore. A plugin update can start on the new code before its
+     * migrations have run, so a "no" is asked again after a while. A "yes"
+     * stays. The sign-ups table is the last thing the migration makes.
+     */
+    public static function hasRules(): bool
+    {
+        if (!self::$hasRules && time() - self::$hasRulesCheckedAt >= 30) {
+            self::$hasRulesCheckedAt = time();
+
+            try {
+                self::$hasRules = Schema::hasTable('mining_manager_event_signups');
+            } catch (\Throwable $e) {
+                self::$hasRules = false;
+            }
+        }
+
+        return self::$hasRules;
+    }
+
+    /**
+     * The ore categories the event counts: its type's, narrowed to the ones
+     * picked for it when some were.
+     *
+     * @return array<int, string>
+     */
+    public function oreCategories(): array
+    {
+        $categories = self::EVENT_TYPE_ORE_CATEGORIES[$this->type] ?? [];
+        $picked = is_array($this->ore_categories) ? $this->ore_categories : [];
+
+        return $picked === [] ? $categories : array_values(array_intersect($categories, $picked));
+    }
+
+    /**
+     * Whether only the accounts that signed up get the event's rate.
+     */
+    public function needsSignUp(): bool
+    {
+        return $this->participation === self::PARTICIPATION_SIGNED_UP;
+    }
+
+    /**
+     * Whether the event counts by whole days. Refineries report moon mining
+     * by the day, so a moon event counts every day it touches.
+     */
+    public function countsWholeDays(): bool
+    {
+        return $this->type === 'moon_extraction';
+    }
+
+    /**
+     * Sign-ups stay open until the event ends.
+     */
+    public function takesSignUps(): bool
+    {
+        return in_array($this->status, ['planned', 'active'], true)
+            && ($this->end_time === null || $this->end_time->isFuture());
+    }
+
+    /**
+     * The refineries the event is narrowed to; empty when it counts every
+     * refinery in its location.
+     *
+     * @return array<int, int>
+     */
+    public function refineryIds(): array
+    {
+        if (!$this->exists || !self::hasRules()) {
+            return [];
+        }
+
+        return $this->moons()->pluck('structure_id')->map(fn ($id) => (int) $id)->all();
+    }
+
+    /**
+     * Whether a user's account has signed up.
+     *
+     * @param \Seat\Web\Models\User|null $user
+     */
+    public function isSignedUp($user): bool
+    {
+        if (!$user || !$this->exists || !self::hasRules()) {
+            return false;
+        }
+
+        return $this->signups()->where('user_id', $user->id)->exists();
+    }
+
+    /**
+     * The account each character belongs to, as user ids keyed by character.
+     * Expired tokens still tie a character to its account.
+     *
+     * @param array<int, int> $characterIds
+     * @return array<int, int>
+     */
+    public static function accountsOf(array $characterIds): array
+    {
+        if ($characterIds === []) {
+            return [];
+        }
+
+        return DB::table('refresh_tokens')
+            ->whereIn('character_id', array_values(array_unique($characterIds)))
+            ->pluck('user_id', 'character_id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
     }
 
     /**
@@ -495,11 +643,9 @@ class MiningEvent extends Model
     }
 
     /**
-     * Check if this event's tax modifier applies to the given ore category.
-     *
-     * Returns true when the event's type includes the ore category in
-     * EVENT_TYPE_ORE_CATEGORIES. "special" events apply to everything;
-     * other types apply only to their matching category (ice/gas/moon/ore).
+     * Check if this event's tax modifier applies to the given ore category:
+     * one its type covers ("special" covers everything, the others their own
+     * ore), and one picked for it when its ore was narrowed.
      *
      * @param string|null $oreCategory Value from mining_ledger.ore_category
      *                                 e.g. 'ore', 'ice', 'gas', 'moon_r64',
@@ -512,22 +658,25 @@ class MiningEvent extends Model
             return false;
         }
 
-        $allowedCategories = self::EVENT_TYPE_ORE_CATEGORIES[$this->type] ?? [];
-
-        return in_array($oreCategory, $allowedCategories, true);
+        return in_array($oreCategory, $this->oreCategories(), true);
     }
 
     /**
      * List of attribute names that, if modified, invalidate the
-     * event_mining_records materialisation for this event.
+     * event_mining_records materialisation for this event. The refineries a
+     * moon event is narrowed to are rows of their own, so whoever changes
+     * them gathers the event again.
      */
-    protected const SCOPE_AFFECTING_FIELDS = [
+    public const SCOPE_AFFECTING_FIELDS = [
         'type',
         'corporation_id',
         'solar_system_id',
         'location_scope',
         'start_time',
         'end_time',
+        'participation',
+        'members_only',
+        'ore_categories',
     ];
 
     /**

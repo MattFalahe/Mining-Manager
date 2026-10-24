@@ -30,6 +30,8 @@ class BackupDataCommand extends Command
         'mining_events',
         'event_participants',
         'event_mining_records',
+        'mining_manager_event_moons',
+        'mining_manager_event_signups',
         'moon_extractions',
         'moon_extraction_history',
         'moon_extraction_event_log',

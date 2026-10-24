@@ -4556,6 +4556,13 @@ function runEventDiagnostic() {
         const fmtNum = (v) => Number(v || 0).toLocaleString();
         let html = '';
 
+        (data.checks || []).forEach(check => {
+            const tone = check.status === 'ok' ? 'success' : (check.status === 'fail' ? 'error' : 'warning');
+            const icon = check.status === 'ok' ? 'fa-check-circle text-success' : (check.status === 'fail' ? 'fa-times-circle text-danger' : 'fa-exclamation-triangle text-warning');
+            html += `<div class="provider-test-result ${tone}" style="margin-bottom: 10px;">
+                <h5><i class="fas ${icon}"></i> ${check.label}</h5><p class="mb-0">${check.message}</p></div>`;
+        });
+
         if (data.mode === 'single_event' && data.event) {
             // Single event details - controller returns {id, name, type, status, start_time, end_time, participant_count, total_mined, tax_modifier, is_active, is_future, duration}
             const evt = data.event;
