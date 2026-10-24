@@ -444,7 +444,7 @@ class SettingsController extends Controller
         $this->clearSettingsCache();
 
         return redirect(route('mining-manager.settings.index') . '#setup')
-            ->with('success', "{$name} is no longer configured. From now on its members are non-members, taxed by the Global profile.");
+            ->with('success', "{$name} is no longer configured. Its members are non-members from tomorrow, taxed by the Global profile. Their bills for " . Carbon::today()->format('F') . " still follow its profile, on its billing period and code prefix, so the month is billed on one period.");
     }
 
     /**

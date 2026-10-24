@@ -927,14 +927,19 @@ class TheftDetectionService
      * The rows mined on a day the character was outside the home
      * corporations. A member who leaves keeps a member's record for the days
      * they mined as one: neither non-members being kept out nor a bill they
-     * still owe makes those days theft.
+     * still owe makes those days theft. The same goes for a corporation taken
+     * off the list, up to its last day on it.
      */
     protected function onOutsideDays(Collection $rows, array $home): Collection
     {
-        return $rows->filter(function ($row) use ($home) {
-            $corporationId = (int) $this->onDate->forDay((int) $row->character_id, $row->date, $home);
+        $takenOff = $this->settingsService->configuredUntil();
 
-            return $corporationId > 0 && !in_array($corporationId, $home, true);
+        return $rows->filter(function ($row) use ($home, $takenOff) {
+            $day = Carbon::parse($row->date)->toDateString();
+            $members = array_merge($home, array_keys(array_filter($takenOff, fn (string $until) => $day <= $until)));
+            $corporationId = (int) $this->onDate->forDay((int) $row->character_id, $row->date, $members);
+
+            return $corporationId > 0 && !in_array($corporationId, $members, true);
         })->values();
     }
 

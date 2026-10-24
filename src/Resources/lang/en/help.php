@@ -476,7 +476,7 @@ return [
     'settings_intro' => 'Settings hold what applies to the whole install, and the tax profiles: one for each configured corporation, and Global for everyone else. Admin permission is required to change them.',
     'settings_tabs' => 'Settings Pages',
     'settings_setup' => 'Setup',
-    'settings_setup_desc' => 'The Moon Owner Corporation, the one that owns your refineries and runs the tax program, and the list of configured corporations. Adding one gives it a tax profile copied from the Moon Owner\'s, and removing one makes its members non-members from then on.',
+    'settings_setup_desc' => 'The Moon Owner Corporation, the one that owns your refineries and runs the tax program, and the list of configured corporations. Adding one gives it a tax profile copied from the Moon Owner\'s. Removing one makes its members non-members from the next day, while their bills for that month still follow its profile, so the month is billed on one period.',
     'settings_profiles' => 'Tax profiles',
     'settings_profiles_desc' => 'Every profile side by side, Global first: how often its bills go out, the prefix on its payment codes, what it taxes and at which rate. Above the Global column, a line says what its moon rates mean for non-members. A new billing period starts on the 3rd, once the old one\'s last bills have gone out. From the 3rd to the 15th, a profile that has billed none of the month yet can change on the day: tick Change billing periods today.',
     'settings_billing' => 'Billing',

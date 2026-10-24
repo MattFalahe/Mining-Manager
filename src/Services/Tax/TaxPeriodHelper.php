@@ -118,20 +118,25 @@ class TaxPeriodHelper
     }
 
     /**
-     * Every billing period the tax profiles use, so a run on a period
-     * boundary can bill each of them. Before tax profiles there is one.
+     * Every billing period the tax profiles use for a month's bills, so a
+     * run on a period boundary can bill each of them: last month's and this
+     * month's when no month is given. A corporation taken off the list still
+     * bills the month it left in. Before tax profiles there is one.
      *
      * @return array<int, string>
      */
-    public function periodTypesInUse(): array
+    public function periodTypesInUse(?Carbon $month = null): array
     {
         if (!$this->settingsService->usesTaxProfiles()) {
             return [$this->getConfiguredPeriodType()];
         }
 
+        $from = ($month ?? Carbon::today()->subMonthNoOverflow())->copy()->startOfMonth()->toDateString();
+        $leaving = array_keys(array_filter($this->settingsService->configuredUntil(), fn (string $until) => $until >= $from));
+
         return array_values(array_unique(array_map(
             fn (?int $profile) => $this->periodTypeFor($profile),
-            $this->settingsService->taxProfiles()
+            array_merge($this->settingsService->taxProfiles(), $leaving)
         )));
     }
 
@@ -181,17 +186,19 @@ class TaxPeriodHelper
     /**
      * The tax profile whose billing period and code prefix an account's bills
      * use: the profile of its main character's corporation on the first of
-     * the month, so an account never changes period halfway through one.
+     * the month, so an account never changes period halfway through one. A
+     * corporation taken off the list later that month still bills it.
      */
     public function accountProfile(int $mainCharacterId, Carbon $periodStart): ?int
     {
+        $first = $periodStart->copy()->startOfMonth();
         $corporationId = app(CorporationOnDate::class)->forDay(
             $mainCharacterId,
-            $periodStart->copy()->startOfMonth(),
-            $this->settingsService->getHomeCorporationIds()
+            $first,
+            $this->settingsService->memberCorporationsOn($first)
         );
 
-        return $this->settingsService->profileFor($corporationId ? (int) $corporationId : null);
+        return $this->settingsService->profileFor($corporationId ? (int) $corporationId : null, $first);
     }
 
     /**

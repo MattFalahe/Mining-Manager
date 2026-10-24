@@ -553,7 +553,7 @@ class SettingsHealth
             $checks[] = $this->clearedOnce($cleaned, 'Plugin records under a corporation', $recordsElsewhere, ['copy', 'copies'], 'Nothing reads them: the record in use is the one kept with no corporation', 'Every record the plugin keeps for itself is kept once, with no corporation.');
 
             $checks[] = $leftOver
-                ? $this->check('Profiles of corporations taken off the list', 'info', 'Kept for ' . $this->named(array_map(fn (int $id, int $count) => $this->label($id) . " ({$count} values)", array_keys($leftOver), $leftOver)) . '. They tax nobody, and a corporation added again starts from a fresh copy.')
+                ? $this->check('Profiles of corporations taken off the list', 'info', $this->leftOver($leftOver))
                 : $this->check('Profiles of corporations taken off the list', 'ok', 'Only configured corporations have profiles.');
         }
 
@@ -570,6 +570,31 @@ class SettingsHealth
         }
 
         return $checks;
+    }
+
+    /**
+     * What the profiles of corporations taken off the list still do. One
+     * taken off this month or last still bills its members for the month it
+     * left in, and every one keeps taxing its members' days from before it
+     * left, should such a day be built again.
+     *
+     * @param array<int, int> $leftOver corporation_id => values kept
+     */
+    private function leftOver(array $leftOver): string
+    {
+        $until = $this->settings->configuredUntil();
+        $recent = Carbon::today()->subMonthNoOverflow()->startOfMonth()->toDateString();
+        $billing = [];
+
+        foreach (array_keys($leftOver) as $id) {
+            if (isset($until[$id]) && $until[$id] >= $recent) {
+                $billing[] = $this->label($id) . ', taken off on ' . $until[$id];
+            }
+        }
+
+        return 'Kept for ' . $this->named(array_map(fn (int $id, int $count) => $this->label($id) . " ({$count} values)", array_keys($leftOver), $leftOver)) . '.'
+            . ($billing ? ' Still billing its members for the month it was taken off in: ' . $this->named($billing) . '.' : '')
+            . ' Otherwise a profile kept here only taxes its members\' days from before the corporation left, should one be built again. A corporation added again starts from a fresh copy.';
     }
 
     /**

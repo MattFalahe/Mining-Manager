@@ -90,7 +90,7 @@ class CalculateMonthlyTaxesCommand extends Command
             $periodDate = Carbon::parse($this->option('period-start'));
             $periodTypes = $this->option('period-type')
                 ? [$this->option('period-type')]
-                : $this->periodHelper->periodTypesInUse();
+                : $this->periodHelper->periodTypesInUse($periodDate);
 
             foreach ($periodTypes as $periodType) {
                 $runs[] = [$periodType, ...$this->periodHelper->getPeriodBounds($periodDate, $periodType)];

@@ -147,6 +147,7 @@ final class SettingsRegistry
         'dashboard_leaderboard_corporation_ids' => self::INSTALL,
 
         // The plugin's own records
+        'general.configured_until' => self::STATE,
         'classification.epoch' => self::STATE,
         'payment.dedup_epoch' => self::STATE,
         'tax.part_payment_epoch' => self::STATE,

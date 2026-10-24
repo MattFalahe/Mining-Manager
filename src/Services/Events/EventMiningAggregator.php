@@ -63,9 +63,6 @@ class EventMiningAggregator
      */
     protected $settingsService;
 
-    /** @var array<int, int>|null the corporations whose members are members, for one run */
-    private ?array $memberCorporations = null;
-
     public function __construct(
         OreValuationService $valuationService,
         SettingsManagerService $settingsService
@@ -582,9 +579,7 @@ class EventMiningAggregator
      */
     private function minedFor(MiningEvent $event, int $characterId, $date): bool
     {
-        $this->memberCorporations ??= $this->settingsService->getHomeCorporationIds();
-
-        return app(CorporationOnDate::class)->forDay($characterId, $date, $this->memberCorporations) === (int) $event->corporation_id;
+        return app(CorporationOnDate::class)->forDay($characterId, $date, $this->settingsService->memberCorporationsOn($date)) === (int) $event->corporation_id;
     }
 
     /**

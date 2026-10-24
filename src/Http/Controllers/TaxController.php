@@ -762,7 +762,7 @@ class TaxController extends Controller
             // Every billing period the tax profiles use, each with its periods
             // in the month: monthly has one, twice a month two. A run for one
             // period bills only the accounts on it.
-            $periodTypes = $periodHelper->periodTypesInUse();
+            $periodTypes = $periodHelper->periodTypesInUse(!empty($validated['period_start']) ? Carbon::parse($validated['period_start']) : $month);
             $periods = [];
             foreach ($periodTypes as $periodType) {
                 $bounds = !empty($validated['period_start'])

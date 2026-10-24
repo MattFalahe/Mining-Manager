@@ -32,6 +32,15 @@ class SettingsManagerService
     ];
 
     /**
+     * The last day each corporation taken off the configured list was still
+     * on it, as corporation_id => Y-m-d. Its members count as members up to
+     * that day, and their bills for that month follow its profile, so a
+     * corporation taken off part way through a month has the month billed on
+     * one period. Adding it back forgets the day.
+     */
+    public const CONFIGURED_UNTIL_KEY = 'general.configured_until';
+
+    /**
      * Active corporation ID for settings context
      *
      * @var int|null
@@ -53,6 +62,14 @@ class SettingsManagerService
      * @var array{0: float, 1: array<int>}|null
      */
     private ?array $homeCorporations = null;
+
+    /**
+     * The corporations taken off the list for a few seconds, as [until,
+     * days]. Read with every profile setting, like the list itself.
+     *
+     * @var array{0: float, 1: array<int, string>}|null
+     */
+    private ?array $takenOff = null;
 
     /**
      * Set the active corporation context
@@ -189,8 +206,9 @@ class SettingsManagerService
      * - an install-wide setting, or one of the plugin's own records, is the
      *   global row whoever asks;
      * - a profile setting is the corporation's own profile when it is
-     *   configured, and the Global profile otherwise, because everyone outside
-     *   the configured corporations is taxed by Global;
+     *   configured, or was taken off the list (see hasOwnProfile()), and the
+     *   Global profile otherwise, because everyone outside the configured
+     *   corporations is taxed by Global;
      * - a key being retired, or one the registry does not know, is read the
      *   way it always was until the release that removes it.
      *
@@ -208,10 +226,22 @@ class SettingsManagerService
             case SettingsRegistry::STATE:
                 return [null, true];
             case SettingsRegistry::PROFILE:
-                return [$corporationId && $this->isConfiguredCorporation($corporationId) ? $corporationId : null, true];
+                return [$corporationId && $this->hasOwnProfile($corporationId) ? $corporationId : null, true];
             default:
                 return [$corporationId, false];
         }
+    }
+
+    /**
+     * Whether a corporation's profile settings are its own: a configured
+     * corporation's, or one taken off the list, whose profile still taxes
+     * its members' days up to then and bills the month they left in. Which
+     * profile taxes whom is decided by profileFor(); this only says where a
+     * profile it picked is kept.
+     */
+    private function hasOwnProfile(int $corporationId): bool
+    {
+        return $this->isConfiguredCorporation($corporationId) || isset($this->configuredUntil()[$corporationId]);
     }
 
     /**
@@ -277,6 +307,7 @@ class SettingsManagerService
         // never land in a copy that nothing reads.
         [$corporationId] = $this->placeFor($key, $this->activeCorporationId);
         $this->homeCorporations = null;
+        $this->takenOff = null;
 
         // Clear cache BEFORE writing — if another process reads between our
         // DB write and a post-write cache clear, it would populate the cache
@@ -593,12 +624,15 @@ class SettingsManagerService
      * corporation's rates for a member of any configured corporation. Anyone
      * else is taxed by the Global profile under tax profiles, and before them
      * at the guest rates from the Moon Owner's settings, where a guest rate
-     * of 0 means 0% rather than the member rate.
+     * of 0 means 0% rather than the member rate. Asked about a day, a
+     * corporation taken off the list since is still a member's up to its
+     * last day on it.
      *
      * @param int|null $characterCorporationId The corporation ID of the character being taxed
+     * @param mixed $day the day the mining was done, or null for today's members
      * @return array
      */
-    public function getTaxRatesForCorporation(?int $characterCorporationId): array
+    public function getTaxRatesForCorporation(?int $characterCorporationId, $day = null): array
     {
         // Get base (corp member) tax rates
         $corpTaxRates = $this->getTaxRates();
@@ -610,7 +644,7 @@ class SettingsManagerService
 
         // Build list of "home" corporations: configured corps + moon owner corp
         // Anyone NOT in this list is a non-member
-        $homeCorporationIds = $this->getHomeCorporationIds();
+        $homeCorporationIds = $day === null ? $this->getHomeCorporationIds() : $this->memberCorporationsOn($day);
 
         // If no corporations configured at all, treat everyone as corp member
         if (empty($homeCorporationIds)) {
@@ -736,13 +770,30 @@ class SettingsManagerService
     }
 
     /**
-     * Give a corporation configured part way through a month the billing
-     * period its members were on until now, Global's, with the one its
-     * profile came with queued like any change of period, unless the change
-     * can be made today. Taking the new period at once could leave part of
-     * the month billed twice or not at all for them.
+     * Who bills a corporation's members this month while it is not
+     * configured, as [profile, its billing period]: the corporation's own
+     * profile when it was taken off the list this month, which still bills
+     * the month, otherwise Global. Asked before the corporation is
+     * configured, since configuring it rewrites its profile.
+     *
+     * @return array{0: int|null, 1: string}
      */
-    private function startOnMembersPeriod(int $corporationId): void
+    private function billingThisMonth(int $corporationId): array
+    {
+        $until = $this->configuredUntil()[$corporationId] ?? null;
+        $profile = $until !== null && $until >= Carbon::today()->startOfMonth()->toDateString() ? $corporationId : null;
+
+        return [$profile, app(\MiningManager\Services\Tax\TaxPeriodHelper::class)->periodTypeFor($profile)];
+    }
+
+    /**
+     * Give a corporation configured part way through a month the billing
+     * period its members were on until now, as billingThisMonth() found it,
+     * with the one its profile came with queued like any change of period,
+     * unless the change can be made today. Taking the new period at once
+     * could leave part of the month billed twice or not at all for them.
+     */
+    private function startOnMembersPeriod(int $corporationId, ?int $billedBy, string $membersPeriod): void
     {
         $periods = app(\MiningManager\Services\Tax\TaxPeriodHelper::class);
         $read = fn (string $key, $default = null) => $this->getSettingForCorporation($key, $corporationId, $default);
@@ -751,8 +802,8 @@ class SettingsManagerService
         $active = (string) $read('tax_rates.tax_calculation_period', 'monthly');
         $target = $read('tax_rates.tax_calculation_period_pending') ?: $active;
 
-        if (!$periods->canChangePeriodToday(null)) {
-            $active = $periods->periodTypeFor(null);
+        if (!$periods->canChangePeriodToday($billedBy)) {
+            $active = $membersPeriod;
         }
 
         $write('tax_rates.tax_calculation_period', $active);
@@ -799,6 +850,8 @@ class SettingsManagerService
      */
     public function configureCorporation(int $corporationId, ?int $copyFrom): void
     {
+        [$billedBy, $membersPeriod] = $this->billingThisMonth($corporationId);
+
         foreach (SettingsRegistry::keys(SettingsRegistry::PROFILE) as $key) {
             $query = Setting::where('key', $key);
             $copyFrom ? $query->where('corporation_id', $copyFrom) : $query->whereNull('corporation_id');
@@ -817,20 +870,29 @@ class SettingsManagerService
         }
 
         $this->addConfiguredCorporation($corporationId);
-        $this->startOnMembersPeriod($corporationId);
+        $this->startOnMembersPeriod($corporationId, $billedBy, $membersPeriod);
     }
 
     /**
-     * Take a corporation off the configured list. From then on its members
-     * are non-members, taxed by Global. Its profile stays where it is, so
-     * nothing is lost if it is added back, though adding it copies afresh.
-     * The Moon Owner is always configured and cannot be taken off.
+     * Take a corporation off the configured list. Its members count as
+     * members to the end of today and as non-members, taxed by Global, from
+     * tomorrow. Their bills for this month still follow its profile, on its
+     * billing period and code prefix, so the month is billed on one period.
+     * The profile stays where it is; adding the corporation back copies
+     * afresh. The Moon Owner is always configured and cannot be taken off.
      */
     public function removeConfiguredCorporation(int $corporationId): void
     {
         $ids = array_map('intval', (array) $this->getSettingForCorporation(SettingsTransfer::CONFIGURED_KEY, null, []));
+        if (!in_array($corporationId, $ids, true)) {
+            return;
+        }
 
         $this->updateGlobalSetting(SettingsTransfer::CONFIGURED_KEY, array_values(array_diff($ids, [$corporationId])), 'json');
+
+        $until = $this->configuredUntil();
+        $until[$corporationId] = Carbon::today()->toDateString();
+        $this->updateGlobalSetting(self::CONFIGURED_UNTIL_KEY, $until, 'json');
     }
 
     /**
@@ -1469,6 +1531,7 @@ class SettingsManagerService
 
             Setting::whereNotIn('key', $records)->delete();
             $this->homeCorporations = null;
+            $this->takenOff = null;
 
             // Clear only mining-manager cache keys (not the entire application cache)
             foreach ($settingKeys as $key) {
@@ -1618,6 +1681,13 @@ class SettingsManagerService
         $configuredBefore = $profiles ? $this->getHomeCorporationIds() : [];
         $periodRows = [];
 
+        // A corporation taken off the list this month and configured again by
+        // the file carries on with the period its members are billed on.
+        $billing = [];
+        foreach (array_keys($profiles ? $this->configuredUntil() : []) as $corporationId) {
+            $billing[$corporationId] = $this->billingThisMonth($corporationId);
+        }
+
         DB::beginTransaction();
 
         try {
@@ -1724,7 +1794,7 @@ class SettingsManagerService
             // members were on, as one added on the Setup page does.
             $added = $profiles ? array_diff($this->getHomeCorporationIds(), $configuredBefore) : [];
             foreach ($added as $corporationId) {
-                $this->startOnMembersPeriod($corporationId);
+                $this->startOnMembersPeriod($corporationId, ...($billing[$corporationId] ?? $this->billingThisMonth($corporationId)));
             }
 
             if (!empty($data['webhooks']) && is_array($data['webhooks'])) {
@@ -1828,15 +1898,71 @@ class SettingsManagerService
     }
 
     /**
+     * Corporations taken off the configured list, each with the last day it
+     * was on it. See CONFIGURED_UNTIL_KEY.
+     *
+     * @return array<int, string> corporation_id => Y-m-d
+     */
+    public function configuredUntil(): array
+    {
+        if ($this->takenOff !== null && $this->takenOff[0] > microtime(true)) {
+            return $this->takenOff[1];
+        }
+
+        $days = [];
+        if ($this->usesTaxProfiles()) {
+            $stored = $this->getSettingForCorporation(self::CONFIGURED_UNTIL_KEY, null, []);
+            $stored = is_string($stored) ? json_decode($stored, true) : $stored;
+
+            foreach ((array) $stored as $corporationId => $day) {
+                if ((int) $corporationId > 0 && is_string($day) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $day)) {
+                    $days[(int) $corporationId] = $day;
+                }
+            }
+        }
+
+        $this->takenOff = [microtime(true) + 5, $days];
+
+        return $days;
+    }
+
+    /**
+     * The corporations whose members were members on a day: those configured
+     * now, and any taken off the list since, up to their last day on it.
+     *
+     * @param mixed $day
+     * @return array<int>
+     */
+    public function memberCorporationsOn($day): array
+    {
+        $members = $this->getHomeCorporationIds();
+        $date = Carbon::parse($day)->toDateString();
+
+        foreach ($this->configuredUntil() as $corporationId => $until) {
+            if ($date <= $until && !in_array($corporationId, $members, true)) {
+                $members[] = $corporationId;
+            }
+        }
+
+        return $members;
+    }
+
+    /**
      * The tax profile for a corporation's members: its own when it is
      * configured, Global (null) when it is not. A pilot whose corporation is
      * not known yet counts as the Moon Owner's, rather than being charged the
      * non-members' rates on the strength of a lookup that has not finished.
      * With nothing configured at all there is only Global.
+     *
+     * Asked about a day, a corporation taken off the list since still counts
+     * up to its last day on it, so the days its members mined as members, and
+     * their bills for the month it left in, keep its profile.
+     *
+     * @param mixed $day
      */
-    public function profileFor(?int $corporationId): ?int
+    public function profileFor(?int $corporationId, $day = null): ?int
     {
-        $home = $this->getHomeCorporationIds();
+        $home = $day === null ? $this->getHomeCorporationIds() : $this->memberCorporationsOn($day);
 
         if (!$home) {
             return null;
@@ -1903,6 +2029,12 @@ class SettingsManagerService
         sort($ids);
 
         $this->updateGlobalSetting(SettingsTransfer::CONFIGURED_KEY, $ids, 'json');
+
+        $until = $this->configuredUntil();
+        if (isset($until[$corporationId])) {
+            unset($until[$corporationId]);
+            $this->updateGlobalSetting(self::CONFIGURED_UNTIL_KEY, $until, 'json');
+        }
     }
 
     /**

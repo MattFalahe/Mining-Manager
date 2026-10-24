@@ -266,8 +266,9 @@ class LedgerSummaryService
             $this->settingsService->setActiveCorporation((int) $moonOwnerCorpId);
         }
 
-        // Get list of configured corporations (for character ledger tax filtering)
-        $homeCorporationIds = $this->settingsService->getHomeCorporationIds();
+        // The corporations whose members were members that day, a corporation
+        // taken off the list since included up to its last day on it.
+        $homeCorporationIds = $this->settingsService->memberCorporationsOn($dateCarbon);
 
         // The corporation the character was in that day, not the one they are
         // in now. It decides which profile taxes the day, whether personal
@@ -282,7 +283,7 @@ class LedgerSummaryService
         // are rebuilt.
         $profilesFrom = $this->settingsService->profilesTaxFrom();
         $rule = $profilesFrom !== null && $dateCarbon->gte($profilesFrom)
-            ? $this->profileRule($characterCorpId ? (int) $characterCorpId : null, $homeCorporationIds, $moonOwnerCorpId ? (int) $moonOwnerCorpId : null)
+            ? $this->profileRule($characterCorpId ? (int) $characterCorpId : null, $homeCorporationIds, $moonOwnerCorpId ? (int) $moonOwnerCorpId : null, $dateCarbon)
             : null;
 
         // Get corporation_id for the summary — prefer Moon Owner Corp if entries exist
@@ -361,7 +362,7 @@ class LedgerSummaryService
                 }
 
                 $isTaxable = $this->shouldTaxType($typeId, $entryCorporationId, $moonOwnerCorpId);
-                $baseTaxRate = $isTaxable ? $this->getTaxRateForType($typeId, $characterCorpId) : 0;
+                $baseTaxRate = $isTaxable ? $this->getTaxRateForType($typeId, $characterCorpId, $dateCarbon) : 0;
             } else {
                 // Before tax profiles: a personal ledger is taxed only for a
                 // member of a configured corporation, as their corporation
@@ -377,7 +378,7 @@ class LedgerSummaryService
 
                 $isTaxable = !TypeIdRegistry::isMoonOre($typeId)
                     && $this->shouldTaxType($typeId, null, $moonOwnerCorpId);
-                $baseTaxRate = $isTaxable ? $this->getTaxRateForType($typeId, $characterCorpId) : 0;
+                $baseTaxRate = $isTaxable ? $this->getTaxRateForType($typeId, $characterCorpId, $dateCarbon) : 0;
             }
 
             // Phase 2 per-row attribution: look up how much of this (char, date, type)
@@ -549,9 +550,9 @@ class LedgerSummaryService
         }
 
         $moonOwnerCorpId = (int) $this->settingsService->getSettingForCorporation('general.moon_owner_corporation_id', null) ?: null;
-        $homeCorporationIds = $this->settingsService->getHomeCorporationIds();
+        $homeCorporationIds = $this->settingsService->memberCorporationsOn($day);
         $corporationId = app(CorporationOnDate::class)->forDay($characterId, $day, $homeCorporationIds);
-        $rule = $this->profileRule($corporationId ? (int) $corporationId : null, $homeCorporationIds, $moonOwnerCorpId);
+        $rule = $this->profileRule($corporationId ? (int) $corporationId : null, $homeCorporationIds, $moonOwnerCorpId, $day);
 
         if ($this->profileLeavesOut($rule, $this->sourceOf($refineryCorporationId, $moonOwnerCorpId)) !== null
             || !$this->selectorTaxes($rule['selector'], $typeId, $refineryCorporationId, $moonOwnerCorpId)) {
@@ -590,12 +591,12 @@ class LedgerSummaryService
      * @param array<int> $home
      * @return array{member: bool, profile: int|null, rates: array, selector: array, moon: string, owner: int|null}
      */
-    protected function profileRule(?int $corporationId, array $home, ?int $moonOwnerCorpId): array
+    protected function profileRule(?int $corporationId, array $home, ?int $moonOwnerCorpId, $day): array
     {
         $member = $home
             ? $corporationId !== null && in_array($corporationId, $home, true)
             : $corporationId !== null;
-        $profile = $this->settingsService->profileFor($corporationId);
+        $profile = $this->settingsService->profileFor($corporationId, $day);
 
         $selector = $this->settingsService->taxSelectorFor($profile);
 
@@ -759,11 +760,12 @@ class LedgerSummaryService
      *
      * @param int $typeId
      * @param int|null $characterCorpId
+     * @param mixed $day the day the ore was mined, or null for today's members
      * @return float Tax rate as percentage (0-100)
      */
-    public function getTaxRateForType(int $typeId, ?int $characterCorpId = null): float
+    public function getTaxRateForType(int $typeId, ?int $characterCorpId = null, $day = null): float
     {
-        return $this->rateIn($this->settingsService->getTaxRatesForCorporation($characterCorpId), $typeId);
+        return $this->rateIn($this->settingsService->getTaxRatesForCorporation($characterCorpId, $day), $typeId);
     }
 
     /**
@@ -1342,17 +1344,21 @@ class LedgerSummaryService
             }
         }
 
-        // Who taxes a day turns on the corporation the miner was in that day.
-        $homeCorporationIds = $this->settingsService->getHomeCorporationIds();
+        // Who taxes a day turns on the corporation the miner was in that day,
+        // and on the corporations whose members were members that day.
+        $members = [];
+        $membersOn = function (string $day) use (&$members) {
+            return $members[$day] ??= $this->settingsService->memberCorporationsOn($day);
+        };
         $onDate = app(CorporationOnDate::class);
-        $corporationOn = fn (int $characterId, string $day) => ((int) $onDate->forDay($characterId, $day, $homeCorporationIds)) ?: null;
+        $corporationOn = fn (int $characterId, string $day) => ((int) $onDate->forDay($characterId, $day, $membersOn($day))) ?: null;
 
         // Before tax profiles, personal mining is only taxed for members of the
         // corporations this install looks after.
-        $taxedMember = function (int $characterId, string $day) use ($corporationOn, $homeCorporationIds) {
+        $taxedMember = function (int $characterId, string $day) use ($corporationOn, $membersOn) {
             $corporationId = $corporationOn($characterId, $day);
 
-            return $corporationId !== null && (!$homeCorporationIds || in_array($corporationId, $homeCorporationIds, true));
+            return $corporationId !== null && (!$membersOn($day) || in_array($corporationId, $membersOn($day), true));
         };
 
         $profilesFrom = $this->settingsService->profilesTaxFrom()?->toDateString();
@@ -1374,8 +1380,9 @@ class LedgerSummaryService
             if ($profilesFrom !== null && $day >= $profilesFrom) {
                 $rule = $rules[$row->character_id . '|' . $day] ??= $this->profileRule(
                     $corporationOn((int) $row->character_id, $day),
-                    $homeCorporationIds,
-                    $moonOwnerCorpId
+                    $membersOn($day),
+                    $moonOwnerCorpId,
+                    $day
                 );
                 $reason = $this->profileLeavesOut($rule, $source);
 

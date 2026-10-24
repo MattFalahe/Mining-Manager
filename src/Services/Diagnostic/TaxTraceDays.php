@@ -22,7 +22,7 @@ class TaxTraceDays
     protected SettingsManagerService $settings;
     protected LedgerSummaryService $summaries;
 
-    /** @var array{home: array<int>, owner: int|null, from: Carbon|null}|null */
+    /** @var array{owner: int|null, from: Carbon|null}|null */
     private ?array $context = null;
 
     /** @var array<int, object> corporation_id => name and ticker */
@@ -62,11 +62,12 @@ class TaxTraceDays
             ];
         }
 
-        $corporationId = app(CorporationOnDate::class)->forDay($characterId, $day, $context['home']);
+        $members = $this->settings->memberCorporationsOn($day);
+        $corporationId = app(CorporationOnDate::class)->forDay($characterId, $day, $members);
         $corporationId = $corporationId ? (int) $corporationId : null;
-        $profile = $this->settings->profileFor($corporationId);
+        $profile = $this->settings->profileFor($corporationId, $day);
 
-        if (!$context['home']) {
+        if (!$members) {
             $label = 'Global, which taxes everyone while no corporation is configured';
         } elseif ($profile === null) {
             $label = 'Global, as a non-member';
@@ -145,21 +146,21 @@ class TaxTraceDays
     }
 
     /**
-     * What every day of a trace reads the same: the configured corporations,
-     * the Moon Owner, and the first day taxed by profiles.
+     * What every day of a trace reads the same: the Moon Owner and the first
+     * day taxed by profiles. Names are loaded for the configured corporations
+     * and for those taken off the list, whose profiles tax the days before
+     * they left.
      */
     private function context(): array
     {
         if ($this->context === null) {
-            $home = $this->settings->getHomeCorporationIds();
             $this->names = DB::table('corporation_infos')
-                ->whereIn('corporation_id', $home)
+                ->whereIn('corporation_id', array_merge($this->settings->getHomeCorporationIds(), array_keys($this->settings->configuredUntil())))
                 ->get(['corporation_id', 'name', 'ticker'])
                 ->keyBy('corporation_id')
                 ->all();
 
             $this->context = [
-                'home' => $home,
                 'owner' => (int) $this->settings->getSettingForCorporation('general.moon_owner_corporation_id', null) ?: null,
                 'from' => $this->settings->profilesTaxFrom(),
             ];
