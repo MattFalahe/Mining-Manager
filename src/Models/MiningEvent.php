@@ -694,6 +694,12 @@ class MiningEvent extends Model
      * A full refresh (delete-then-rebuild) is the safest path because
      * it's hard to surgically undo filter changes incrementally.
      *
+     * A status changed on the edit form, an event cancelled or brought
+     * back, keeps the records but decides whether the rate applies at all,
+     * so their days are worked out again. A deleted event's records go and
+     * its days are worked out without it. A billed day keeps what it was
+     * billed either way.
+     *
      * We ignore non-scope saves (stats updates from EventTrackingService
      * rolling up event_participants into total_mined, participant_count,
      * etc.) to avoid an infinite aggregate ⇄ save loop.
@@ -705,15 +711,25 @@ class MiningEvent extends Model
     protected static function booted(): void
     {
         static::saved(function (self $event) {
-            if (!$event->wasChanged(self::SCOPE_AFFECTING_FIELDS)) {
-                return;
-            }
-
             try {
-                app(EventMiningAggregator::class)->aggregate($event, true);
+                if ($event->wasChanged(self::SCOPE_AFFECTING_FIELDS)) {
+                    app(EventMiningAggregator::class)->aggregate($event, true);
+                } elseif ($event->wasChanged('status')) {
+                    app(EventMiningAggregator::class)->rebuildDays($event);
+                }
             } catch (\Throwable $e) {
                 Log::error(
-                    "Mining Manager: Re-aggregation failed for event {$event->id} after scope edit: {$e->getMessage()}"
+                    "Mining Manager: Re-aggregation failed for event {$event->id} after an edit: {$e->getMessage()}"
+                );
+            }
+        });
+
+        static::deleted(function (self $event) {
+            try {
+                app(EventMiningAggregator::class)->forget($event);
+            } catch (\Throwable $e) {
+                Log::error(
+                    "Mining Manager: Could not take deleted event {$event->id}'s discount off its days: {$e->getMessage()}"
                 );
             }
         });

@@ -724,11 +724,14 @@ class LedgerSummaryService
 
                 // Sum qualified quantity + value from event_mining_records for
                 // this specific slice. Indexed by (character_id, mining_date,
-                // type_id, solar_system_id) per migration 000005.
+                // type_id, solar_system_id) per migration 000005. On an event
+                // only for those who signed up, anyone else's mining is
+                // recorded too but does not qualify.
                 $agg = EventMiningRecord::where('event_id', $event->id)
                     ->where('character_id', $characterId)
                     ->where('mining_date', $date->toDateString())
                     ->where('type_id', $typeId)
+                    ->when(MiningEvent::hasRules(), fn ($query) => $query->where('qualifies', true))
                     ->selectRaw('SUM(quantity) as qty, SUM(value_isk) as val')
                     ->first();
 

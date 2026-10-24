@@ -133,10 +133,11 @@ class UpdateMiningEventsCommand extends Command
                     // event_mining_records, while the event is active and for
                     // a few days after it ends: a refinery reports a day's
                     // mining only once the day is over, so the last day of an
-                    // event always arrives after it has ended. Older events
-                    // only change when their scope is edited (the MiningEvent
-                    // saved() hook).
-                    if ($event->status === 'active' || $this->stillReporting($event)) {
+                    // event always arrives after it has ended. An event set
+                    // up after its days had passed is gathered once. Older
+                    // events only change when their scope is edited (the
+                    // MiningEvent saved() hook).
+                    if ($event->status === 'active' || $this->stillReporting($event) || $this->neverGathered($event)) {
                         $agg = $aggregator->aggregate($event);
                         if (($agg['created'] ?? 0) > 0 || ($agg['updated'] ?? 0) > 0) {
                             $this->line("  → aggregated {$agg['created']} new record(s), refreshed {$agg['updated']}, days built again {$agg['days']}");
@@ -179,5 +180,16 @@ class UpdateMiningEventsCommand extends Command
         return $event->status === 'completed'
             && $event->end_time !== null
             && $event->end_time->gte(Carbon::now()->subDays(PersonalMiningReconciler::DEFAULT_DAYS));
+    }
+
+    /**
+     * Whether a finished event has never been gathered: one set up after its
+     * days had passed goes from planned to completed on its first tick
+     * without ever being active. Every tick stamps last_updated on the
+     * events it looks at, so this holds once.
+     */
+    private function neverGathered(MiningEvent $event): bool
+    {
+        return $event->status === 'completed' && $event->last_updated === null;
     }
 }

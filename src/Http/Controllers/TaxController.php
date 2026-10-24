@@ -573,6 +573,7 @@ class TaxController extends Controller
                 ->join('mining_events', 'event_mining_records.event_id', '=', 'mining_events.id')
                 ->whereIn('mining_events.status', ['active', 'completed'])
                 ->where('mining_events.tax_modifier', '<', 0)
+                ->when(MiningEvent::hasRules(), fn ($query) => $query->where('event_mining_records.qualifies', true))
                 ->selectRaw('
                     event_mining_records.character_id,
                     event_mining_records.mining_date,

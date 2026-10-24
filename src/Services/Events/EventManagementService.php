@@ -4,7 +4,6 @@ namespace MiningManager\Services\Events;
 
 use MiningManager\Models\MiningEvent;
 use MiningManager\Models\EventParticipant;
-use MiningManager\Models\MiningLedger;
 use MiningManager\Services\Configuration\SettingsManagerService;
 use MiningManager\Services\Notification\NotificationService;
 use Illuminate\Support\Facades\Log;
@@ -305,7 +304,9 @@ class EventManagementService
     }
 
     /**
-     * Update event data (participants and statistics).
+     * Gather the event's mining again from scratch and roll it up into its
+     * participants, by the same rules the every-minute update uses, so the
+     * Update Data button cannot count mining the event does not.
      *
      * @param MiningEvent $event
      * @return array
@@ -314,64 +315,13 @@ class EventManagementService
     {
         Log::debug("Mining Manager: Updating data for event {$event->id}");
 
-        // Get mining activity during event period
-        $query = MiningLedger::whereBetween('date', [
-            $event->start_time,
-            $event->end_time ?? Carbon::now()
-        ]);
-
-        // Filter by location if specified
-        if ($event->solar_system_id) {
-            $query->where('solar_system_id', $event->solar_system_id);
-        }
-
-        $miningActivity = $query->get();
-
-        if ($miningActivity->isEmpty()) {
-            Log::debug("Mining Manager: No mining activity found for event {$event->id}");
-            return [
-                'participants' => 0,
-                'total_mined' => 0,
-            ];
-        }
-
-        // Update or create participant records
-        $participantCount = 0;
-        $totalMined = 0;
-
-        DB::transaction(function () use ($event, $miningActivity, &$participantCount, &$totalMined) {
-            foreach ($miningActivity->groupBy('character_id') as $characterId => $records) {
-                $quantity = $records->sum('quantity');
-                $totalMined += $quantity;
-
-                EventParticipant::updateOrCreate(
-                    [
-                        'event_id' => $event->id,
-                        'character_id' => $characterId,
-                    ],
-                    [
-                        'quantity_mined' => $quantity,
-                        'last_updated' => Carbon::now(),
-                        'joined_at' => $records->min('date'),
-                    ]
-                );
-
-                $participantCount++;
-            }
-
-            // Update event statistics
-            $event->update([
-                'participant_count' => $participantCount,
-                'total_mined' => $totalMined,
-                'last_updated' => Carbon::now(),
-            ]);
-        });
-
-        Log::info("Mining Manager: Updated event {$event->id} data: {$participantCount} participants, " . number_format($totalMined) . " ore mined");
+        app(EventMiningAggregator::class)->aggregate($event, true);
+        $this->trackingService->updateEventTracking($event);
+        $event->refresh();
 
         return [
-            'participants' => $participantCount,
-            'total_mined' => $totalMined,
+            'participants' => (int) $event->participant_count,
+            'total_mined' => (int) $event->total_mined,
         ];
     }
 

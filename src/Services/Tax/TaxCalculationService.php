@@ -6,7 +6,6 @@ use MiningManager\Models\MiningLedger;
 use MiningManager\Models\MiningLedgerDailySummary;
 use MiningManager\Models\MiningTax;
 use MiningManager\Models\MiningPriceCache;
-use MiningManager\Models\MiningEvent;
 use MiningManager\Services\Configuration\SettingsManagerService;
 use MiningManager\Services\Ledger\LedgerSummaryService;
 use MiningManager\Services\TypeIdRegistry;
@@ -628,91 +627,6 @@ class TaxCalculationService
             'account_tax' => round($accountTax, 2),
             'account_characters' => count($group),
         ];
-    }
-
-    /**
-     * Get the event tax modifier for a specific mining entry.
-     * Checks if the character is participating in any active events during this mining entry.
-     *
-     * When multiple events overlap (same date, same location), the MOST BENEFICIAL
-     * modifier for the miner is used (lowest value = most tax discount).
-     *
-     * Events can be:
-     * - Global (corporation_id = null): Applies to all corporations
-     * - Corp-specific (corporation_id set): Only applies to that corporation's miners
-     *
-     * @param int $characterId
-     * @param object $entry Mining ledger entry
-     * @param int|null $characterCorpId The character's corporation ID for filtering corp-specific events
-     * @return int Tax modifier (-100 to +100)
-     */
-    private function getEventTaxModifier(int $characterId, $entry, ?int $characterCorpId = null): int
-    {
-        // Find active events during this mining entry's date
-        // Order by tax_modifier ASC (best for miner first) and id ASC (tie-breaker)
-        $events = MiningEvent::where('status', 'active')
-            ->where('start_time', '<=', $entry->date)
-            ->where(function ($query) use ($entry) {
-                $query->whereNull('end_time')
-                      ->orWhere('end_time', '>=', $entry->date);
-            })
-            ->whereHas('participants', function ($query) use ($characterId) {
-                $query->where('character_id', $characterId);
-            })
-            // Filter by corporation: global events (null) OR character's corporation
-            ->where(function ($query) use ($characterCorpId) {
-                $query->whereNull('corporation_id')  // Global events
-                      ->orWhere('corporation_id', $characterCorpId);  // Corp-specific events
-            })
-            ->orderBy('tax_modifier', 'asc')  // Best benefit first (lowest = most discount)
-            ->orderBy('id', 'asc')            // Tie-breaker: earliest created
-            ->get();
-
-        if ($events->isEmpty()) {
-            return 0;
-        }
-
-        // Find the best (most beneficial) modifier among applicable events
-        // Lower modifier = more tax discount for miner (-100 = tax-free, 0 = normal, +100 = double)
-        $bestModifier = 0;
-        $appliedEvent = null;
-
-        foreach ($events as $event) {
-            // Check if the mining entry's system falls within the event's location scope.
-            // Resolves constellation/region scopes to system ID lists via mapDenormalize.
-            if (!$event->matchesSystem($entry->solar_system_id)) {
-                continue;
-            }
-
-            // Check if the event's type applies to this ore category.
-            // "special" events apply to everything; mining_op → ore,
-            // moon_extraction → moon_*, ice_mining → ice, gas_huffing → gas.
-            // $entry->ore_category is set by ProcessMiningLedgerCommand
-            // (corp observer path) and ImportCharacterMiningCommand
-            // (personal character mining path) at ingestion time.
-            $oreCategory = $entry->ore_category ?? null;
-            if ($oreCategory && !$event->appliesToOreCategory($oreCategory)) {
-                continue;
-            }
-
-            // Take the most beneficial modifier (lowest value = most tax discount)
-            if ($appliedEvent === null || $event->tax_modifier < $bestModifier) {
-                $bestModifier = $event->tax_modifier;
-                $appliedEvent = $event;
-            }
-        }
-
-        if ($appliedEvent) {
-            Log::debug("Mining Manager: Applying event '{$appliedEvent->name}' tax modifier ({$bestModifier}%) for character {$characterId}", [
-                'event_id' => $appliedEvent->id,
-                'character_id' => $characterId,
-                'mining_date' => $entry->date,
-                'solar_system_id' => $entry->solar_system_id ?? null,
-            ]);
-            return $bestModifier;
-        }
-
-        return 0;
     }
 
     /**
