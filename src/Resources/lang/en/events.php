@@ -86,8 +86,8 @@ return [
     'view_all_events' => 'View All Events',
     'view_active_events' => 'View Active Events',
     'browse_events' => 'Browse Events',
-    'join' => 'Join Event',
-    'leave' => 'Leave Event',
+    'join' => 'Sign Up',
+    'leave' => 'Withdraw',
     'unregister' => 'Unregister',
     'close' => 'Close',
     
@@ -109,9 +109,9 @@ return [
     'participate_to_see_history' => 'Participate in events to build your mining history!',
     
     // Confirmations
-    'confirm_leave' => 'Are you sure you want to leave this event?',
+    'confirm_leave' => 'Withdraw your sign-up for this event?',
     'confirm_delete' => 'Are you sure you want to delete this event?',
-    'error_leaving' => 'Error leaving event. Please try again.',
+    'error_leaving' => 'Could not withdraw your sign-up. Please try again.',
     
     // Location Scope
     'location_scope' => 'Location Scope',
@@ -125,10 +125,12 @@ return [
     'created_success' => 'Event created successfully',
     'create_failed' => 'Failed to create event',
     'update_failed' => 'Failed to update event',
-    'joined_success' => 'You have joined the event',
-    'join_failed' => 'Failed to join event',
-    'left_success' => 'You have left the event',
-    'leave_failed' => 'Failed to leave event',
+    'joined_success' => 'You are signed up, with every character on your account.',
+    'joined_success_rate' => 'You are signed up, with every character on your account. Your mining gets the event\'s rate from now on, moon mining from today.',
+    'join_failed' => 'Could not sign you up',
+    'left_success' => 'Your sign-up is withdrawn',
+    'leave_failed' => 'Could not withdraw your sign-up',
+    'signups_unavailable' => 'Sign-ups are not available until the plugin\'s latest database update has run.',
     'deleted_success' => 'Event deleted successfully',
     'delete_failed' => 'Failed to delete event',
     'confirm_delete_warning' => 'Are you sure you want to permanently delete this event? This action cannot be undone.',
@@ -157,10 +159,10 @@ return [
     'event_type' => 'Event Type',
     'filters' => 'Filters',
     'gas_huffing' => 'Gas Huffing',
-    'join_event' => 'Join Event',
+    'join_event' => 'Sign Up',
     'joined_at' => 'Joined At',
     'leave_empty_unlimited' => 'Leave empty for unlimited participants',
-    'leave_event' => 'Leave Event',
+    'leave_event' => 'Withdraw Sign-up',
     'mandatory' => 'Mandatory',
     'mandatory_event' => 'This is a mandatory event for all corporation members',
     'max_participants' => 'Max Participants',
@@ -186,7 +188,7 @@ return [
     'view' => 'View',
 
     // Participation Messages
-    'cannot_join_event' => 'You cannot join this event',
-    'already_joined' => 'You have already joined this event',
-    'not_participating' => 'You are not participating in this event',
+    'cannot_join_event' => 'Sign-ups for this event are closed',
+    'already_joined' => 'You are already signed up',
+    'not_participating' => 'You are not signed up for this event',
 ];

@@ -313,8 +313,8 @@
                             </a>
                         </div>
                         <div class="col-6">
-                            @if($event->status === 'planned' || $event->status === 'active')
-                                @if($event->isParticipating(auth()->user()))
+                            @if($event->takesSignUps())
+                                @if($event->isSignedUp(auth()->user()))
                                     <button class="btn btn-danger btn-block btn-sm leave-event" data-event-id="{{ $event->id }}">
                                         <i class="fas fa-sign-out-alt"></i> {{ trans('mining-manager::events.leave') }}
                                     </button>

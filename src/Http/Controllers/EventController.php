@@ -9,6 +9,7 @@ use MiningManager\Services\Events\EventManagementService;
 use MiningManager\Services\Notification\NotificationService;
 use MiningManager\Models\MiningEvent;
 use MiningManager\Models\EventParticipant;
+use MiningManager\Models\EventSignup;
 use Seat\Eveapi\Models\Character\CharacterInfo;
 use Seat\Eveapi\Models\Sde\MapDenormalize;
 use Carbon\Carbon;
@@ -594,27 +595,34 @@ class EventController extends Controller
             ]);
         }
         
-        // Get all events user's characters are participating in
+        // The events the user's characters mined for, or the account signed
+        // up for.
+        $mine = function ($query) use ($characterIds, $user) {
+            $query->whereHas('participants', function ($participants) use ($characterIds) {
+                $participants->whereIn('character_id', $characterIds);
+            });
+
+            if (MiningEvent::hasRules()) {
+                $query->orWhereHas('signups', function ($signups) use ($user) {
+                    $signups->where('user_id', $user->id);
+                });
+            }
+        };
+
         $activeEvents = MiningEvent::with('creator', 'participants')
             ->where('status', 'active')
-            ->whereHas('participants', function($query) use ($characterIds) {
-                $query->whereIn('character_id', $characterIds);
-            })
+            ->where($mine)
             ->get();
-        
+
         $upcomingEvents = MiningEvent::with('creator', 'participants')
             ->where('status', 'planned')
-            ->whereHas('participants', function($query) use ($characterIds) {
-                $query->whereIn('character_id', $characterIds);
-            })
+            ->where($mine)
             ->orderBy('start_time', 'asc')
             ->get();
-        
+
         $completedEvents = MiningEvent::with('creator', 'participants')
             ->where('status', 'completed')
-            ->whereHas('participants', function($query) use ($characterIds) {
-                $query->whereIn('character_id', $characterIds);
-            })
+            ->where($mine)
             ->orderBy('end_time', 'desc')
             ->limit(20)
             ->get();
@@ -680,7 +688,9 @@ class EventController extends Controller
     }
 
     /**
-     * FIXED: Join a mining event with proper character ID handling
+     * Sign the user's account up for an event, every character on it. On an
+     * event for those who sign up, the update that runs every minute gives
+     * their mining the rate from here on.
      *
      * @param int $id
      * @return \Illuminate\Http\JsonResponse
@@ -689,56 +699,52 @@ class EventController extends Controller
     {
         try {
             $event = MiningEvent::findOrFail($id);
-            
-            // Check if event is joinable (upcoming or active)
-            if (!in_array($event->status, ['planned', 'active'])) {
+
+            // Sign-ups stay open until the event ends.
+            if (!$event->takesSignUps()) {
                 return response()->json([
                     'success' => false,
                     'message' => trans('mining-manager::events.cannot_join_event')
                 ], 400);
             }
 
-            // FIXED: Get current user's main character ID using proper method
+            if (!MiningEvent::hasRules()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => trans('mining-manager::events.signups_unavailable')
+                ], 503);
+            }
+
             $user = auth()->user();
             $characterId = $this->getMainCharacterId($user);
-            
+
             if (!$characterId) {
                 \Log::warning('EventController: No character ID found when trying to join event', [
                     'user_id' => $user->id,
                     'event_id' => $id
                 ]);
-                
+
                 return response()->json([
                     'success' => false,
                     'message' => 'No character found for your account'
                 ], 400);
             }
 
-            // Check if already participating
-            $existing = EventParticipant::where('event_id', $event->id)
-                ->where('character_id', $characterId)
-                ->first();
+            $signup = EventSignup::firstOrCreate(
+                ['event_id' => $event->id, 'user_id' => $user->id],
+                ['character_id' => $characterId, 'signed_up_at' => Carbon::now()]
+            );
 
-            if ($existing) {
+            if (!$signup->wasRecentlyCreated) {
                 return response()->json([
                     'success' => false,
                     'message' => trans('mining-manager::events.already_joined')
                 ], 400);
             }
 
-            // Add participant
-            EventParticipant::create([
-                'event_id' => $event->id,
-                'character_id' => $characterId,
-                'joined_at' => Carbon::now(),
-            ]);
-
-            // Update participant count
-            $event->increment('participant_count');
-
             return response()->json([
                 'success' => true,
-                'message' => trans('mining-manager::events.joined_success')
+                'message' => trans($event->needsSignUp() ? 'mining-manager::events.joined_success_rate' : 'mining-manager::events.joined_success')
             ]);
         } catch (\Exception $e) {
             \Log::error('EventController: Error joining event', [
@@ -755,7 +761,9 @@ class EventController extends Controller
     }
 
     /**
-     * FIXED: Leave a mining event with proper character ID handling
+     * Withdraw the user's account from an event. Like signing up, this can
+     * only change until the event ends; a day already billed keeps what it
+     * was billed.
      *
      * @param int $id
      * @return \Illuminate\Http\JsonResponse
@@ -764,40 +772,24 @@ class EventController extends Controller
     {
         try {
             $event = MiningEvent::findOrFail($id);
-            
-            // FIXED: Get current user's main character ID using proper method
-            $user = auth()->user();
-            $characterId = $this->getMainCharacterId($user);
-            
-            if (!$characterId) {
-                \Log::warning('EventController: No character ID found when trying to leave event', [
-                    'user_id' => $user->id,
-                    'event_id' => $id
-                ]);
-                
+
+            if (!$event->takesSignUps()) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'No character found for your account'
+                    'message' => trans('mining-manager::events.cannot_join_event')
                 ], 400);
             }
 
-            // Find participation record
-            $participant = EventParticipant::where('event_id', $event->id)
-                ->where('character_id', $characterId)
-                ->first();
+            $withdrawn = MiningEvent::hasRules()
+                ? EventSignup::where('event_id', $event->id)->where('user_id', auth()->user()->id)->delete()
+                : 0;
 
-            if (!$participant) {
+            if ($withdrawn === 0) {
                 return response()->json([
                     'success' => false,
                     'message' => trans('mining-manager::events.not_participating')
                 ], 400);
             }
-
-            // Remove participant
-            $participant->delete();
-
-            // Update participant count
-            $event->decrement('participant_count');
 
             return response()->json([
                 'success' => true,

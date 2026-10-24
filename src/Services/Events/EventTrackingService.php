@@ -5,69 +5,22 @@ namespace MiningManager\Services\Events;
 use MiningManager\Models\MiningEvent;
 use MiningManager\Models\EventParticipant;
 use MiningManager\Models\EventMiningRecord;
-use MiningManager\Models\MiningLedger;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Cache;
-use Seat\Eveapi\Models\Sde\InvType;
 use Carbon\Carbon;
 
 class EventTrackingService
 {
     /**
-     * Track mining activity for active events.
-     *
-     * @return array
-     */
-    public function trackActiveEvents(): array
-    {
-        $activeEvents = MiningEvent::where('status', 'active')
-            ->where('start_time', '<=', Carbon::now())
-            ->where(function ($query) {
-                $query->whereNull('end_time')
-                    ->orWhere('end_time', '>=', Carbon::now());
-            })
-            ->get();
-
-        if ($activeEvents->isEmpty()) {
-            return [
-                'tracked' => 0,
-                'errors' => [],
-            ];
-        }
-
-        Log::info("Mining Manager: Tracking {$activeEvents->count()} active events");
-
-        $tracked = 0;
-        $errors = [];
-
-        foreach ($activeEvents as $event) {
-            try {
-                $this->updateEventTracking($event);
-                $tracked++;
-            } catch (\Exception $e) {
-                Log::error("Mining Manager: Error tracking event {$event->id}: " . $e->getMessage());
-                $errors[] = [
-                    'event_id' => $event->id,
-                    'error' => $e->getMessage(),
-                ];
-            }
-        }
-
-        return [
-            'tracked' => $tracked,
-            'errors' => $errors,
-        ];
-    }
-
-    /**
      * Update tracking data for a specific event.
      *
      * Rolls up event_mining_records (populated by EventMiningAggregator) into
      * event_participants rows and refreshes aggregate counters on the event
-     * itself. All filtering — corporation, location, ore category, time
-     * window — has already been applied at aggregation time, so this method
-     * does a plain per-character sum and nothing else.
+     * itself. All filtering — corporation, location or refineries, ore
+     * category, time window — has already been applied at aggregation time,
+     * so this method does a plain per-character sum and nothing else. The
+     * sums are all of a character's event mining, whether or not it gets the
+     * event's rate, so the event shows everything mined for it.
      *
      * Idempotent via updateOrCreate — re-runs don't double-count.
      *
@@ -107,13 +60,12 @@ class EventTrackingService
                 // the tracker is safe.
                 $quantity = (int) $charRecords->sum('quantity');
                 $valueIsk = $charRecords->sum('value_isk'); // decimal
-                $earliestMining = $charRecords->min('mining_date');
 
                 $existed = EventParticipant::where('event_id', $event->id)
                     ->where('character_id', $characterId)
                     ->exists();
 
-                $participant = EventParticipant::updateOrCreate(
+                EventParticipant::updateOrCreate(
                     [
                         'event_id' => $event->id,
                         'character_id' => $characterId,
@@ -125,21 +77,14 @@ class EventTrackingService
                     ]
                 );
 
-                // Preserve joined_at for pre-existing participants — manual
-                // join via the UI sets it to click time; only stamp it on
-                // freshly auto-detected rows.
-                if (!$existed && $participant->joined_at === null) {
-                    $participant->update(['joined_at' => $earliestMining]);
-                }
-
                 $existed ? $updatedParticipants++ : $newParticipants++;
             }
 
             // Prune participants who no longer have any qualifying records
-            // (e.g. after a scope edit that narrowed the event). This only
-            // removes AUTO-detected participants — anyone who clicked "Join
-            // Event" has joined_at set from the UI and should be preserved
-            // so their opt-in isn't silently revoked.
+            // (e.g. after a scope edit that narrowed the event). Signing up
+            // lives in the sign-ups table, so a row here is only ever mining.
+            // Rows with a joined_at come from before that, when a Join click
+            // and the first mining day were both stamped here; they stay.
             $currentCharIds = $records->pluck('character_id')->unique()->values();
             EventParticipant::where('event_id', $event->id)
                 ->whereNotIn('character_id', $currentCharIds)
@@ -215,150 +160,6 @@ class EventTrackingService
     }
 
     /**
-     * Get event participation trends.
-     *
-     * @param int $eventId
-     * @return array
-     */
-    public function getParticipationTrends(int $eventId): array
-    {
-        $event = MiningEvent::findOrFail($eventId);
-
-        // Get hourly breakdown of mining activity
-        $miningData = MiningLedger::whereBetween('date', [
-                $event->start_time,
-                $event->end_time ?? Carbon::now()
-            ])
-            ->when($event->solar_system_id, function ($query) use ($event) {
-                return $query->where('solar_system_id', $event->solar_system_id);
-            })
-            ->selectRaw('DATE_FORMAT(date, "%Y-%m-%d %H:00:00") as hour')
-            ->selectRaw('SUM(quantity) as total_quantity')
-            ->selectRaw('COUNT(DISTINCT character_id) as active_miners')
-            ->groupBy('hour')
-            ->orderBy('hour')
-            ->get();
-
-        return [
-            'hourly_data' => $miningData->map(function ($data) {
-                return [
-                    'hour' => Carbon::parse($data->hour)->format('H:i'),
-                    'quantity' => $data->total_quantity,
-                    'active_miners' => $data->active_miners,
-                ];
-            })->toArray(),
-        ];
-    }
-
-    /**
-     * Track participant activity.
-     *
-     * @param int $participantId
-     * @return array
-     */
-    public function trackParticipantActivity(int $participantId): array
-    {
-        $participant = EventParticipant::with(['event', 'character'])->findOrFail($participantId);
-        $event = $participant->event;
-
-        // Get detailed mining breakdown
-        $miningData = MiningLedger::where('character_id', $participant->character_id)
-            ->whereBetween('date', [
-                $event->start_time,
-                $event->end_time ?? Carbon::now()
-            ])
-            ->when($event->solar_system_id, function ($query) use ($event) {
-                return $query->where('solar_system_id', $event->solar_system_id);
-            })
-            ->with('type')
-            ->get();
-
-        // Breakdown by ore type
-        $oreBreakdown = $miningData->groupBy('type_id')
-            ->map(function ($records, $typeId) {
-                $type = $records->first()->type;
-                return [
-                    'ore_name' => $type ? $type->typeName : "Type {$typeId}",
-                    'quantity' => $records->sum('quantity'),
-                    'percentage' => 0, // Will calculate after
-                ];
-            });
-
-        $totalQuantity = $oreBreakdown->sum('quantity');
-        $oreBreakdown = $oreBreakdown->map(function ($item) use ($totalQuantity) {
-            $item['percentage'] = $totalQuantity > 0 
-                ? round(($item['quantity'] / $totalQuantity) * 100, 2) 
-                : 0;
-            return $item;
-        });
-
-        // Activity timeline
-        $timeline = $miningData->groupBy(function ($item) {
-                return $item->date->format('Y-m-d');
-            })
-            ->map(function ($records, $date) {
-                return [
-                    'date' => $date,
-                    'quantity' => $records->sum('quantity'),
-                ];
-            })
-            ->values();
-
-        return [
-            'participant' => [
-                'name' => $participant->character_name,
-                'joined_at' => $participant->joined_at,
-                'total_mined' => $participant->quantity_mined,
-            ],
-            'ore_breakdown' => $oreBreakdown->values()->toArray(),
-            'timeline' => $timeline->toArray(),
-            'rank' => $this->getParticipantRank($participant),
-        ];
-    }
-
-    /**
-     * Get participant rank in event.
-     *
-     * @param EventParticipant $participant
-     * @return int
-     */
-    private function getParticipantRank(EventParticipant $participant): int
-    {
-        return EventParticipant::where('event_id', $participant->event_id)
-            ->where('quantity_mined', '>', $participant->quantity_mined)
-            ->count() + 1;
-    }
-
-    /**
-     * Compare participant performance to event average.
-     *
-     * @param int $participantId
-     * @return array
-     */
-    public function compareToAverage(int $participantId): array
-    {
-        $participant = EventParticipant::findOrFail($participantId);
-        $event = $participant->event;
-
-        $averageQuantity = $event->participant_count > 0 
-            ? $event->total_mined / $event->participant_count 
-            : 0;
-
-        $difference = $participant->quantity_mined - $averageQuantity;
-        $percentageDifference = $averageQuantity > 0 
-            ? ($difference / $averageQuantity) * 100 
-            : 0;
-
-        return [
-            'participant_quantity' => $participant->quantity_mined,
-            'event_average' => round($averageQuantity, 2),
-            'difference' => round($difference, 2),
-            'percentage_difference' => round($percentageDifference, 2),
-            'above_average' => $difference > 0,
-        ];
-    }
-
-    /**
      * Detect inactive participants.
      *
      * @param int $eventId
@@ -417,82 +218,5 @@ class EventTrackingService
                 ];
             })->toArray(),
         ];
-    }
-
-    /**
-     * Clear event tracking cache.
-     *
-     * @param int|null $eventId
-     * @return void
-     */
-    public function clearTrackingCache(?int $eventId = null): void
-    {
-        if ($eventId) {
-            Cache::forget("mining-events:progress:{$eventId}");
-        } else {
-            try {
-                Cache::tags(['mining-events'])->flush();
-            } catch (\BadMethodCallException $e) {
-                // Fallback for cache drivers that don't support tags
-                Cache::flush();
-            }
-        }
-    }
-
-    /**
-     * Get event performance metrics.
-     *
-     * @param int $eventId
-     * @return array
-     */
-    public function getPerformanceMetrics(int $eventId): array
-    {
-        $event = MiningEvent::with('participants')->findOrFail($eventId);
-
-        if (!$event->end_time || $event->status !== 'completed') {
-            return ['error' => 'Event not completed'];
-        }
-
-        $duration = $event->start_time->diffInHours($event->end_time);
-        $totalMined = $event->total_mined;
-        $participantCount = $event->participant_count;
-
-        return [
-            'duration_hours' => $duration,
-            'total_mined' => $totalMined,
-            'ore_per_hour' => $duration > 0 ? round($totalMined / $duration, 2) : 0,
-            'ore_per_participant' => $participantCount > 0 ? round($totalMined / $participantCount, 2) : 0,
-            'ore_per_participant_per_hour' => ($duration > 0 && $participantCount > 0) 
-                ? round($totalMined / ($duration * $participantCount), 2) 
-                : 0,
-            'participation_efficiency' => $this->calculateParticipationEfficiency($event),
-        ];
-    }
-
-    /**
-     * Calculate participation efficiency.
-     *
-     * @param MiningEvent $event
-     * @return float Percentage
-     */
-    private function calculateParticipationEfficiency(MiningEvent $event): float
-    {
-        // Calculate how evenly distributed the mining was
-        $participants = $event->participants;
-        
-        if ($participants->isEmpty()) {
-            return 0;
-        }
-
-        $average = $participants->avg('quantity_mined');
-        $variance = $participants->map(function ($p) use ($average) {
-            return pow($p->quantity_mined - $average, 2);
-        })->avg();
-
-        $stdDev = sqrt($variance);
-        $coefficientOfVariation = $average > 0 ? ($stdDev / $average) * 100 : 0;
-
-        // Lower CoV = more even distribution = higher efficiency
-        return max(0, 100 - $coefficientOfVariation);
     }
 }
