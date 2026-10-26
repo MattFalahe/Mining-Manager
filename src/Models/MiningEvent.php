@@ -830,11 +830,11 @@ class MiningEvent extends Model
      * A full refresh (delete-then-rebuild) is the safest path because
      * it's hard to surgically undo filter changes incrementally.
      *
-     * A status changed on the edit form, an event cancelled or brought
-     * back, keeps the records but decides whether the rate applies at all,
-     * so their days are worked out again. A deleted event's records go and
-     * its days are worked out without it. A billed day keeps what it was
-     * billed either way.
+     * A change of status, an event cancelled or brought back, keeps the
+     * records but decides whether the rate applies at all, and a change of
+     * rate changes what it gives, so either way their days are worked out
+     * again. A deleted event's records go and its days are worked out
+     * without it. A billed day keeps what it was billed either way.
      *
      * We ignore non-scope saves (stats updates from EventTrackingService
      * rolling up event_participants into total_mined, participant_count,
@@ -850,7 +850,7 @@ class MiningEvent extends Model
             try {
                 if ($event->wasChanged(self::SCOPE_AFFECTING_FIELDS)) {
                     app(EventMiningAggregator::class)->aggregate($event, true);
-                } elseif ($event->wasChanged('status')) {
+                } elseif ($event->wasChanged(['status', 'tax_modifier'])) {
                     app(EventMiningAggregator::class)->rebuildDays($event);
                 }
             } catch (\Throwable $e) {
