@@ -84,12 +84,17 @@ class EventManagementService
 
                 Log::info("Mining Manager: Event '{$event->name}' (id={$event->id}) auto-started");
 
-                // Dispatch 'event_started' notification
-                try {
-                    $participantIds = $event->participants()->pluck('character_id')->toArray();
-                    app(NotificationService::class)->sendEventStarted($event->fresh(), $participantIds);
-                } catch (\Exception $e) {
-                    Log::warning("Mining Manager: Failed to send event_started notification for event {$event->id}: " . $e->getMessage());
+                // Dispatch 'event_started' notification, unless the event is
+                // already over: one set up after its days completes below in
+                // this same run, and a start announced now would send people
+                // to mine for days that have passed.
+                if ($event->end_time === null || $event->end_time->gt($now)) {
+                    try {
+                        $participantIds = $event->participants()->pluck('character_id')->toArray();
+                        app(NotificationService::class)->sendEventStarted($event->fresh(), $participantIds);
+                    } catch (\Exception $e) {
+                        Log::warning("Mining Manager: Failed to send event_started notification for event {$event->id}: " . $e->getMessage());
+                    }
                 }
 
                 $started++;
@@ -110,11 +115,16 @@ class EventManagementService
 
         foreach ($shouldComplete as $event) {
             try {
-                // Final participant tracking update before closing
+                // Gather and track once more before closing, so Event
+                // Completed carries the figures. This is also where an event
+                // set up after its days gets gathered: the tracking run stamps
+                // it, so the update that follows no longer sees it as never
+                // gathered.
                 try {
+                    app(EventMiningAggregator::class)->aggregate($event);
                     $this->trackingService->updateEventTracking($event);
                 } catch (\Exception $e) {
-                    Log::warning("Mining Manager: Final tracking update failed for event {$event->id}: " . $e->getMessage());
+                    Log::warning("Mining Manager: Final gathering failed for event {$event->id}: " . $e->getMessage());
                 }
 
                 $claimed = MiningEvent::where('id', $event->id)

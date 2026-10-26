@@ -189,10 +189,10 @@ class UpdateMiningEventsCommand extends Command
     }
 
     /**
-     * Whether a finished event has never been gathered: one set up after its
-     * days had passed goes from planned to completed on its first tick
-     * without ever being active. Every tick stamps last_updated on the
-     * events it looks at, so this holds once.
+     * Whether a finished event has never been gathered: one marked completed
+     * by hand before its first tick, or whose gathering failed as it
+     * completed. Every tick stamps last_updated on the events it looks at, so
+     * this holds once.
      */
     private function neverGathered(MiningEvent $event): bool
     {
