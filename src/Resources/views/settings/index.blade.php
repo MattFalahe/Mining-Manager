@@ -374,6 +374,7 @@
                                             <li>{{ trans('mining-manager::settings.help_taxes_1') }}</li>
                                             <li>{{ trans('mining-manager::settings.help_taxes_2') }}</li>
                                             <li>{{ trans('mining-manager::settings.help_taxes_3') }}</li>
+                                            <li>{{ trans('mining-manager::settings.help_taxes_4') }}</li>
                                         </ul>
                                     </div>
                                 </div>

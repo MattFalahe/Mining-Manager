@@ -111,6 +111,7 @@ return [
     'help_taxes_1' => 'Setup: the Moon Owner Corporation, and the corporations whose members are taxed as members',
     'help_taxes_2' => 'Tax profiles: each corporation\'s billing period, code prefix and rates, and Global for everyone else',
     'help_taxes_3' => 'Billing and Payments: small amounts, due dates, reminders, payment codes and wallet matching',
+    'help_taxes_4' => 'Events: how long an event for past days is held, and which moon managers\' events wait for a director',
     'help_moons' => 'Moons and Prices',
     'help_moons_desc' => 'How pulls are planned and ore is valued:',
     'help_moons_1' => 'Moon Planner: the gap between moons, the time between pulls on one refinery, and reminders',

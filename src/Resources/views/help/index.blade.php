@@ -943,6 +943,12 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                             extraction's page can start an event on its chunk. Pings say what an event counts,
                             and its final results are posted once the last refinery reports are in.
                         </li>
+                        <li>
+                            <strong>Moon managers</strong> can set up events ahead of time; the ones that cut tax far
+                            enough wait for a director's approval. An event for days that have passed is held before
+                            it applies, and every event keeps a <strong>history</strong> of who did what, and locks
+                            once its figures are final. See Settings, Events.
+                        </li>
                     </ul>
 
                     <h4><i class="fas fa-shield-alt"></i> Nothing set before is lost, and nothing taxed before changes</h4>
@@ -2408,6 +2414,33 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                         <li>{{ trans('mining-manager::help.participate_step_2') }}</li>
                         <li>{{ trans('mining-manager::help.participate_step_3') }}</li>
                     </ul>
+
+                    <h4>{{ trans('mining-manager::help.event_who_sets_up') }}</h4>
+                    <ul>
+                        <li>{{ trans('mining-manager::help.event_who_directors') }}</li>
+                        <li>{{ trans('mining-manager::help.event_who_managers') }}</li>
+                        <li>{{ trans('mining-manager::help.event_who_approval') }}</li>
+                    </ul>
+
+                    <h4>{{ trans('mining-manager::help.event_past_title') }}</h4>
+                    <ul>
+                        <li>{{ trans('mining-manager::help.event_past_limit') }}</li>
+                        <li>{{ trans('mining-manager::help.event_past_hold') }}</li>
+                        <li>{{ trans('mining-manager::help.event_past_apply') }}</li>
+                    </ul>
+
+                    <h4>{{ trans('mining-manager::help.event_history_title') }}</h4>
+                    <ul>
+                        <li>{{ trans('mining-manager::help.event_history_desc') }}</li>
+                        <li>{{ trans('mining-manager::help.event_lock_desc') }}</li>
+                    </ul>
+
+                    <div class="info-box">
+                        <p class="mb-0">
+                            <i class="fas fa-user-check"></i>
+                            {{ trans('mining-manager::help.event_review_desc') }}
+                        </p>
+                    </div>
 
                     <div class="success-box">
                         <i class="fas fa-gift"></i>
