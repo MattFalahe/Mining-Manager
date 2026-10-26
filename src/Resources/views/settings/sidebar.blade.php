@@ -7,6 +7,7 @@
             ['profiles', 'fas fa-percent', 'Tax profiles'],
             ['billing', 'fas fa-file-invoice-dollar', 'Billing'],
             ['payments', 'fas fa-wallet', 'Payments'],
+            ['events', 'fas fa-calendar-day', 'Events'],
         ]],
         ['icon' => 'fas fa-moon', 'title' => 'Moons and prices', 'pages' => [
             ['planner', 'fas fa-calendar-check', 'Moon Planner'],

@@ -101,6 +101,11 @@ final class SettingsRegistry
 
         // Moons
         'moon.estimated_chunk_size' => self::INSTALL,
+        // Events: who may set them up and how they wait
+        'events.past_hold_minutes' => self::INSTALL,
+        'events.managers_can_create' => self::INSTALL,
+        'events.manager_lead_hours' => self::INSTALL,
+        'events.approval_rule' => self::INSTALL,
 
         // Features and automation
         'features.enable_tax_tracking' => self::INSTALL,

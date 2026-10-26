@@ -964,6 +964,12 @@ Route::group([
             'middleware' => 'can:mining-manager.admin',
         ]);
 
+        Route::post('/events', [
+            'as' => 'mining-manager.settings.update-events',
+            'uses' => 'SettingsController@updateEvents',
+            'middleware' => 'can:mining-manager.admin',
+        ]);
+
         Route::post('/notifications', [
             'as' => 'mining-manager.settings.update-notifications',
             'uses' => 'SettingsController@updateNotifications',

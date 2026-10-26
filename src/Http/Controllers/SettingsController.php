@@ -971,6 +971,45 @@ class SettingsController extends Controller
     }
 
     /**
+     * Save who may set up events and how they wait. All of it applies to the
+     * whole install.
+     */
+    public function updateEvents(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            // Up to two days: longer and the hold outlasts the point of it.
+            'past_hold_minutes' => 'required|integer|min:0|max:2880',
+            'managers_can_create' => 'nullable|boolean',
+            // At least an hour: an event starting sooner is a director's call.
+            'manager_lead_hours' => 'required|integer|min:1|max:720',
+            'approval_rule' => 'required|in:never,25,50,75,100,always',
+        ]);
+
+        if ($validator->fails()) {
+            return redirect()->back()
+                ->withErrors($validator)
+                ->withInput()
+                ->with('error', 'Validation failed. Please check your inputs.');
+        }
+
+        try {
+            $this->settingsService->updateGlobalSetting('events.past_hold_minutes', (int) $request->input('past_hold_minutes'), 'integer');
+            $this->settingsService->updateGlobalSetting('events.managers_can_create', $request->boolean('managers_can_create'), 'boolean');
+            $this->settingsService->updateGlobalSetting('events.manager_lead_hours', (int) $request->input('manager_lead_hours'), 'integer');
+            $this->settingsService->updateGlobalSetting('events.approval_rule', (string) $request->input('approval_rule'), 'string');
+            $this->clearSettingsCache();
+
+            return redirect()->route('mining-manager.settings.index')
+                ->with('success', 'Event settings updated successfully')
+                ->withFragment('events');
+        } catch (\Exception $e) {
+            return redirect()->back()
+                ->withInput()
+                ->with('error', 'Error updating event settings: ' . $e->getMessage());
+        }
+    }
+
+    /**
      * Save the Moon Planner page: how the planner spaces pulls, and when its
      * reminders go out. The values keep their notifications.* keys from when
      * they were part of the Notifications page.

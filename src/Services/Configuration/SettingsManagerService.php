@@ -1164,13 +1164,25 @@ class SettingsManagerService
     }
 
     /**
-     * Get event settings
+     * Who may set up events and how they wait: one set for the whole
+     * install, since directors approve for every corporation alike.
      *
-     * @return array
+     * @return array{past_hold_minutes: int, managers_can_create: bool, manager_lead_hours: int, approval_rule: string}
      */
     public function getEventSettings(): array
     {
-        return config('mining-manager.events', []);
+        $rule = (string) $this->getSetting('events.approval_rule', '100');
+
+        return [
+            // Minutes an event for days that have passed waits before it applies.
+            'past_hold_minutes' => max(0, (int) $this->getSetting('events.past_hold_minutes', 60)),
+            'managers_can_create' => (bool) $this->getSetting('events.managers_can_create', true),
+            // How far ahead of saving a moon manager's event has to start.
+            'manager_lead_hours' => max(1, (int) $this->getSetting('events.manager_lead_hours', 24)),
+            // never, 25, 50, 75, 100 (tax free) or always: which of a moon
+            // manager's events wait for a director.
+            'approval_rule' => in_array($rule, ['never', '25', '50', '75', '100', 'always'], true) ? $rule : '100',
+        ];
     }
 
     /**
