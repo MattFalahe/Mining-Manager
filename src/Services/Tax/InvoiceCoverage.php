@@ -36,6 +36,47 @@ class InvoiceCoverage
      */
     private static array $ranges = [];
 
+    private static ?string $lastCovered = null;
+    private static int $lastCoveredAt = 0;
+
+    /**
+     * The last day any issued invoice covers, on anybody's account, as a date
+     * string, or null while none has been issued. A day up to here keeps
+     * what it was billed for somebody, so nothing can change it for everyone.
+     * Read again after a minute, since bill runs move it.
+     */
+    public static function lastCoveredDay(): ?string
+    {
+        if (self::$lastCoveredAt > 0 && time() - self::$lastCoveredAt < 60) {
+            return self::$lastCovered;
+        }
+
+        try {
+            $day = DB::table('mining_taxes as t')
+                ->leftJoin('mining_tax_codes as c', 'c.mining_tax_id', '=', 't.id')
+                ->where(function ($q) {
+                    $q->whereIn('t.status', ['paid', 'partial'])
+                      ->orWhere('t.amount_paid', '>', 0)
+                      ->orWhereNotNull('c.id');
+                })
+                ->selectRaw('MAX(COALESCE(t.period_end, LAST_DAY(COALESCE(t.period_start, t.month)))) as last_day')
+                ->value('last_day');
+
+            self::$lastCovered = $day ? Carbon::parse($day)->toDateString() : null;
+        } catch (\Throwable $e) {
+            // As with a single row: when it cannot be told, every day up to
+            // yesterday counts as billed.
+            Log::warning('Mining Manager: could not read the last invoiced day, treating every day before today as billed', [
+                'error' => $e->getMessage(),
+            ]);
+            self::$lastCovered = Carbon::yesterday()->toDateString();
+        }
+
+        self::$lastCoveredAt = time();
+
+        return self::$lastCovered;
+    }
+
     /**
      * Whether an issued invoice covers this character's mining on this date.
      *
@@ -166,5 +207,6 @@ class InvoiceCoverage
     public static function flush(): void
     {
         self::$ranges = [];
+        self::$lastCoveredAt = 0;
     }
 }

@@ -47,6 +47,8 @@ class MiningEvent extends Model
         'members_only',
         'ore_categories',
         'results_sent_at',
+        'applies_at',
+        'locked_at',
     ];
 
     /**
@@ -66,7 +68,29 @@ class MiningEvent extends Model
         'members_only' => 'boolean',
         'ore_categories' => 'array',
         'results_sent_at' => 'datetime',
+        'applies_at' => 'datetime',
+        'locked_at' => 'datetime',
     ];
+
+    public const STATUS_PLANNED = 'planned';
+    public const STATUS_ACTIVE = 'active';
+    public const STATUS_COMPLETED = 'completed';
+    public const STATUS_CANCELLED = 'cancelled';
+
+    /** Set up for days that have passed, waiting to apply at applies_at. */
+    public const STATUS_HELD = 'held';
+
+    /** A moon manager's event waiting for a director's approval. */
+    public const STATUS_AWAITING_APPROVAL = 'awaiting_approval';
+
+    /** Declined by a director, or not approved before it was due to start. */
+    public const STATUS_DECLINED = 'declined';
+
+    /**
+     * Not announced to anyone yet, or never will be. Members do not see these;
+     * whoever set one up and the directors do.
+     */
+    public const UNANNOUNCED_STATUSES = [self::STATUS_HELD, self::STATUS_AWAITING_APPROVAL, self::STATUS_DECLINED];
 
     /**
      * Who gets an event's rate: everybody whose mining meets its rules, or
@@ -94,6 +118,8 @@ class MiningEvent extends Model
 
     private static bool $hasRules = false;
     private static int $hasRulesCheckedAt = 0;
+    private static bool $hasGovernance = false;
+    private static int $hasGovernanceCheckedAt = 0;
 
     /**
      * Event type constants.
@@ -197,6 +223,132 @@ class MiningEvent extends Model
         }
 
         return self::$hasRules;
+    }
+
+    /**
+     * Whether the database has the event history, the hold for past events
+     * and the lock. Asked again after a while when the answer is no, as with
+     * hasRules(). The history table is the last thing its migration makes.
+     */
+    public static function hasGovernance(): bool
+    {
+        if (!self::$hasGovernance && time() - self::$hasGovernanceCheckedAt >= 30) {
+            self::$hasGovernanceCheckedAt = time();
+
+            try {
+                self::$hasGovernance = Schema::hasTable('mining_manager_event_history');
+            } catch (\Throwable $e) {
+                self::$hasGovernance = false;
+            }
+        }
+
+        return self::$hasGovernance;
+    }
+
+    /**
+     * Everything done to the event, newest first.
+     */
+    public function history()
+    {
+        return $this->hasMany(EventHistory::class, 'event_id')->orderByDesc('created_at')->orderByDesc('id');
+    }
+
+    /**
+     * Whether every day of the event has passed.
+     */
+    public function isPast(): bool
+    {
+        return $this->end_time !== null && $this->end_time->lte(now());
+    }
+
+    public function hasStarted(): bool
+    {
+        return $this->start_time !== null && $this->start_time->lte(now());
+    }
+
+    /**
+     * Whether members can see the event: anything but held, waiting for
+     * approval, or declined.
+     */
+    public function isAnnounced(): bool
+    {
+        return !in_array($this->status, self::UNANNOUNCED_STATUSES, true);
+    }
+
+    /**
+     * Whether the event's figures are final, so it can no longer be edited:
+     * it applied as a past event, its final results went out, or every one of
+     * its days is on an issued bill, which keeps what it was billed.
+     */
+    public function isLocked(): bool
+    {
+        return $this->locked_at !== null || $this->daysBilled();
+    }
+
+    /**
+     * Whether every day of the event is on an issued bill.
+     */
+    public function daysBilled(): bool
+    {
+        if ($this->end_time === null) {
+            return false;
+        }
+
+        $lastBilled = \MiningManager\Services\Tax\InvoiceCoverage::lastCoveredDay();
+
+        return $lastBilled !== null && $this->end_time->toDateString() <= $lastBilled;
+    }
+
+    /**
+     * The event's rules as its history keeps them: what a change shows as,
+     * and what a deleted event leaves on record.
+     *
+     * @return array<string, mixed>
+     */
+    public function snapshot(): array
+    {
+        $refineries = $this->refineryIds();
+        sort($refineries);
+        $ore = is_array($this->ore_categories) && $this->ore_categories !== [] ? $this->ore_categories : null;
+        if ($ore !== null) {
+            sort($ore);
+        }
+
+        return [
+            'name' => $this->name,
+            'description' => $this->description !== null && trim($this->description) !== '' ? $this->description : null,
+            'type' => $this->type,
+            'start_time' => $this->start_time?->format('Y-m-d H:i'),
+            'end_time' => $this->end_time?->format('Y-m-d H:i'),
+            'location_scope' => $this->location_scope,
+            'solar_system_id' => $this->solar_system_id ? (int) $this->solar_system_id : null,
+            'refineries' => $refineries,
+            'ore_categories' => $ore,
+            'corporation_id' => $this->corporation_id ? (int) $this->corporation_id : null,
+            'members_only' => (bool) $this->members_only,
+            'participation' => $this->participation,
+            'tax_modifier' => (int) $this->tax_modifier,
+        ];
+    }
+
+    /**
+     * The fields that differ between two snapshots, as [before, after].
+     *
+     * @param array<string, mixed> $before
+     * @param array<string, mixed> $after
+     * @return array<string, array{0: mixed, 1: mixed}>
+     */
+    public static function changesBetween(array $before, array $after): array
+    {
+        $changes = [];
+
+        foreach ($after as $field => $value) {
+            if (($before[$field] ?? null) !== $value) {
+                $changes[$field] = [$before[$field] ?? null, $value];
+            }
+        }
+
+        return $changes;
     }
 
     /**

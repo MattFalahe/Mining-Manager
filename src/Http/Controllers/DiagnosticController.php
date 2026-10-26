@@ -2645,12 +2645,25 @@ class DiagnosticController extends Controller
             \Schema::hasTable('mining_manager_event_signups') ? null : 'mining_manager_event_signups',
         ]));
 
+        $missingGovernance = array_values(array_filter([
+            \Schema::hasColumn('mining_events', 'applies_at') ? null : 'mining_events.applies_at',
+            \Schema::hasColumn('mining_events', 'locked_at') ? null : 'mining_events.locked_at',
+            \Schema::hasColumn('webhook_configurations', 'notify_event_review') ? null : 'webhook_configurations.notify_event_review',
+            \Schema::hasTable('mining_manager_event_history') ? null : 'mining_manager_event_history',
+        ]));
+
         return [[
             'label' => 'Migration 000041: event rules, refineries and sign-ups',
             'status' => $missing ? 'fail' : 'ok',
             'message' => $missing
                 ? 'Missing: ' . implode(', ', $missing) . '. Run migrations. Until then events count as they used to: no narrowing to refineries or ore, and signing up changes nobody\'s rate.'
                 : 'Present: events can be narrowed to refineries and ore, and can count only the people who signed up.',
+        ], [
+            'label' => 'Migration 000042: event history, held past events, approvals',
+            'status' => $missingGovernance ? 'fail' : 'ok',
+            'message' => $missingGovernance
+                ? 'Missing: ' . implode(', ', $missingGovernance) . '. Run migrations. Until then nothing done to an event is recorded, events for days that have passed cannot be set up, and moon managers cannot set up events.'
+                : 'Present: every event keeps its history, past events are held before they apply, events lock once final, and moon managers\' events can wait for approval.',
         ]];
     }
 
