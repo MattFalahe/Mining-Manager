@@ -172,7 +172,9 @@ class EventController extends Controller
         $refineries = app(EventRefineries::class)->choices();
         $prefill = $this->prefillFromChunk($request, $refineries);
 
-        return view('mining-manager::events.create', compact('corporations', 'taxCompat', 'refineries', 'prefill'));
+        $limits = $this->formLimits();
+
+        return view('mining-manager::events.create', compact('corporations', 'taxCompat', 'refineries', 'prefill', 'limits'));
     }
 
     /**
@@ -284,16 +286,18 @@ class EventController extends Controller
             }
         }
 
-        if ($errors) {
-            throw \Illuminate\Validation\ValidationException::withMessages($errors);
-        }
-
         if ($moon) {
             $start = Carbon::createFromFormat('Y-m-d', $request->input('start_day'))->startOfDay();
             $end = $request->filled('end_day') ? Carbon::createFromFormat('Y-m-d', $request->input('end_day'))->endOfDay() : null;
         } else {
             $start = Carbon::parse($request->input('start_time'));
             $end = $request->filled('end_time') ? Carbon::parse($request->input('end_time')) : null;
+        }
+
+        $errors += $this->checkWhen($request, $event, $start, $end, $moon);
+
+        if ($errors) {
+            throw \Illuminate\Validation\ValidationException::withMessages($errors);
         }
 
         $attributes = [
@@ -317,6 +321,89 @@ class EventController extends Controller
         }
 
         return [$attributes, $refineries];
+    }
+
+    /**
+     * What the event's days allow. Nothing already billed: a day on an issued
+     * bill keeps what it was billed. Days that have passed only from a
+     * director or an admin, for everyone who mined, with a reason, and not
+     * so close to a bill run that the event could not apply before it.
+     *
+     * @return array<string, string> errors by field
+     */
+    private function checkWhen(Request $request, ?MiningEvent $event, Carbon $start, ?Carbon $end, bool $moon): array
+    {
+        if (!MiningEvent::hasGovernance()) {
+            return [];
+        }
+
+        $errors = [];
+        $startField = $moon ? 'start_day' : 'start_time';
+        $endField = $moon ? 'end_day' : 'end_time';
+        $past = $end !== null && $end->lte(Carbon::now());
+        $pastEvent = $past && ($event === null || $event->status === MiningEvent::STATUS_HELD);
+
+        // An event already reaching back that far keeps its days as long as
+        // its start is not moved.
+        $earliest = $this->access->earliestFirstDay();
+        if ($earliest !== null && $start->lt($earliest) && ($event === null || !$start->eq($event->start_time))) {
+            $errors[$startField] = trans('mining-manager::events.before_billed', [
+                'last' => $earliest->copy()->subDay()->format('D j M'),
+                'first' => $earliest->format('D j M'),
+            ]);
+        }
+
+        if ($pastEvent && $request->input('participation') === MiningEvent::PARTICIPATION_SIGNED_UP) {
+            $errors['participation'] = trans('mining-manager::events.past_no_signups');
+        }
+
+        if ($event === null && $past) {
+            if (trim((string) $request->input('reason')) === '') {
+                $errors['reason'] = trans('mining-manager::events.reason_needed_past');
+            }
+            if ($this->access->holdUntil() === null) {
+                $errors[$startField] = trans('mining-manager::events.too_close_to_bill_run', ['run' => $this->access->nextBillRun()->format('D j M H:i')]);
+            }
+            if (!$this->access->isDirector(auth()->user())) {
+                $errors[$startField] = trans('mining-manager::events.past_directors_only');
+            }
+        }
+
+        if ($event !== null && $event->status === MiningEvent::STATUS_HELD && !$past) {
+            $errors[$endField] = trans('mining-manager::events.held_stays_past');
+        } elseif ($event !== null && $past && !$event->hasStarted()) {
+            // Days that have passed are a past event's, held before they
+            // count, not a planned one's moved back.
+            $errors[$endField] = trans('mining-manager::events.make_past_instead');
+        }
+
+        return $errors;
+    }
+
+    /**
+     * What the event form needs to know of the limits, so it can show them
+     * before anyone saves.
+     *
+     * @return array<string, mixed>
+     */
+    private function formLimits(?MiningEvent $event = null): array
+    {
+        $governed = MiningEvent::hasGovernance();
+        $earliest = $governed ? $this->access->earliestFirstDay() : null;
+
+        return [
+            'governed' => $governed,
+            'creating' => $event === null,
+            'held' => $event !== null && $event->status === MiningEvent::STATUS_HELD,
+            'earliest_day' => $earliest?->toDateString(),
+            'last_billed' => $earliest?->copy()->subDay()->format('D j M'),
+            'earliest_label' => $earliest?->format('D j M'),
+            // An event already reaching back further keeps its start.
+            'enforce_earliest' => $earliest !== null && ($event === null || $event->start_time->gte($earliest)),
+            'can_past' => $this->access->isDirector(auth()->user()),
+            'hold_minutes' => $governed ? $this->access->settings()['past_hold_minutes'] : 0,
+            'today' => Carbon::now()->toDateString(),
+        ];
     }
 
     /**
@@ -362,18 +449,34 @@ class EventController extends Controller
     public function store(Request $request)
     {
         [$attributes, $refineries] = $this->eventFromForm($request);
+        $user = auth()->user();
+
+        // Days that have passed: held, so it can still be changed or deleted
+        // before its discount goes on them.
+        $status = MiningEvent::STATUS_PLANNED;
+        if (MiningEvent::hasGovernance() && $attributes['end_time'] !== null && $attributes['end_time']->lte(Carbon::now())) {
+            $status = MiningEvent::STATUS_HELD;
+            $attributes['applies_at'] = $this->access->holdUntil();
+        }
 
         try {
-            $event = DB::transaction(function () use ($attributes, $refineries) {
+            $event = DB::transaction(function () use ($attributes, $refineries, $status, $request) {
                 $event = MiningEvent::create($attributes + [
-                    'status' => 'planned',
+                    'status' => $status,
                     'created_by' => auth()->user()->id,
                 ]);
                 $this->syncRefineries($event, $refineries);
-                EventHistory::record($event, EventHistory::CREATED, auth()->id(), $event->snapshot());
+                EventHistory::record($event, EventHistory::CREATED, auth()->id(), $event->snapshot(), $request->input('reason'));
 
                 return $event;
             });
+
+            if ($status === MiningEvent::STATUS_HELD) {
+                $this->notifyReview($event, 'held', $user, $request->input('reason'));
+
+                return redirect()->route('mining-manager.events.show', $event->id)
+                    ->with('success', trans('mining-manager::events.held_created', ['time' => $event->applies_at->format('D j M H:i')]));
+            }
 
             // Send notifications if requested
             if ($request->input('send_notifications')) {
@@ -492,8 +595,9 @@ class EventController extends Controller
         $taxCompat = $this->buildTaxCompatibilityMap();
         $refineries = app(EventRefineries::class)->choices($event->refineryIds());
         $canDelete = $this->access->canDelete(auth()->user(), $event);
+        $limits = $this->formLimits($event);
 
-        return view('mining-manager::events.edit', compact('event', 'corporations', 'taxCompat', 'refineries', 'canDelete'));
+        return view('mining-manager::events.edit', compact('event', 'corporations', 'taxCompat', 'refineries', 'canDelete', 'limits'));
     }
 
     /**

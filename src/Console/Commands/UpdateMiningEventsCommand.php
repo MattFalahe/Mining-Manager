@@ -4,6 +4,7 @@ namespace MiningManager\Console\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Cache;
+use MiningManager\Models\EventHistory;
 use MiningManager\Models\MiningEvent;
 use MiningManager\Services\Events\EventManagementService;
 use MiningManager\Services\Events\EventMiningAggregator;
@@ -78,6 +79,9 @@ class UpdateMiningEventsCommand extends Command
             $managementService = app(EventManagementService::class);
             $statusResult = $managementService->updateEventStatuses();
 
+            if (($statusResult['applied'] ?? 0) > 0) {
+                $this->info("Applied {$statusResult['applied']} event(s) set up for days that had passed");
+            }
             if ($statusResult['started'] > 0) {
                 $this->info("Auto-started {$statusResult['started']} event(s)");
             }
@@ -140,10 +144,11 @@ class UpdateMiningEventsCommand extends Command
                     // a few days after it ends: a refinery reports a day's
                     // mining only once the day is over, so the last day of an
                     // event always arrives after it has ended. An event set
-                    // up after its days had passed is gathered once. Older
-                    // events only change when their scope is edited (the
-                    // MiningEvent saved() hook).
-                    if ($event->status === 'active' || $this->stillReporting($event) || $this->neverGathered($event)) {
+                    // up after its days had passed is gathered while it is
+                    // held, so its page shows what it will count before it
+                    // applies. Older events only change when their scope is
+                    // edited (the MiningEvent saved() hook).
+                    if ($event->status === 'active' || $event->status === MiningEvent::STATUS_HELD || $this->stillReporting($event) || $this->neverGathered($event)) {
                         $agg = $aggregator->aggregate($event);
                         if (($agg['created'] ?? 0) > 0 || ($agg['updated'] ?? 0) > 0) {
                             $this->line("  → aggregated {$agg['created']} new record(s), refreshed {$agg['updated']}, days built again {$agg['days']}");
@@ -222,14 +227,22 @@ class UpdateMiningEventsCommand extends Command
         $posted = 0;
 
         foreach ($events as $event) {
-            // Claimed first, so a run that overlaps this one cannot post it too.
+            // Claimed first, so a run that overlaps this one cannot post it
+            // too. The figures are final now, so the event locks with it.
+            $claim = ['results_sent_at' => Carbon::now()];
+            if (MiningEvent::hasGovernance() && $event->locked_at === null) {
+                $claim['locked_at'] = Carbon::now();
+            }
+
             $claimed = MiningEvent::where('id', $event->id)
                 ->whereNull('results_sent_at')
-                ->update(['results_sent_at' => Carbon::now()]);
+                ->update($claim);
 
             if ($claimed === 0) {
                 continue;
             }
+
+            EventHistory::record($event, EventHistory::RESULTS_POSTED);
 
             try {
                 $this->eventService->updateEventTracking($event->fresh());

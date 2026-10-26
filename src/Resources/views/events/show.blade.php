@@ -6,7 +6,9 @@
 @push('head')
 <link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=10">
 <script src="{{ asset('vendor/mining-manager/js/eve-time.js') }}?v=1" defer></script>
+<script src="{{ asset('vendor/mining-manager/js/eve-countdown.js') }}?v=1" defer></script>
 <style>
+    .mining-manager-wrapper .mm-notice-warning { background-color: #2b2618 !important; border-left-color: var(--mm-warning) !important; }
     .mining-manager-wrapper .event-rules dt { color: var(--mm-text-muted); font-weight: 600; }
     .mining-manager-wrapper .event-rules dd { margin-bottom: 0.6rem; }
     .mining-manager-wrapper .event-person-alts { font-size: 0.85em; color: var(--mm-text-muted); }
@@ -178,6 +180,22 @@
             </div>
         </div>
     </div>
+
+    @if ($event->status === 'held' && $event->applies_at)
+        <div class="mm-notice mm-notice-warning">
+            <i class="fas fa-hourglass-half"></i>
+            {{ trans('mining-manager::events.held_notice', ['time' => $event->applies_at->format('D j M H:i')]) }}
+            <strong class="eve-countdown" data-target="{{ $event->applies_at->toIso8601String() }}">{{ $event->applies_at->diffForHumans() }}</strong>
+        </div>
+    @elseif ($event->isLocked())
+        <div class="mm-notice mm-notice-secondary">
+            <i class="fas fa-lock"></i>
+            {{ $event->locked_at ? trans('mining-manager::events.locked_notice', ['time' => $event->locked_at->format('D j M Y H:i')]) : trans('mining-manager::events.locked_billed_notice') }}
+            @if ($event->status !== 'cancelled')
+                {{ trans('mining-manager::events.locked_admin_cancel') }}
+            @endif
+        </div>
+    @endif
 
     <div class="row">
         {{-- Rules --}}

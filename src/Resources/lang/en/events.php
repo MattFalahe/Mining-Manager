@@ -274,6 +274,25 @@ return [
     'restored_done' => 'Event brought back.',
     'too_close_to_bill_run' => 'The bill run at :run EVE is too close: the event would not apply before its days are billed.',
 
+    // How far back, and events for days that have passed
+    'before_billed' => 'Days up to :last are on issued bills, which keep what they were billed. The first day can be :first at the earliest.',
+    'earliest_day_hint' => 'Days up to :last are on issued bills, so the first day can be :first at the earliest.',
+    'past_directors_only' => 'Only directors and admins can set up an event for days that have passed.',
+    'past_no_signups' => 'Nobody can sign up for days that have passed: an event for them counts everyone who mined within its rules.',
+    'reason_needed_past' => 'Say why: an event for days that have passed changes what people are billed for them.',
+    'reason_for_past' => 'Why this event',
+    'reason_for_past_help' => 'It changes what people are billed for days that have passed. Your reason goes in its history and in the directors\' message.',
+    'past_notice' => 'These days have passed. The event waits :minutes minutes before it applies, so it can still be changed or deleted, and the Event Review webhooks hear about it. Then its discount goes on those days and it locks.',
+    'past_notice_now' => 'These days have passed. The event applies at the next minute: its discount goes on those days and it locks.',
+    'make_past_instead' => 'An event that has not started cannot be moved into days that have passed. Set up an event for those days instead.',
+    'held_stays_past' => 'An event waiting to apply is for days that have passed, and stays so. Delete it and set up a new one for other days.',
+    'held_created' => 'Event set up. It applies at :time EVE; until then you can change or delete it.',
+    'held_notice' => 'Waiting to apply at :time EVE, so it can still be changed or deleted. Its discount shows here once it applies.',
+    'held_edit_notice' => 'This event is for days that have passed and applies at :time EVE.',
+    'locked_notice' => 'Locked since :time EVE: its figures are final, so it can no longer be changed.',
+    'locked_billed_notice' => 'Locked: all of its days are on issued bills, which keep what they were billed, so it can no longer be changed.',
+    'locked_admin_cancel' => 'An admin can still cancel it, with a reason.',
+
     // History
     'history' => 'History',
     'history_what' => 'What',

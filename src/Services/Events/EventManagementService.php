@@ -43,16 +43,18 @@ class EventManagementService
      * Called by the `mining-manager:update-events` command on every run.
      *
      * Transitions:
+     *   held    → completed when applies_at <= now (fires 'event_completed', with its figures, and locks it)
      *   planned → active   when start_time <= now  (fires 'event_started' notification)
      *   active  → completed when end_time  <= now  (fires 'event_completed' notification)
      *
      * Cancelled events are never touched.
      *
-     * @return array ['started' => int, 'completed' => int]
+     * @return array ['applied' => int, 'started' => int, 'completed' => int]
      */
     public function updateEventStatuses(): array
     {
         $now = Carbon::now();
+        $applied = $this->applyHeldEvents($now);
         $started = 0;
         $completed = 0;
 
@@ -155,7 +157,63 @@ class EventManagementService
             }
         }
 
-        return ['started' => $started, 'completed' => $completed];
+        return ['applied' => $applied, 'started' => $started, 'completed' => $completed];
+    }
+
+    /**
+     * Apply the events set up for days that had passed whose hold is over:
+     * gather what arrived since the preview, put the discount on their days
+     * not billed yet, announce them with their figures, and lock them.
+     *
+     * @return int events applied
+     */
+    private function applyHeldEvents(Carbon $now): int
+    {
+        if (!MiningEvent::hasGovernance()) {
+            return 0;
+        }
+
+        $applied = 0;
+        $due = MiningEvent::where('status', MiningEvent::STATUS_HELD)
+            ->where('applies_at', '<=', $now)
+            ->get();
+
+        foreach ($due as $event) {
+            try {
+                // Claimed first, so a run that overlaps this one cannot apply
+                // and announce it again.
+                $claimed = MiningEvent::where('id', $event->id)
+                    ->where('status', MiningEvent::STATUS_HELD)
+                    ->update(['status' => MiningEvent::STATUS_COMPLETED, 'locked_at' => $now]);
+
+                if ($claimed === 0) {
+                    continue;
+                }
+
+                $event = $event->fresh();
+                $aggregator = app(EventMiningAggregator::class);
+                $aggregator->aggregate($event);
+                // The claim changes no row through the model, so its days
+                // are worked out here, now that the rate applies.
+                $aggregator->rebuildDays($event);
+                $this->trackingService->updateEventTracking($event);
+                EventHistory::record($event, EventHistory::APPLIED);
+                Log::info("Mining Manager: Event '{$event->name}' (id={$event->id}) applied to the days that had passed");
+
+                try {
+                    $participantIds = $event->participants()->pluck('character_id')->toArray();
+                    app(NotificationService::class)->sendEventCompleted($event->fresh(), $participantIds);
+                } catch (\Exception $e) {
+                    Log::warning("Mining Manager: Failed to send event_completed notification for event {$event->id}: " . $e->getMessage());
+                }
+
+                $applied++;
+            } catch (\Exception $e) {
+                Log::error("Mining Manager: Failed to apply held event {$event->id}: " . $e->getMessage());
+            }
+        }
+
+        return $applied;
     }
 
     /**

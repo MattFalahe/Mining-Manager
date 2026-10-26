@@ -8,10 +8,13 @@
     Optional:
       $event        the event being edited
       $prefill      what the form starts with when opened from a chunk
+      $limits       EventController::formLimits(): how far back, and past events
 --}}
 @php
     $event = $event ?? null;
     $prefill = $prefill ?? [];
+    $limits = ($limits ?? []) + ['governed' => false, 'creating' => $event === null, 'held' => false, 'earliest_day' => null, 'enforce_earliest' => false, 'can_past' => false, 'hold_minutes' => 0, 'today' => now()->toDateString()];
+    $minDayAttribute = $limits['enforce_earliest'] && $limits['earliest_day'] ? 'min="' . e($limits['earliest_day']) . '"' : '';
     $everyoneKey = \MiningManager\Models\MiningEvent::PARTICIPATION_EVERYONE;
     $signedUpKey = \MiningManager\Models\MiningEvent::PARTICIPATION_SIGNED_UP;
 
@@ -98,7 +101,7 @@
                         <div class="col-md-6">
                             <div class="form-group">
                                 <label for="start_day">{{ trans('mining-manager::events.first_day') }} <span class="text-danger">*</span></label>
-                                <input type="date" class="form-control @error('start_day') is-invalid @enderror" id="start_day" name="start_day" value="{{ $startDay }}">
+                                <input type="date" class="form-control @error('start_day') is-invalid @enderror" id="start_day" name="start_day" value="{{ $startDay }}" {!! $minDayAttribute !!}>
                             </div>
                         </div>
                         <div class="col-md-6">
@@ -157,6 +160,38 @@
                         </div>
                     </div>
                 </div>
+
+                @if ($limits['enforce_earliest'])
+                    <small class="form-text text-muted mt-2">
+                        <i class="fas fa-file-invoice"></i>
+                        {{ trans('mining-manager::events.earliest_day_hint', ['last' => $limits['last_billed'], 'first' => $limits['earliest_label']]) }}
+                    </small>
+                @endif
+
+                @if ($limits['held'] && $event && $event->applies_at)
+                    <div class="mm-notice mm-notice-warning mt-3 mb-0">
+                        <i class="fas fa-hourglass-half"></i>
+                        {{ trans('mining-manager::events.held_edit_notice', ['time' => $event->applies_at->format('D j M H:i')]) }}
+                    </div>
+                @endif
+
+                @if ($limits['governed'] && $limits['creating'])
+                    <div class="mm-notice mm-notice-warning mt-3 mb-0" id="past-notice" style="display: none;">
+                        @if ($limits['can_past'])
+                            <p class="mb-2">
+                                <i class="fas fa-hourglass-half"></i>
+                                {{ $limits['hold_minutes'] > 0 ? trans('mining-manager::events.past_notice', ['minutes' => $limits['hold_minutes']]) : trans('mining-manager::events.past_notice_now') }}
+                            </p>
+                            <div class="form-group mb-0">
+                                <label for="reason">{{ trans('mining-manager::events.reason_for_past') }} <span class="text-danger">*</span></label>
+                                <textarea class="form-control @error('reason') is-invalid @enderror" id="reason" name="reason" rows="2" maxlength="500" disabled>{{ old('reason') }}</textarea>
+                                <small class="form-text text-muted">{{ trans('mining-manager::events.reason_for_past_help') }}</small>
+                            </div>
+                        @else
+                            <p class="mb-0"><i class="fas fa-lock"></i> {{ trans('mining-manager::events.past_directors_only') }}</p>
+                        @endif
+                    </div>
+                @endif
             </div>
         </div>
 
@@ -296,7 +331,7 @@
                     <label class="custom-control-label" for="participation-everyone">{{ trans('mining-manager::events.participation_everyone') }}</label>
                     <small class="form-text text-muted mt-0">{{ trans('mining-manager::events.participation_everyone_help') }}</small>
                 </div>
-                <div class="custom-control custom-radio mt-2">
+                <div class="custom-control custom-radio mt-2" id="participation-signed-up-wrap">
                     <input type="radio" class="custom-control-input" id="participation-signed-up" name="participation" value="{{ $signedUpKey }}" {{ $participationValue === $signedUpKey ? 'checked' : '' }}>
                     <label class="custom-control-label" for="participation-signed-up">{{ trans('mining-manager::events.participation_signed_up') }}</label>
                     <small class="form-text text-muted mt-0">{{ trans('mining-manager::events.participation_signed_up_help') }}</small>
@@ -330,7 +365,7 @@
                         </div>
                     @endif
                 @else
-                    <div class="custom-control custom-checkbox">
+                    <div class="custom-control custom-checkbox" id="send-notifications-wrap">
                         <input type="checkbox" class="custom-control-input" id="send_notifications" name="send_notifications" value="1" {{ old('send_notifications', true) ? 'checked' : '' }}>
                         <label class="custom-control-label" for="send_notifications">{{ trans('mining-manager::events.send_notifications') }}</label>
                     </div>
@@ -347,6 +382,7 @@
     .mining-manager-wrapper .event-refinery:last-child { border-bottom: none; }
     .mining-manager-wrapper .event-refinery.has-chunk { background-color: #1d2b25; }
     .mining-manager-wrapper .event-refinery-chunks { margin: 4px 0 0 1.5rem; padding: 0; list-style: none; font-size: 0.85em; color: var(--mm-text-muted); }
+    .mining-manager-wrapper .mm-notice-warning { background-color: #2b2618 !important; border-left-color: var(--mm-warning) !important; }
 </style>
 @endpush
 
@@ -360,6 +396,7 @@ $(function () {
         gas_huffing: @json(trans('mining-manager::events.ore_fixed_gas_huffing')),
         '': @json(trans('mining-manager::events.ore_fixed_none')),
     };
+    const limits = @json($limits);
 
     // Only the fields the event type uses are sent: the rest are disabled.
     function show(selector, on) {
@@ -389,6 +426,34 @@ $(function () {
         });
     }
 
+    // Days that have passed make a past event: held before it applies, for
+    // everyone who mined, with a reason. The server decides; this only shows
+    // the form it will take.
+    function isPast() {
+        if (typeSelect.val() === 'moon_extraction') {
+            const end = $('#end_day').val();
+            return !!end && end < limits.today;
+        }
+        const end = parseByMode($('#end_time').val());
+        return !!end && end.getTime() <= Date.now();
+    }
+
+    function applyPast() {
+        if (!limits.governed || !(limits.creating || limits.held)) {
+            return;
+        }
+        const past = isPast();
+        if (limits.creating) {
+            $('#past-notice').toggle(past);
+            $('#reason').prop('disabled', !past).prop('required', past && limits.can_past);
+            $('#send-notifications-wrap').toggle(!past);
+        }
+        $('#participation-signed-up-wrap').toggle(!past);
+        if (past) {
+            $('#participation-everyone').prop('checked', true);
+        }
+    }
+
     function applyType() {
         const type = typeSelect.val();
         const moon = type === 'moon_extraction';
@@ -403,6 +468,7 @@ $(function () {
         $('#start_time').prop('required', !moon);
         applyLocation();
         markChunks();
+        applyPast();
     }
 
     typeSelect.on('change', applyType);
@@ -500,6 +566,8 @@ $(function () {
 
     $('#start_time, #end_time').on('change input', updateConfirmation);
     $('input[name="time_input_mode"]').on('change', updateConfirmation);
+    $('#start_day, #end_day, #start_time, #end_time').on('change input', applyPast);
+    $('input[name="time_input_mode"]').on('change', applyPast);
 
     $('#eventForm').on('submit', function () {
         if (inputMode() !== 'local') return;
