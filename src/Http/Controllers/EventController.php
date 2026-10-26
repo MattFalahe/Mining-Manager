@@ -208,6 +208,7 @@ class EventController extends Controller
             'participation' => 'required|in:' . MiningEvent::PARTICIPATION_EVERYONE . ',' . MiningEvent::PARTICIPATION_SIGNED_UP,
             'tax_modifier' => 'required|integer|min:-100|max:100',
             'status' => $event ? 'required|in:planned,active,completed,cancelled' : 'nullable',
+            'status_was' => 'nullable|in:planned,active,completed,cancelled',
         ]);
 
         $errors = [];
@@ -289,7 +290,11 @@ class EventController extends Controller
             ];
         }
 
-        if ($event) {
+        // The form shows the status the event had when it opened. Left as it
+        // was, it is not written back: the event may have started or ended
+        // since, and saving would put it back to be started or ended, and
+        // announced, again.
+        if ($event && $request->input('status') !== $request->input('status_was', $event->status)) {
             $attributes['status'] = $request->input('status');
         }
 

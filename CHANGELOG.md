@@ -122,6 +122,7 @@ This release also brings tax periods to the ledger, My Mining and the dashboards
 - Fixed: **times typed in local time were saved as EVE time** when creating an event.
 - Fixed: **Event Completed showed the units mined as ISK.** It shows the ISK.
 - Fixed: **the event page offered Delete to directors**, who are not allowed to delete events. It shows only for those who are.
+- Fixed: **saving an event's edit form put back the status it had when the form opened.** An event that started or ended while the form was open went back, and was started or ended, and announced, a second time. The status is now saved only when you change it.
 
 ### Reports
 

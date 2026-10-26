@@ -328,6 +328,7 @@
                                 <option value="{{ $statusKey }}" {{ old('status', $event->status) === $statusKey ? 'selected' : '' }}>{{ trans('mining-manager::events.' . $statusKey) }}</option>
                             @endforeach
                         </select>
+                        <input type="hidden" name="status_was" value="{{ old('status_was', $event->status) }}">
                         <small class="form-text text-muted">{{ trans('mining-manager::events.status_help') }}</small>
                     </div>
                 @else
