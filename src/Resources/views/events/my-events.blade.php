@@ -332,7 +332,7 @@
                                                 </span>
                                             </p>
                                             @if($event->description)
-                                            <p class="text-muted mt-2">{{ Str::limit($event->description, 100) }}</p>
+                                            <p class="text-muted mt-2">{{ Str::limit((string) $event->description, 100) }}</p>
                                             @endif
                                         </div>
                                     </div>

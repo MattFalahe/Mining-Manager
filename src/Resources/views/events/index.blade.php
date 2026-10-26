@@ -275,7 +275,7 @@
 
                     {{-- Description --}}
                     <p class="text-muted">
-                        {{ Str::limit($event->description, 100) }}
+                        {{ Str::limit((string) $event->description, 100) }}
                     </p>
 
                     <p class="small text-muted mb-2">
