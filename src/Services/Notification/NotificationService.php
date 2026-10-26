@@ -515,7 +515,9 @@ class NotificationService
         $data = $this->eventData($event) + [
             'final' => true,
             'total_mined' => array_sum(array_column($people, 'value')),
-            'participants' => count($people),
+            // Pilots, as Event Completed counts them: characters, not the
+            // people they are grouped into.
+            'participants' => array_sum(array_map(fn ($person) => count($person['characters']), $people)),
             'discount_given' => array_sum(array_column($people, 'discount')),
             'top_miners' => implode("\n", array_map(
                 fn ($person, $rank) => ($rank + 1) . '. ' . $person['name'] . ': ' . number_format($person['value'], 0) . ' ISK',
