@@ -8,9 +8,11 @@ use Seat\Web\Http\Controllers\Controller;
 use MiningManager\Services\Events\EventManagementService;
 use MiningManager\Services\Notification\NotificationService;
 use MiningManager\Models\MiningEvent;
+use MiningManager\Models\EventHistory;
 use MiningManager\Models\EventMoon;
 use MiningManager\Models\EventParticipant;
 use MiningManager\Models\EventSignup;
+use MiningManager\Services\Events\EventAccess;
 use MiningManager\Services\Events\EventMiningAggregator;
 use MiningManager\Services\Events\EventPeople;
 use MiningManager\Services\Events\EventRefineries;
@@ -35,17 +37,27 @@ class EventController extends Controller
     protected $notificationService;
 
     /**
+     * Who may do what to an event.
+     *
+     * @var EventAccess
+     */
+    protected $access;
+
+    /**
      * Constructor
      *
      * @param EventManagementService $eventService
      * @param NotificationService $notificationService
+     * @param EventAccess $access
      */
     public function __construct(
         EventManagementService $eventService,
-        NotificationService $notificationService
+        NotificationService $notificationService,
+        EventAccess $access
     ) {
         $this->eventService = $eventService;
         $this->notificationService = $notificationService;
+        $this->access = $access;
     }
 
     /**
@@ -84,6 +96,21 @@ class EventController extends Controller
 
         $events = $query->orderBy('start_time', 'desc')->paginate(20);
 
+        // Who cancelled each cancelled event on the page, from its history.
+        $cancelledBy = [];
+        $cancelledIds = $events->getCollection()->where('status', MiningEvent::STATUS_CANCELLED)->pluck('id')->all();
+        if ($cancelledIds && MiningEvent::hasGovernance()) {
+            $cancelledBy = EventHistory::with('user')
+                ->whereIn('event_id', $cancelledIds)
+                ->where('action', EventHistory::CANCELLED)
+                ->orderByDesc('id')
+                ->get()
+                ->unique('event_id')
+                ->mapWithKeys(fn ($entry) => [$entry->event_id => $entry->user->name ?? null])
+                ->all();
+        }
+        $access = $this->access;
+
         // Get corporations with event participation
         $corporationIds = DB::table('character_affiliations')
             ->whereIn('character_id', function($query) {
@@ -116,7 +143,7 @@ class EventController extends Controller
                 ->sum('total_mined_value'),
         ];
 
-        return view('mining-manager::events.index', compact('events', 'status', 'corporationId', 'corporations', 'stats'));
+        return view('mining-manager::events.index', compact('events', 'status', 'corporationId', 'corporations', 'stats', 'cancelledBy', 'access'));
     }
 
     /**
@@ -207,8 +234,7 @@ class EventController extends Controller
             'audience' => 'required|string',
             'participation' => 'required|in:' . MiningEvent::PARTICIPATION_EVERYONE . ',' . MiningEvent::PARTICIPATION_SIGNED_UP,
             'tax_modifier' => 'required|integer|min:-100|max:100',
-            'status' => $event ? 'required|in:planned,active,completed,cancelled' : 'nullable',
-            'status_was' => 'nullable|in:planned,active,completed,cancelled',
+            'reason' => 'nullable|string|max:500',
         ]);
 
         $errors = [];
@@ -290,14 +316,6 @@ class EventController extends Controller
             ];
         }
 
-        // The form shows the status the event had when it opened. Left as it
-        // was, it is not written back: the event may have started or ended
-        // since, and saving would put it back to be started or ended, and
-        // announced, again.
-        if ($event && $request->input('status') !== $request->input('status_was', $event->status)) {
-            $attributes['status'] = $request->input('status');
-        }
-
         return [$attributes, $refineries];
     }
 
@@ -352,6 +370,7 @@ class EventController extends Controller
                     'created_by' => auth()->user()->id,
                 ]);
                 $this->syncRefineries($event, $refineries);
+                EventHistory::record($event, EventHistory::CREATED, auth()->id(), $event->snapshot());
 
                 return $event;
             });
@@ -393,6 +412,12 @@ class EventController extends Controller
     {
         try {
             $event = MiningEvent::with('creator')->findOrFail($id);
+            $user = auth()->user();
+
+            if (!$this->access->canSee($user, $event)) {
+                return redirect()->route('mining-manager.events.index')
+                    ->with('error', trans('mining-manager::events.not_announced_yet'));
+            }
 
             $eventPeople = app(EventPeople::class);
             $people = $eventPeople->people($event);
@@ -417,9 +442,21 @@ class EventController extends Controller
                 'qualifying' => array_sum(array_column($people, 'qualifying')),
                 'discount' => array_sum(array_column($people, 'discount')),
             ];
-            $signedUp = $event->isSignedUp(auth()->user());
+            $signedUp = $event->isSignedUp($user);
 
-            return view('mining-manager::events.show', compact('event', 'people', 'byDay', 'byRefinery', 'refineries', 'reportingUntil', 'totals', 'signedUp'));
+            $can = [
+                'edit' => $this->access->canEdit($user, $event),
+                'cancel' => $this->access->canCancel($user, $event),
+                'restore' => $this->access->canRestore($user, $event),
+                'approve' => $this->access->canApprove($user, $event),
+                'delete' => $this->access->canDelete($user, $event),
+                'update_data' => $this->access->isDirector($user),
+            ];
+            $history = MiningEvent::hasGovernance()
+                ? $this->describeHistory($event->history()->with('user')->limit(200)->get())
+                : [];
+
+            return view('mining-manager::events.show', compact('event', 'people', 'byDay', 'byRefinery', 'refineries', 'reportingUntil', 'totals', 'signedUp', 'can', 'history'));
         } catch (\Exception $e) {
             \Log::error('EventController: Error showing event', [
                 'event_id' => $id,
@@ -441,6 +478,11 @@ class EventController extends Controller
     {
         $event = MiningEvent::findOrFail($id);
 
+        if (!$this->access->canEdit(auth()->user(), $event)) {
+            return redirect()->route('mining-manager.events.show', $event->id)
+                ->with('error', trans('mining-manager::events.cannot_edit'));
+        }
+
         // Same scoped dropdown as create() — corps with MM settings +
         // moon owner. Plus, defensively, the event's currently-assigned
         // corp_id (if any) so an event tied to a corp that's no longer
@@ -449,8 +491,9 @@ class EventController extends Controller
 
         $taxCompat = $this->buildTaxCompatibilityMap();
         $refineries = app(EventRefineries::class)->choices($event->refineryIds());
+        $canDelete = $this->access->canDelete(auth()->user(), $event);
 
-        return view('mining-manager::events.edit', compact('event', 'corporations', 'taxCompat', 'refineries'));
+        return view('mining-manager::events.edit', compact('event', 'corporations', 'taxCompat', 'refineries', 'canDelete'));
     }
 
     /**
@@ -502,10 +545,26 @@ class EventController extends Controller
     public function update(Request $request, $id)
     {
         $event = MiningEvent::findOrFail($id);
+
+        if (!$this->access->canEdit(auth()->user(), $event)) {
+            return redirect()->route('mining-manager.events.show', $event->id)
+                ->with('error', trans('mining-manager::events.cannot_edit'));
+        }
+
         [$attributes, $refineries] = $this->eventFromForm($request, $event);
 
+        // A change to an event under way moves what people already get, so
+        // whoever makes it says why.
+        if ($event->hasStarted() && $event->isAnnounced() && trim((string) $request->input('reason')) === '') {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'reason' => trans('mining-manager::events.reason_needed_started'),
+            ]);
+        }
+
+        $before = $event->snapshot();
+
         try {
-            DB::transaction(function () use ($event, $attributes, $refineries) {
+            DB::transaction(function () use ($event, $attributes, $refineries, $before, $request) {
                 // Refineries first, so a scope edit gathers the event with
                 // them. Refineries alone changing is not a change to the
                 // event row, so it gathers the event itself.
@@ -514,6 +573,11 @@ class EventController extends Controller
 
                 if ($refineriesChanged && !$event->wasChanged(MiningEvent::SCOPE_AFFECTING_FIELDS)) {
                     app(EventMiningAggregator::class)->aggregate($event, true);
+                }
+
+                $changes = MiningEvent::changesBetween($before, $event->snapshot());
+                if ($changes !== []) {
+                    EventHistory::record($event, EventHistory::EDITED, auth()->id(), $changes, $request->input('reason'));
                 }
             });
 
@@ -541,7 +605,18 @@ class EventController extends Controller
     {
         try {
             $event = MiningEvent::findOrFail($id);
+            $user = auth()->user();
+
+            if (!$this->access->canDelete($user, $event)) {
+                return redirect()->route('mining-manager.events.show', $event->id)
+                    ->with('error', trans('mining-manager::events.cannot_delete'));
+            }
+
+            // Taken before the delete, which takes the refineries with it.
+            $snapshot = $event->snapshot() + ['status' => $event->status];
             $event->delete();
+            EventHistory::record($event, EventHistory::DELETED, $user->id, $snapshot);
+            $this->notifyReview($event, 'deleted', $user);
 
             return redirect()->route('mining-manager.events.index')
                 ->with('success', 'Event deleted successfully');
@@ -554,6 +629,212 @@ class EventController extends Controller
             return redirect()->back()
                 ->with('error', 'Error deleting event: ' . $e->getMessage());
         }
+    }
+
+    /**
+     * Cancel an event. Its discount comes off every day not billed yet, and
+     * whoever cancels it says why.
+     *
+     * @param Request $request
+     * @param int $id
+     * @return \Illuminate\Http\RedirectResponse
+     */
+    public function cancel(Request $request, $id)
+    {
+        $event = MiningEvent::findOrFail($id);
+        $user = auth()->user();
+
+        if (!$this->access->canCancel($user, $event)) {
+            return redirect()->route('mining-manager.events.show', $event->id)
+                ->with('error', trans('mining-manager::events.cannot_cancel'));
+        }
+
+        $request->validate(['reason' => 'required|string|max:500']);
+
+        $from = $event->status;
+        $event->update(['status' => MiningEvent::STATUS_CANCELLED]);
+        EventHistory::record($event, EventHistory::CANCELLED, $user->id, ['status' => [$from, MiningEvent::STATUS_CANCELLED]], $request->input('reason'));
+        $this->notifyReview($event, 'cancelled', $user, $request->input('reason'));
+
+        return redirect()->route('mining-manager.events.show', $event->id)
+            ->with('success', trans('mining-manager::events.cancelled_done'));
+    }
+
+    /**
+     * Bring a cancelled event back, so its discount goes back on the days not
+     * billed yet.
+     *
+     * @param Request $request
+     * @param int $id
+     * @return \Illuminate\Http\RedirectResponse
+     */
+    public function restore(Request $request, $id)
+    {
+        $event = MiningEvent::findOrFail($id);
+        $user = auth()->user();
+
+        if (!$this->access->canRestore($user, $event)) {
+            return redirect()->route('mining-manager.events.show', $event->id)
+                ->with('error', trans('mining-manager::events.cannot_restore'));
+        }
+
+        $request->validate(['reason' => 'nullable|string|max:500']);
+
+        $status = $this->statusToRestore($event);
+        $attributes = ['status' => $status];
+
+        // Held again, from now: whoever brings it back is changing what it
+        // will do, and the other directors get their look again.
+        if ($status === MiningEvent::STATUS_HELD) {
+            $until = $this->access->holdUntil();
+            if ($until === null) {
+                return redirect()->route('mining-manager.events.show', $event->id)
+                    ->with('error', trans('mining-manager::events.too_close_to_bill_run', ['run' => $this->access->nextBillRun()->format('D j M H:i')]));
+            }
+            $attributes['applies_at'] = $until;
+        }
+
+        $event->update($attributes);
+        EventHistory::record($event, EventHistory::RESTORED, $user->id, ['status' => [MiningEvent::STATUS_CANCELLED, $status]], $request->input('reason'));
+        $this->notifyReview($event, 'restored', $user, $request->input('reason'));
+
+        return redirect()->route('mining-manager.events.show', $event->id)
+            ->with('success', trans('mining-manager::events.restored_done'));
+    }
+
+    /**
+     * What a cancelled event comes back as: still waiting, when it was held
+     * or waiting for approval; otherwise what its days make it now.
+     */
+    private function statusToRestore(MiningEvent $event): string
+    {
+        $before = null;
+
+        if (MiningEvent::hasGovernance()) {
+            $cancelled = EventHistory::where('event_id', $event->id)
+                ->where('action', EventHistory::CANCELLED)
+                ->orderByDesc('id')
+                ->first();
+            $before = $cancelled->changes['status'][0] ?? null;
+        }
+
+        if (in_array($before, [MiningEvent::STATUS_HELD, MiningEvent::STATUS_AWAITING_APPROVAL], true)) {
+            return $before;
+        }
+
+        if (!$event->hasStarted()) {
+            return MiningEvent::STATUS_PLANNED;
+        }
+
+        return $event->isPast() ? MiningEvent::STATUS_COMPLETED : MiningEvent::STATUS_ACTIVE;
+    }
+
+    /**
+     * Tell the Event Review webhooks. A message that fails to go out is
+     * logged; what was done stands.
+     *
+     * @param \Seat\Web\Models\User|null $user
+     */
+    private function notifyReview(MiningEvent $event, string $kind, $user = null, ?string $reason = null): void
+    {
+        try {
+            $this->notificationService->sendEventReview($event, $kind, [
+                'by' => $user->name ?? null,
+                'reason' => $reason,
+            ]);
+        } catch (\Throwable $e) {
+            \Log::warning('EventController: could not send the Event Review message', [
+                'event_id' => $event->id,
+                'kind' => $kind,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * The event's history as its page shows it: when, by whom, what and why,
+     * and for anything that changed the event, each field before and after.
+     *
+     * @param \Illuminate\Support\Collection<int, EventHistory> $history
+     * @return array<int, array{when: \Carbon\Carbon|null, who: string, action: string, reason: ?string, changes: array<int, array{field: string, before: string, after: string}>}>
+     */
+    private function describeHistory($history): array
+    {
+        $changed = $history->reject(fn ($entry) => in_array($entry->action, [EventHistory::CREATED, EventHistory::DELETED], true));
+
+        // Names for the refineries, places and corporations the changes name.
+        $structureIds = [];
+        $placeIds = [];
+        $corporationIds = [];
+        foreach ($changed as $entry) {
+            foreach ((array) $entry->changes as $field => $pair) {
+                foreach ((array) $pair as $value) {
+                    if ($field === 'refineries') {
+                        $structureIds = array_merge($structureIds, array_map('intval', (array) $value));
+                    } elseif ($field === 'solar_system_id' && $value) {
+                        $placeIds[] = (int) $value;
+                    } elseif ($field === 'corporation_id' && $value) {
+                        $corporationIds[] = (int) $value;
+                    }
+                }
+            }
+        }
+
+        $structures = $structureIds ? DB::table('universe_structures')->whereIn('structure_id', array_unique($structureIds))->pluck('name', 'structure_id')->all() : [];
+        $places = $placeIds ? MapDenormalize::whereIn('itemID', array_unique($placeIds))->pluck('itemName', 'itemID')->all() : [];
+        $corporations = $corporationIds ? DB::table('corporation_infos')->whereIn('corporation_id', array_unique($corporationIds))->pluck('name', 'corporation_id')->all() : [];
+
+        $none = trans('mining-manager::events.history_none');
+        $show = function (string $field, $value) use ($structures, $places, $corporations, $none): string {
+            if ($value === null || $value === '' || $value === []) {
+                return match ($field) {
+                    'refineries' => trans('mining-manager::events.history_any_refinery'),
+                    'ore_categories' => trans('mining-manager::events.history_all_ore'),
+                    default => $none,
+                };
+            }
+
+            return match ($field) {
+                'type' => MiningEvent::EVENT_TYPES[$value] ?? (string) $value,
+                'location_scope' => MiningEvent::LOCATION_SCOPES[$value] ?? (string) $value,
+                'solar_system_id' => $places[$value] ?? (string) $value,
+                'refineries' => implode(', ', array_map(fn ($id) => $structures[$id] ?? (string) $id, (array) $value)),
+                'ore_categories' => implode(', ', array_map(fn ($category) => MiningEvent::ORE_CATEGORY_LABELS[$category] ?? $category, (array) $value)),
+                'corporation_id' => $corporations[$value] ?? (string) $value,
+                'members_only' => trans('mining-manager::events.' . ($value ? 'yes' : 'no')),
+                'participation' => trans('mining-manager::events.' . ($value === MiningEvent::PARTICIPATION_SIGNED_UP ? 'participation_signed_up' : 'participation_everyone')),
+                'tax_modifier' => MiningEvent::TAX_MODIFIER_LABELS[(int) $value] ?? ((int) $value > 0 ? '+' : '') . (int) $value . '%',
+                'status' => trans('mining-manager::events.' . $value),
+                'description' => \Illuminate\Support\Str::limit((string) $value, 120),
+                default => (string) $value,
+            };
+        };
+
+        return $history->map(function ($entry) use ($show) {
+            $changes = [];
+            if (!in_array($entry->action, [EventHistory::CREATED, EventHistory::DELETED], true)) {
+                foreach ((array) $entry->changes as $field => $pair) {
+                    if (!is_array($pair) || count($pair) !== 2) {
+                        continue;
+                    }
+                    $changes[] = [
+                        'field' => trans('mining-manager::events.history_field_' . $field),
+                        'before' => $show($field, $pair[0]),
+                        'after' => $show($field, $pair[1]),
+                    ];
+                }
+            }
+
+            return [
+                'when' => $entry->created_at,
+                'who' => $entry->user_id === null
+                    ? trans('mining-manager::events.history_by_plugin')
+                    : ($entry->user->name ?? trans('mining-manager::events.unknown')),
+                'action' => trans('mining-manager::events.history_' . $entry->action),
+                'reason' => $entry->reason,
+                'changes' => $changes,
+            ];
+        })->values()->all();
     }
 
     /**
@@ -591,6 +872,7 @@ class EventController extends Controller
             }
 
             $event->refresh();
+            EventHistory::record($event, EventHistory::STARTED, auth()->id());
 
             // Send event started notification
             try {
@@ -650,6 +932,7 @@ class EventController extends Controller
 
             // Refresh the event to get updated totals
             $event->refresh();
+            EventHistory::record($event, EventHistory::COMPLETED, auth()->id());
 
             // Send event completed notification
             try {

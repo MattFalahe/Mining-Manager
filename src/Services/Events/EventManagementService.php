@@ -2,6 +2,7 @@
 
 namespace MiningManager\Services\Events;
 
+use MiningManager\Models\EventHistory;
 use MiningManager\Models\MiningEvent;
 use MiningManager\Services\Configuration\SettingsManagerService;
 use MiningManager\Services\Notification\NotificationService;
@@ -83,6 +84,7 @@ class EventManagementService
                 }
 
                 Log::info("Mining Manager: Event '{$event->name}' (id={$event->id}) auto-started");
+                EventHistory::record($event, EventHistory::STARTED);
 
                 // Dispatch 'event_started' notification, unless the event is
                 // already over: one set up after its days completes below in
@@ -137,6 +139,7 @@ class EventManagementService
                 }
 
                 Log::info("Mining Manager: Event '{$event->name}' (id={$event->id}) auto-completed");
+                EventHistory::record($event, EventHistory::COMPLETED);
 
                 // Dispatch 'event_completed' notification
                 try {

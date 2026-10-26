@@ -321,16 +321,14 @@
                 </div>
 
                 @if ($event)
-                    <div class="form-group mb-0">
-                        <label for="status">{{ trans('mining-manager::events.status') }}</label>
-                        <select class="form-control" id="status" name="status">
-                            @foreach (['planned', 'active', 'completed', 'cancelled'] as $statusKey)
-                                <option value="{{ $statusKey }}" {{ old('status', $event->status) === $statusKey ? 'selected' : '' }}>{{ trans('mining-manager::events.' . $statusKey) }}</option>
-                            @endforeach
-                        </select>
-                        <input type="hidden" name="status_was" value="{{ old('status_was', $event->status) }}">
-                        <small class="form-text text-muted">{{ trans('mining-manager::events.status_help') }}</small>
-                    </div>
+                    {{-- Status is not set here: cancelling and bringing back are on the event page, and the rest follows the event's times. --}}
+                    @if ($event->hasStarted() && $event->isAnnounced())
+                        <div class="form-group mb-0">
+                            <label for="reason">{{ trans('mining-manager::events.reason_for_change') }} <span class="text-danger">*</span></label>
+                            <textarea class="form-control @error('reason') is-invalid @enderror" id="reason" name="reason" rows="2" maxlength="500" required>{{ old('reason') }}</textarea>
+                            <small class="form-text text-muted">{{ trans('mining-manager::events.reason_for_change_help') }}</small>
+                        </div>
+                    @endif
                 @else
                     <div class="custom-control custom-checkbox">
                         <input type="checkbox" class="custom-control-input" id="send_notifications" name="send_notifications" value="1" {{ old('send_notifications', true) ? 'checked' : '' }}>

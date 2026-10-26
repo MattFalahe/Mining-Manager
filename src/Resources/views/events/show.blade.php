@@ -26,7 +26,15 @@
         $statuses::ADDED => ['badge-secondary', trans('mining-manager::events.status_added')],
         $statuses::NOT_SIGNED_UP => ['badge-warning', trans('mining-manager::events.status_not_signed_up')],
     ];
-    $statusColour = ['active' => 'success', 'cancelled' => 'danger', 'completed' => 'secondary'][$event->status] ?? 'info';
+    $statusColour = [
+        'active' => 'success',
+        'cancelled' => 'danger',
+        'completed' => 'secondary',
+        'held' => 'warning',
+        'awaiting_approval' => 'warning',
+        'declined' => 'dark',
+    ][$event->status] ?? 'info';
+    $manages = $can['edit'] || $can['update_data'] || $can['cancel'] || $can['restore'] || $can['delete'];
 
     if ($event->countsWholeDays()) {
         $when = $event->end_time
@@ -131,19 +139,33 @@
                         <p class="text-muted mb-2">{{ trans('mining-manager::events.signups_closed') }}</p>
                     @endif
 
-                    @can('mining-manager.director')
+                    @if ($manages)
                         <hr>
+                    @endif
+                    @if ($can['edit'])
                         <a href="{{ route('mining-manager.events.edit', $event->id) }}" class="btn btn-outline-secondary btn-block">
                             <i class="fas fa-edit"></i> {{ trans('mining-manager::events.edit') }}
                         </a>
+                    @endif
+                    @if ($can['update_data'])
                         <form method="POST" action="{{ route('mining-manager.events.update-data', $event->id) }}" class="mt-2">
                             @csrf
                             <button type="submit" class="btn btn-outline-secondary btn-block">
                                 <i class="fas fa-sync-alt"></i> {{ trans('mining-manager::events.update_data') }}
                             </button>
                         </form>
-                    @endcan
-                    @can('mining-manager.admin')
+                    @endif
+                    @if ($can['cancel'])
+                        <button type="button" class="btn btn-outline-warning btn-block mt-2 open-event-modal" data-modal="#cancelEventModal">
+                            <i class="fas fa-ban"></i> {{ trans('mining-manager::events.cancel_event') }}
+                        </button>
+                    @endif
+                    @if ($can['restore'])
+                        <button type="button" class="btn btn-outline-success btn-block mt-2 open-event-modal" data-modal="#restoreEventModal">
+                            <i class="fas fa-undo"></i> {{ trans('mining-manager::events.restore_event') }}
+                        </button>
+                    @endif
+                    @if ($can['delete'])
                         <form method="POST" action="{{ route('mining-manager.events.destroy', $event->id) }}" class="mt-2" onsubmit='return confirm(@json(trans('mining-manager::events.confirm_delete_warning')));'>
                             @csrf
                             @method('DELETE')
@@ -151,7 +173,7 @@
                                 <i class="fas fa-trash"></i> {{ trans('mining-manager::events.delete') }}
                             </button>
                         </form>
-                    @endcan
+                    @endif
                 </div>
             </div>
         </div>
@@ -359,15 +381,106 @@
         </div>
     @endif
 
+    {{-- History --}}
+    @if (\MiningManager\Models\MiningEvent::hasGovernance())
+        <div class="card card-dark mt-3 mb-0">
+            <div class="card-header">
+                <h3 class="card-title"><i class="fas fa-history"></i> {{ trans('mining-manager::events.history') }}</h3>
+            </div>
+            <div class="card-body p-0">
+                @if ($history === [])
+                    <p class="text-muted p-3 mb-0">{{ trans('mining-manager::events.history_empty') }}</p>
+                @else
+                    <table class="table table-dark table-striped mb-0">
+                        <thead>
+                            <tr>
+                                <th style="width: 190px;">{{ trans('mining-manager::events.when') }}</th>
+                                <th style="width: 200px;">{{ trans('mining-manager::events.who') }}</th>
+                                <th>{{ trans('mining-manager::events.history_what') }}</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach ($history as $entry)
+                                <tr>
+                                    <td class="text-nowrap">{{ $entry['when'] ? $entry['when']->format('D j M Y H:i') . ' EVE' : '-' }}</td>
+                                    <td>{{ $entry['who'] }}</td>
+                                    <td>
+                                        <strong>{{ $entry['action'] }}</strong>
+                                        @if ($entry['reason'])
+                                            <div class="small">{{ trans('mining-manager::events.reason') }}: {{ $entry['reason'] }}</div>
+                                        @endif
+                                        @foreach ($entry['changes'] as $change)
+                                            <div class="small text-muted">{{ $change['field'] }}: {{ $change['before'] }} &rarr; {{ $change['after'] }}</div>
+                                        @endforeach
+                                    </td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                @endif
+            </div>
+        </div>
+    @endif
+
     </div>{{-- /.card-body --}}
 </div>{{-- /.card-tabs --}}
 
 </div>{{-- /.mining-manager-wrapper --}}
+
+{{-- Moved to the body before they open, as AdminLTE stacks modals behind its own layers otherwise. --}}
+@if ($can['cancel'])
+    <div class="modal fade" id="cancelEventModal" tabindex="-1" role="dialog" aria-labelledby="cancelEventTitle" aria-hidden="true">
+        <div class="modal-dialog" role="document">
+            <form method="POST" action="{{ route('mining-manager.events.cancel', $event->id) }}" class="modal-content bg-dark">
+                @csrf
+                <div class="modal-header">
+                    <h5 class="modal-title" id="cancelEventTitle"><i class="fas fa-ban"></i> {{ trans('mining-manager::events.cancel_event') }}</h5>
+                    <button type="button" class="close text-white" data-dismiss="modal" aria-label="{{ trans('mining-manager::events.close') }}"><span aria-hidden="true">&times;</span></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted">{{ trans('mining-manager::events.cancel_event_help') }}</p>
+                    <label for="cancel-reason">{{ trans('mining-manager::events.reason') }} <span class="text-danger">*</span></label>
+                    <textarea class="form-control" id="cancel-reason" name="reason" rows="3" maxlength="500" required placeholder="{{ trans('mining-manager::events.cancel_reason_placeholder') }}"></textarea>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-dismiss="modal">{{ trans('mining-manager::events.close') }}</button>
+                    <button type="submit" class="btn btn-warning"><i class="fas fa-ban"></i> {{ trans('mining-manager::events.cancel_event') }}</button>
+                </div>
+            </form>
+        </div>
+    </div>
+@endif
+@if ($can['restore'])
+    <div class="modal fade" id="restoreEventModal" tabindex="-1" role="dialog" aria-labelledby="restoreEventTitle" aria-hidden="true">
+        <div class="modal-dialog" role="document">
+            <form method="POST" action="{{ route('mining-manager.events.restore', $event->id) }}" class="modal-content bg-dark">
+                @csrf
+                <div class="modal-header">
+                    <h5 class="modal-title" id="restoreEventTitle"><i class="fas fa-undo"></i> {{ trans('mining-manager::events.restore_event') }}</h5>
+                    <button type="button" class="close text-white" data-dismiss="modal" aria-label="{{ trans('mining-manager::events.close') }}"><span aria-hidden="true">&times;</span></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted">{{ trans('mining-manager::events.restore_event_help') }}</p>
+                    <label for="restore-reason">{{ trans('mining-manager::events.reason') }}</label>
+                    <textarea class="form-control" id="restore-reason" name="reason" rows="3" maxlength="500" placeholder="{{ trans('mining-manager::events.restore_reason_placeholder') }}"></textarea>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-dismiss="modal">{{ trans('mining-manager::events.close') }}</button>
+                    <button type="submit" class="btn btn-success"><i class="fas fa-undo"></i> {{ trans('mining-manager::events.restore_event') }}</button>
+                </div>
+            </form>
+        </div>
+    </div>
+@endif
 @endsection
 
 @push('javascript')
 <script>
 $(function () {
+    $('.open-event-modal').on('click', function () {
+        $($(this).data('modal')).appendTo('body').modal('show');
+    });
+
     $('.join-event, .leave-event').on('click', function (e) {
         e.preventDefault();
         const button = $(this);

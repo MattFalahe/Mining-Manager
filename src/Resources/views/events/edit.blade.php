@@ -59,7 +59,7 @@
             </a>
         </form>
 
-        @can('mining-manager.admin')
+        @if ($canDelete)
             <div class="card card-dark mt-4 mb-0">
                 <div class="card-header">
                     <h3 class="card-title"><i class="fas fa-exclamation-triangle text-danger"></i> {{ trans('mining-manager::events.danger_zone') }}</h3>
@@ -75,7 +75,7 @@
                     </form>
                 </div>
             </div>
-        @endcan
+        @endif
     </div>
 </div>
 

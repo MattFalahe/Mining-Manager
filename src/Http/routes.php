@@ -436,11 +436,24 @@ Route::group([
             'middleware' => 'can:mining-manager.director',
         ]);
 
-        // Admin - delete
+        // Cancelling, bringing back and deleting depend on the event and on
+        // who asks, which EventAccess decides in the controller.
+        Route::post('/{id}/cancel', [
+            'as' => 'mining-manager.events.cancel',
+            'uses' => 'EventController@cancel',
+            'middleware' => 'can:mining-manager.member',
+        ]);
+
+        Route::post('/{id}/restore', [
+            'as' => 'mining-manager.events.restore',
+            'uses' => 'EventController@restore',
+            'middleware' => 'can:mining-manager.member',
+        ]);
+
         Route::delete('/{id}', [
             'as' => 'mining-manager.events.destroy',
             'uses' => 'EventController@destroy',
-            'middleware' => 'can:mining-manager.admin',
+            'middleware' => 'can:mining-manager.member',
         ]);
     });
 

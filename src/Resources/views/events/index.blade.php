@@ -237,6 +237,15 @@
                             @case('cancelled')
                                 <span class="badge badge-danger">{{ trans('mining-manager::events.cancelled') }}</span>
                                 @break
+                            @case('held')
+                                <span class="badge badge-warning">{{ trans('mining-manager::events.held') }}</span>
+                                @break
+                            @case('awaiting_approval')
+                                <span class="badge badge-warning">{{ trans('mining-manager::events.awaiting_approval') }}</span>
+                                @break
+                            @case('declined')
+                                <span class="badge badge-dark">{{ trans('mining-manager::events.declined') }}</span>
+                                @break
                         @endswitch
                     </div>
                 </div>
@@ -251,6 +260,13 @@
                     {{-- Description --}}
                     <p class="text-muted">
                         {{ Str::limit($event->description, 100) }}
+                    </p>
+
+                    <p class="small text-muted mb-2">
+                        {{ trans('mining-manager::events.created_by', ['name' => $event->creator->name ?? trans('mining-manager::events.unknown')]) }}
+                        @if ($event->status === 'cancelled' && !empty($cancelledBy[$event->id]))
+                            <br>{{ trans('mining-manager::events.cancelled_by', ['name' => $cancelledBy[$event->id]]) }}
+                        @endif
                     </p>
 
                     {{-- Event Details --}}
@@ -330,20 +346,28 @@
                             @endif
                         </div>
                     </div>
-                    @can('mining-manager.director')
+                    @php
+                        $canEditEvent = $access->canEdit(auth()->user(), $event);
+                        $canDeleteEvent = $access->canDelete(auth()->user(), $event);
+                    @endphp
+                    @if ($canEditEvent || $canDeleteEvent)
                     <div class="row mt-2">
+                        @if ($canEditEvent)
                         <div class="col-6">
                             <a href="{{ route('mining-manager.events.edit', $event->id) }}" class="btn btn-warning btn-block btn-sm">
                                 <i class="fas fa-edit"></i> {{ trans('mining-manager::events.edit') }}
                             </a>
                         </div>
+                        @endif
+                        @if ($canDeleteEvent)
                         <div class="col-6">
                             <button class="btn btn-danger btn-block btn-sm delete-event" data-event-id="{{ $event->id }}">
                                 <i class="fas fa-trash"></i> {{ trans('mining-manager::events.delete') }}
                             </button>
                         </div>
+                        @endif
                     </div>
-                    @endcan
+                    @endif
                 </div>
             </div>
         </div>
