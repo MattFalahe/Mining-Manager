@@ -1354,6 +1354,7 @@
                                                 <option value="event_created">📅 Mining Event Created</option>
                                                 <option value="event_started">🚀 Mining Event Started</option>
                                                 <option value="event_completed">🏁 Mining Event Completed</option>
+                                                <option value="event_review">📝 Event Review</option>
                                             </optgroup>
                                             <optgroup label="Moon Notifications">
                                                 <option value="moon_ready">🌙 Moon Chunk Ready</option>
@@ -3762,6 +3763,7 @@ function runFireAllNotifications() {
         { type: 'event_created',    label: '📅 Event Created' },
         { type: 'event_started',    label: '🚀 Event Started' },
         { type: 'event_completed',  label: '🏁 Event Completed' },
+        { type: 'event_review',     label: '📝 Event Review' },
         { type: 'moon_ready',          label: '🌙 Moon Chunk Ready' },
         { type: 'jackpot_detected',    label: '🎰 Jackpot Detected' },
         { type: 'moon_chunk_unstable', label: '⚠️ Moon Chunk Unstable' },
@@ -3962,7 +3964,7 @@ function updateNotifTestFields() {
         } else if (type === 'tax_overdue') {
             document.getElementById('ntDaysOverdueGroup').style.display = 'block';
         }
-    } else if (type === 'event_created' || type === 'event_started' || type === 'event_completed') {
+    } else if (type === 'event_created' || type === 'event_started' || type === 'event_completed' || type === 'event_review') {
         document.getElementById('ntEventFields').style.display = 'block';
     } else if (type === 'moon_ready' || type === 'jackpot_detected' || type === 'moon_chunk_unstable' || type === 'extraction_at_risk' || type === 'extraction_lost') {
         // All five moon-category types reuse Structure Name / Moon Name / ID.

@@ -193,6 +193,11 @@
                                                     <i class="fas fa-flag-checkered"></i>
                                                 </span>
                                             @endif
+                                            @if($webhook->notify_event_review ?? false)
+                                                <span class="badge badge-warning" title="Event Review">
+                                                    <i class="fas fa-user-check"></i>
+                                                </span>
+                                            @endif
                                             @if($webhook->notify_tax_generated)
                                                 <span class="badge badge-info" title="Mining Taxes Summary">
                                                     <i class="fas fa-calculator"></i>
@@ -594,6 +599,14 @@
                             <label class="custom-control-label" for="notify-event-completed">
                                 <i class="fas fa-flag-checkered text-secondary"></i>
                                 Event Completed
+                            </label>
+                        </div>
+                        <div class="custom-control custom-checkbox">
+                            <input type="checkbox" class="custom-control-input" id="notify-event-review" name="notify_event_review" value="1">
+                            <label class="custom-control-label" for="notify-event-review">
+                                <i class="fas fa-user-check text-warning"></i>
+                                Event Review
+                                <small class="text-muted">(for directors: approvals, past events held, cancellations)</small>
                             </label>
                         </div>
 

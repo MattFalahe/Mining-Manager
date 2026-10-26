@@ -1663,6 +1663,10 @@ class SettingsController extends Controller
             $data['notify_event_created'] = $request->boolean('notify_event_created');
             $data['notify_event_started'] = $request->boolean('notify_event_started');
             $data['notify_event_completed'] = $request->boolean('notify_event_completed');
+            // Its column comes with migration 000042.
+            if (\MiningManager\Models\MiningEvent::hasGovernance()) {
+                $data['notify_event_review'] = $request->boolean('notify_event_review');
+            }
             $data['notify_tax_generated'] = $request->boolean('notify_tax_generated');
             $data['notify_tax_announcement'] = $request->boolean('notify_tax_announcement');
             $data['notify_tax_reminder'] = $request->boolean('notify_tax_reminder');
@@ -1742,6 +1746,10 @@ class SettingsController extends Controller
             $data['notify_event_created'] = $request->boolean('notify_event_created');
             $data['notify_event_started'] = $request->boolean('notify_event_started');
             $data['notify_event_completed'] = $request->boolean('notify_event_completed');
+            // Its column comes with migration 000042.
+            if (\MiningManager\Models\MiningEvent::hasGovernance()) {
+                $data['notify_event_review'] = $request->boolean('notify_event_review');
+            }
             $data['notify_tax_generated'] = $request->boolean('notify_tax_generated');
             $data['notify_tax_announcement'] = $request->boolean('notify_tax_announcement');
             $data['notify_tax_reminder'] = $request->boolean('notify_tax_reminder');
@@ -1926,6 +1934,7 @@ class SettingsController extends Controller
             'notify_event_created' => 'nullable|boolean',
             'notify_event_started' => 'nullable|boolean',
             'notify_event_completed' => 'nullable|boolean',
+            'notify_event_review' => 'nullable|boolean',
             'notify_tax_generated' => 'nullable|boolean',
             'notify_tax_announcement' => 'nullable|boolean',
             'notify_tax_reminder' => 'nullable|boolean',

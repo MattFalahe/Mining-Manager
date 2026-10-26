@@ -29,7 +29,7 @@ use Exception;
  *
  * Supported notification types:
  *  - Tax: tax_reminder, tax_invoice, tax_overdue, tax_generated, tax_announcement
- *  - Event: event_created, event_started, event_completed
+ *  - Event: event_created, event_started, event_completed, event_review
  *  - Moon: moon_ready (chunk arrival), jackpot_detected
  *  - Theft: theft_detected, critical_theft, active_theft, incident_resolved
  *  - Report: report_generated
@@ -65,6 +65,9 @@ class NotificationService
     const TYPE_EVENT_CREATED = 'event_created';
     const TYPE_EVENT_STARTED = 'event_started';
     const TYPE_EVENT_COMPLETED = 'event_completed';
+    // For the directors: events waiting for approval, events for past days
+    // held before they apply, and what was decided about them.
+    const TYPE_EVENT_REVIEW = 'event_review';
     const TYPE_METENOX_CARGO_FULL = 'metenox_cargo_full';
     const TYPE_MOON_READY = 'moon_ready';
     const TYPE_JACKPOT_DETECTED = 'jackpot_detected';
@@ -531,6 +534,114 @@ class NotificationService
         return empty($participantIds)
             ? $this->sendBroadcast(self::TYPE_EVENT_COMPLETED, $data)
             : $this->send(self::TYPE_EVENT_COMPLETED, $participantIds, $data);
+    }
+
+    /**
+     * Tell the directors something about an event that is theirs to act on
+     * or to know: waiting for approval, held before it applies to past days,
+     * approved, declined, not approved in time, cancelled, brought back or
+     * deleted. Webhooks and Slack only: these are not for the members.
+     *
+     * @param string $kind awaiting_approval, held, approved, declined, lapsed, cancelled, restored or deleted
+     * @param array{by?: string|null, reason?: string|null} $extra
+     */
+    public function sendEventReview(MiningEvent $event, string $kind, array $extra = []): array
+    {
+        if (!MiningEvent::hasGovernance()) {
+            return ['skipped' => true, 'reason' => 'not_migrated'];
+        }
+
+        $data = $this->eventData($event) + [
+            'review' => $kind,
+            'by' => $extra['by'] ?? null,
+            'reason' => $extra['reason'] ?? null,
+            'applies_at' => $event->applies_at ? $event->applies_at->format('D j M H:i') . ' EVE' : null,
+        ];
+
+        if ($kind === 'deleted') {
+            $data['event_url'] = null;
+        }
+
+        $data['description'] = match ($kind) {
+            'awaiting_approval' => 'A moon manager set up this event. It is not announced and counts nothing until a director approves it on the event page. Not approved before it starts, it does not run.',
+            'held' => 'These days have passed, so the event waits before it applies. Until then it can be changed or deleted; then its discount goes on those days and it locks.',
+            'lapsed' => 'Nobody approved it before it was due to start, so it did not run.',
+            default => null,
+        };
+
+        return $this->send(self::TYPE_EVENT_REVIEW, [], $data);
+    }
+
+    private function reviewTitle(array $data): string
+    {
+        return match ($data['review'] ?? null) {
+            'awaiting_approval' => '📝 Event Waiting for Approval',
+            'held' => '⏳ Event for Past Days Set Up',
+            'approved' => '✅ Event Approved',
+            'declined' => '⛔ Event Declined',
+            'lapsed' => '⌛ Event Not Approved in Time',
+            'cancelled' => '🚫 Event Cancelled',
+            'restored' => '↩️ Event Brought Back',
+            'deleted' => '🗑️ Event Deleted',
+            default => '📝 Event Review',
+        };
+    }
+
+    /**
+     * Amber for what still waits on someone, green for what goes ahead, red
+     * for what will not.
+     */
+    private function reviewColour(array $data, bool $slack): string|int
+    {
+        $tone = match ($data['review'] ?? null) {
+            'awaiting_approval', 'held' => 'waiting',
+            'approved', 'restored' => 'ahead',
+            default => 'stopped',
+        };
+
+        return $slack
+            ? ['waiting' => 'warning', 'ahead' => 'good', 'stopped' => 'danger'][$tone]
+            : ['waiting' => 0xF39C12, 'ahead' => 0x2ECC71, 'stopped' => 0xC0392B][$tone];
+    }
+
+    /**
+     * The fields of an Event review message, for Slack or for Discord: who
+     * did what and why, and for an event still to be decided, its rules.
+     */
+    private function reviewFields(array $data, bool $slack): array
+    {
+        $field = fn (string $name, string $value, bool $short) => $slack
+            ? ['title' => $name, 'value' => $value, 'short' => $short]
+            : ['name' => $name, 'value' => $value, 'inline' => $short];
+
+        $kind = $data['review'] ?? '';
+        $byLabel = [
+            'awaiting_approval' => 'Set up by',
+            'held' => 'Set up by',
+            'approved' => 'Approved by',
+            'declined' => 'Declined by',
+            'cancelled' => 'Cancelled by',
+            'restored' => 'Brought back by',
+            'deleted' => 'Deleted by',
+        ][$kind] ?? null;
+        $undecided = in_array($kind, ['awaiting_approval', 'held'], true);
+
+        $fields = [
+            $field('Event', (string) ($data['event_name'] ?? ''), false),
+            $byLabel && !empty($data['by']) ? $field($byLabel, (string) $data['by'], true) : null,
+            $kind === 'held' && !empty($data['applies_at']) ? $field('Applies at', (string) $data['applies_at'], true) : null,
+            !empty($data['reason']) ? $field('Reason', mb_substr((string) $data['reason'], 0, 1000), false) : null,
+            $undecided ? $field('When', (string) ($data['when'] ?? ''), false) : null,
+            $undecided ? $field('Where', (string) ($data['location'] ?? 'Anywhere'), false) : null,
+            $undecided ? $field('Ore', (string) ($data['ore'] ?? ''), true) : null,
+            $undecided ? $field('Tax Modifier', (string) ($data['tax_modifier_label'] ?? 'Normal'), true) : null,
+            $undecided ? $field('Who', trim(($data['who'] ?? '') . "\n" . ($data['sign_up'] ?? '')), false) : null,
+            !empty($data['event_url'])
+                ? $field('Details', $slack ? '<' . $data['event_url'] . '|Event page>' : '[Event page](' . $data['event_url'] . ')', true)
+                : null,
+        ];
+
+        return array_values(array_filter($fields, fn ($entry) => $entry !== null && ($entry['value'] ?? '') !== ''));
     }
 
     /**
@@ -1173,6 +1284,7 @@ class NotificationService
             'event_created' => self::TYPE_EVENT_CREATED,
             'event_started' => self::TYPE_EVENT_STARTED,
             'event_completed' => self::TYPE_EVENT_COMPLETED,
+            'event_review' => self::TYPE_EVENT_REVIEW,
             'moon_arrival', 'moon_ready' => self::TYPE_MOON_READY,
             'jackpot_detected' => self::TYPE_JACKPOT_DETECTED,
             'moon_chunk_unstable' => self::TYPE_MOON_CHUNK_UNSTABLE,
@@ -1637,6 +1749,7 @@ class NotificationService
             self::TYPE_EVENT_CREATED => 'event_created',
             self::TYPE_EVENT_STARTED => 'event_started',
             self::TYPE_EVENT_COMPLETED => 'event_completed',
+            self::TYPE_EVENT_REVIEW => 'event_review',
             self::TYPE_MOON_READY => 'moon_ready',
             self::TYPE_JACKPOT_DETECTED => 'jackpot_detected',
             self::TYPE_MOON_CHUNK_UNSTABLE => 'moon_chunk_unstable',
@@ -1676,6 +1789,10 @@ class NotificationService
     {
         // Never by EVE mail, which goes to characters, not to the people
         // looking after the plugin.
+        if ($type === self::TYPE_EVENT_REVIEW && $channel === self::CHANNEL_ESI) {
+            return false;
+        }
+
         if ($type === self::TYPE_SETTINGS_MOVED) {
             return $channel === self::CHANNEL_DISCORD
                 || ($channel === self::CHANNEL_SLACK
@@ -1695,6 +1812,7 @@ class NotificationService
             self::TYPE_EVENT_CREATED => 'event_created',
             self::TYPE_EVENT_STARTED => 'event_started',
             self::TYPE_EVENT_COMPLETED => 'event_completed',
+            self::TYPE_EVENT_REVIEW => 'event_review',
             self::TYPE_MOON_READY => 'moon_ready',
             self::TYPE_JACKPOT_DETECTED => 'jackpot_detected',
             self::TYPE_MOON_CHUNK_UNSTABLE => 'moon_chunk_unstable',
@@ -1884,6 +2002,7 @@ class NotificationService
             self::TYPE_EVENT_CREATED => 'event_created',
             self::TYPE_EVENT_STARTED => 'event_started',
             self::TYPE_EVENT_COMPLETED => 'event_completed',
+            self::TYPE_EVENT_REVIEW => 'event_review',
             // TYPE_MOON_READY (constant value 'moon_ready') deliberately
             // maps to the LEGACY webhook column name 'moon_arrival'.
             // The model column is `notify_moon_arrival` (see
@@ -1935,7 +2054,7 @@ class NotificationService
         //    the Tax Program / Moon Owner Corporation only.
         $eventTypesThatAreGlobal = ['report_generated'];
         $individualTaxEventTypes = ['tax_reminder', 'tax_invoice', 'tax_overdue'];
-        $eventDispatchTypes = ['event_created', 'event_started', 'event_completed'];
+        $eventDispatchTypes = ['event_created', 'event_started', 'event_completed', 'event_review'];
         $structureAlertTypes = ['extraction_at_risk', 'extraction_lost'];
 
         if (in_array($eventType, $eventTypesThatAreGlobal, true)) {
@@ -2129,6 +2248,7 @@ class NotificationService
             self::TYPE_EVENT_CREATED => 'event_created',
             self::TYPE_EVENT_STARTED => 'event_started',
             self::TYPE_EVENT_COMPLETED => 'event_completed',
+            self::TYPE_EVENT_REVIEW => 'event_review',
             self::TYPE_MOON_READY => 'moon_ready',
             default => null,
         };
@@ -2631,6 +2751,7 @@ class NotificationService
             self::TYPE_TAX_ANNOUNCEMENT => '#3498DB',
             self::TYPE_EVENT_CREATED => '#439FE0',
             self::TYPE_EVENT_STARTED, self::TYPE_EVENT_COMPLETED => 'good',
+            self::TYPE_EVENT_REVIEW => $this->reviewColour($data, true),
             self::TYPE_MOON_READY => '#3498DB',
             self::TYPE_JACKPOT_DETECTED => '#FFD700',
             self::TYPE_MOON_CHUNK_UNSTABLE => '#FF6B00',
@@ -2665,6 +2786,7 @@ class NotificationService
             self::TYPE_EVENT_CREATED => "New Event Created: {$data['event_name']}",
             self::TYPE_EVENT_STARTED => "Event Started: {$data['event_name']}",
             self::TYPE_EVENT_COMPLETED => !empty($data['final']) ? "Event Results: {$data['event_name']}" : "Event Completed: {$data['event_name']}",
+            self::TYPE_EVENT_REVIEW => $this->reviewTitle($data) . ': ' . ($data['event_name'] ?? ''),
             self::TYPE_MOON_READY => "Moon Chunk Ready — " . ($data['moon_name'] ?? 'Unknown Moon'),
             self::TYPE_JACKPOT_DETECTED => "⭐ JACKPOT MOON DETECTED — " . ($data['moon_name'] ?? 'Unknown Moon'),
             self::TYPE_MOON_CHUNK_UNSTABLE => "⚠️ " . ($data['moon_name'] ?? 'Moon chunk') . " going unstable in " . ($data['time_until_unstable'] ?? '~2h') . " — capital pilots prepare to dock",
@@ -3005,6 +3127,7 @@ class NotificationService
             self::TYPE_TAX_ANNOUNCEMENT => 4437216, // Blue
             self::TYPE_EVENT_CREATED => 4437216, // Blue
             self::TYPE_EVENT_STARTED, self::TYPE_EVENT_COMPLETED => 3066993, // Green
+            self::TYPE_EVENT_REVIEW => $this->reviewColour($data, false),
             self::TYPE_MOON_READY => 0x3498DB, // Blue
             self::TYPE_JACKPOT_DETECTED => 0xFFD700, // Gold
             self::TYPE_MOON_CHUNK_UNSTABLE => 0xFF6B00, // Orange-red (capital-safety warning)
@@ -3045,6 +3168,7 @@ class NotificationService
             self::TYPE_EVENT_CREATED => '📅 New Mining Event',
             self::TYPE_EVENT_STARTED => '🚀 Mining Event Started',
             self::TYPE_EVENT_COMPLETED => !empty($data['final']) ? '🏆 Mining Event Results' : '🏁 Mining Event Completed',
+            self::TYPE_EVENT_REVIEW => $this->reviewTitle($data),
             self::TYPE_MOON_READY => 'Moon Chunk Ready',
             self::TYPE_JACKPOT_DETECTED => 'JACKPOT MOON DETECTED!',
             self::TYPE_MOON_CHUNK_UNSTABLE => '⚠️ Moon Chunk Going Unstable — Dock Capitals',
@@ -3156,6 +3280,7 @@ class NotificationService
                 isset($data['help_url']) ? ['title' => 'How to Pay', 'value' => '<' . $data['help_url'] . '|Payment Guide>', 'short' => true] : null,
             ])),
             self::TYPE_EVENT_CREATED, self::TYPE_EVENT_STARTED, self::TYPE_EVENT_COMPLETED => $this->eventFields($type, $data, true),
+            self::TYPE_EVENT_REVIEW => $this->reviewFields($data, true),
             self::TYPE_REPORT_GENERATED => array_values(array_filter([
                 ['title' => 'Report Type', 'value' => ucfirst($data['report_type'] ?? 'monthly'), 'short' => true],
                 ['title' => 'Period', 'value' => $data['period_str'] ?? 'N/A', 'short' => true],
@@ -3468,6 +3593,7 @@ class NotificationService
                 isset($data['help_url']) ? ['name' => '❓ How to Pay', 'value' => '[Payment Guide](' . $data['help_url'] . ')', 'inline' => true] : null,
             ])),
             self::TYPE_EVENT_CREATED, self::TYPE_EVENT_STARTED, self::TYPE_EVENT_COMPLETED => $this->eventFields($type, $data, false),
+            self::TYPE_EVENT_REVIEW => $this->reviewFields($data, false),
             self::TYPE_REPORT_GENERATED => array_values(array_filter([
                 ['name' => '📋 Report Type', 'value' => ucfirst($data['report_type'] ?? 'monthly'), 'inline' => true],
                 ['name' => '📅 Period', 'value' => $data['period_str'] ?? 'N/A', 'inline' => true],

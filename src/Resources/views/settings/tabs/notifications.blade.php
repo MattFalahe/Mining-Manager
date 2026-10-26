@@ -112,6 +112,15 @@
                         'has_user_ping' => false,
                         'has_show_amount' => false,
                     ],
+                    'event_review' => [
+                        'label' => 'Event Review',
+                        'icon' => 'fas fa-user-check text-warning',
+                        'desc' => 'For directors: an event waiting for approval, an event for past days held before it applies, and what was decided. Never by EVE mail',
+                        'scope' => 'general',
+                        'has_role_ping' => true,
+                        'has_user_ping' => false,
+                        'has_show_amount' => false,
+                    ],
                 ],
             ],
             'Moon Notifications' => [
@@ -649,7 +658,8 @@
                                         @if($wh->notify_event_created) <span class="badge badge-primary" title="Created"><i class="fas fa-calendar-plus"></i></span> @endif
                                         @if($wh->notify_event_started) <span class="badge badge-success" title="Started"><i class="fas fa-play"></i></span> @endif
                                         @if($wh->notify_event_completed) <span class="badge badge-secondary" title="Completed"><i class="fas fa-flag-checkered"></i></span> @endif
-                                        @if(!$wh->notify_event_created && !$wh->notify_event_started && !$wh->notify_event_completed)
+                                        @if($wh->notify_event_review ?? false) <span class="badge badge-warning" title="Review"><i class="fas fa-user-check"></i></span> @endif
+                                        @if(!$wh->notify_event_created && !$wh->notify_event_started && !$wh->notify_event_completed && !($wh->notify_event_review ?? false))
                                             <span class="text-muted">-</span>
                                         @endif
                                     </td>
@@ -725,6 +735,7 @@
                         'event_created' => ['label' => 'Event Created', 'icon' => 'fas fa-calendar-plus text-primary'],
                         'event_started' => ['label' => 'Event Started', 'icon' => 'fas fa-play text-success'],
                         'event_completed' => ['label' => 'Event Completed', 'icon' => 'fas fa-flag-checkered text-secondary'],
+                        'event_review' => ['label' => 'Event Review', 'icon' => 'fas fa-user-check text-warning'],
                         'moon_ready' => ['label' => 'Moon Chunk Ready', 'icon' => 'fas fa-moon text-warning'],
                         'jackpot_detected' => ['label' => 'Jackpot Detected', 'icon' => 'fas fa-star text-warning'],
                         'moon_chunk_unstable' => ['label' => 'Moon Chunk Unstable (capital safety)', 'icon' => 'fas fa-exclamation-triangle text-warning'],

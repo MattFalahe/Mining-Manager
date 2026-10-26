@@ -1205,7 +1205,7 @@ class SettingsManagerService
         // Tax
         'tax_generated', 'tax_announcement', 'tax_reminder', 'tax_invoice', 'tax_overdue', 'tax_outstanding_digest',
         // Events
-        'event_created', 'event_started', 'event_completed',
+        'event_created', 'event_started', 'event_completed', 'event_review',
         // Moon
         'moon_ready', 'jackpot_detected', 'moon_chunk_unstable',
         // Moon, from Structure Manager's alerts through Manager Core
@@ -1232,7 +1232,7 @@ class SettingsManagerService
         // Tax
         'tax_generated', 'tax_announcement', 'tax_reminder', 'tax_invoice', 'tax_overdue',
         // Events
-        'event_created', 'event_started', 'event_completed',
+        'event_created', 'event_started', 'event_completed', 'event_review',
         // Moon
         'moon_ready', 'jackpot_detected', 'moon_chunk_unstable', 'extraction_started',
         'extraction_at_risk', 'extraction_lost', 'metenox_cargo_full',
