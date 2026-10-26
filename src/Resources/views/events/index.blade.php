@@ -7,6 +7,9 @@
 <link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=10">
 <script src="{{ asset('vendor/mining-manager/js/eve-time.js') }}?v=1" defer></script>
 <script src="{{ asset('vendor/mining-manager/js/eve-countdown.js') }}?v=1" defer></script>
+<style>
+    .mining-manager-wrapper .mm-notice-warning { background-color: #2b2618 !important; border-left-color: var(--mm-warning) !important; }
+</style>
 @endpush
 
 @section('full')
@@ -27,13 +30,13 @@
                     <i class="fas fa-play-circle"></i> {{ trans('mining-manager::menu.active_events') }}
                 </a>
             </li>
-            @can('mining-manager.director')
+            @if (app(\MiningManager\Services\Events\EventAccess::class)->canCreate(auth()->user()))
             <li class="nav-item">
                 <a class="nav-link {{ Request::is('*/events/create') ? 'active' : '' }}" href="{{ route('mining-manager.events.create') }}">
                     <i class="fas fa-plus-circle"></i> {{ trans('mining-manager::menu.create_event') }}
                 </a>
             </li>
-            @endcan
+            @endif
             <li class="nav-item">
                 <a class="nav-link {{ Request::is('*/events/calendar') ? 'active' : '' }}" href="{{ route('mining-manager.events.calendar') }}">
                     <i class="fas fa-calendar-alt"></i> {{ trans('mining-manager::menu.event_calendar') }}
@@ -50,7 +53,15 @@
 
 
 <div class="mining-manager-wrapper mining-events">
-    
+
+    @if (($awaitingApproval ?? 0) > 0)
+        <div class="mm-notice mm-notice-warning">
+            <i class="fas fa-user-check"></i>
+            {{ trans_choice('mining-manager::events.awaiting_count', $awaitingApproval, ['count' => $awaitingApproval]) }}
+            <a href="{{ route('mining-manager.events.index', ['status' => 'awaiting_approval']) }}" class="ml-1">{{ trans('mining-manager::events.show_awaiting') }}</a>
+        </div>
+    @endif
+
     {{-- SUMMARY STATISTICS --}}
     <div class="row">
         <div class="col-12">
@@ -61,11 +72,11 @@
                         {{ trans('mining-manager::events.event_summary') }}
                     </h3>
                     <div class="card-tools">
-                        @can('mining-manager.director')
+                        @if (app(\MiningManager\Services\Events\EventAccess::class)->canCreate(auth()->user()))
                         <a href="{{ route('mining-manager.events.create') }}" class="btn btn-sm btn-success">
                             <i class="fas fa-plus"></i> {{ trans('mining-manager::events.create_event') }}
                         </a>
-                        @endcan
+                        @endif
                     </div>
                 </div>
                 <div class="card-body">
@@ -162,6 +173,11 @@
                                         <option value="active" {{ request('status') == 'active' ? 'selected' : '' }}>{{ trans('mining-manager::events.active') }}</option>
                                         <option value="completed" {{ request('status') == 'completed' ? 'selected' : '' }}>{{ trans('mining-manager::events.completed') }}</option>
                                         <option value="cancelled" {{ request('status') == 'cancelled' ? 'selected' : '' }}>{{ trans('mining-manager::events.cancelled') }}</option>
+                                        @if ($access->isDirector(auth()->user()))
+                                            <option value="held" {{ request('status') == 'held' ? 'selected' : '' }}>{{ trans('mining-manager::events.held') }}</option>
+                                            <option value="awaiting_approval" {{ request('status') == 'awaiting_approval' ? 'selected' : '' }}>{{ trans('mining-manager::events.awaiting_approval') }}</option>
+                                            <option value="declined" {{ request('status') == 'declined' ? 'selected' : '' }}>{{ trans('mining-manager::events.declined') }}</option>
+                                        @endif
                                     </select>
                                 </div>
                             </div>
@@ -378,11 +394,11 @@
                     <i class="fas fa-calendar-times fa-3x mb-3"></i>
                     <h4>{{ trans('mining-manager::events.no_events') }}</h4>
                     <p>{{ trans('mining-manager::events.no_events_description') }}</p>
-                    @can('mining-manager.director')
+                    @if (app(\MiningManager\Services\Events\EventAccess::class)->canCreate(auth()->user()))
                     <a href="{{ route('mining-manager.events.create') }}" class="btn btn-success">
                         <i class="fas fa-plus"></i> {{ trans('mining-manager::events.create_first_event') }}
                     </a>
-                    @endcan
+                    @endif
                 </div>
             </div>
         </div>

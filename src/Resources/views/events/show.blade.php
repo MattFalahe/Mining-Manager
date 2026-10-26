@@ -82,13 +82,13 @@
                     <i class="fas fa-play-circle"></i> {{ trans('mining-manager::menu.active_events') }}
                 </a>
             </li>
-            @can('mining-manager.director')
+            @if (app(\MiningManager\Services\Events\EventAccess::class)->canCreate(auth()->user()))
             <li class="nav-item">
                 <a class="nav-link" href="{{ route('mining-manager.events.create') }}">
                     <i class="fas fa-plus-circle"></i> {{ trans('mining-manager::menu.create_event') }}
                 </a>
             </li>
-            @endcan
+            @endif
             <li class="nav-item">
                 <a class="nav-link" href="{{ route('mining-manager.events.calendar') }}">
                     <i class="fas fa-calendar-alt"></i> {{ trans('mining-manager::menu.event_calendar') }}
@@ -194,6 +194,31 @@
             @if ($event->status !== 'cancelled')
                 {{ trans('mining-manager::events.locked_admin_cancel') }}
             @endif
+        </div>
+    @endif
+
+    @if ($event->status === 'awaiting_approval')
+        <div class="mm-notice mm-notice-warning">
+            <i class="fas fa-user-check"></i>
+            {{ trans('mining-manager::events.awaiting_notice', ['time' => $event->start_time->format('D j M H:i')]) }}
+            @if ($can['approve'])
+                <div class="mt-2">
+                    <form method="POST" action="{{ route('mining-manager.events.approve', $event->id) }}" class="d-inline">
+                        @csrf
+                        <button type="submit" class="btn btn-success btn-sm"><i class="fas fa-check"></i> {{ trans('mining-manager::events.approve') }}</button>
+                    </form>
+                    <button type="button" class="btn btn-outline-danger btn-sm ml-1 open-event-modal" data-modal="#declineEventModal">
+                        <i class="fas fa-times"></i> {{ trans('mining-manager::events.decline') }}
+                    </button>
+                </div>
+            @endif
+        </div>
+    @elseif ($event->status === 'declined' && $decision)
+        <div class="mm-notice mm-notice-secondary">
+            <i class="fas fa-ban"></i>
+            {{ $decision->action === 'lapsed'
+                ? trans('mining-manager::events.lapsed_notice')
+                : trans('mining-manager::events.declined_notice', ['name' => $decision->user->name ?? trans('mining-manager::events.unknown'), 'reason' => $decision->reason]) }}
         </div>
     @endif
 
@@ -463,6 +488,28 @@
                 <div class="modal-footer">
                     <button type="button" class="btn btn-outline-secondary" data-dismiss="modal">{{ trans('mining-manager::events.close') }}</button>
                     <button type="submit" class="btn btn-warning"><i class="fas fa-ban"></i> {{ trans('mining-manager::events.cancel_event') }}</button>
+                </div>
+            </form>
+        </div>
+    </div>
+@endif
+@if ($can['approve'])
+    <div class="modal fade" id="declineEventModal" tabindex="-1" role="dialog" aria-labelledby="declineEventTitle" aria-hidden="true">
+        <div class="modal-dialog" role="document">
+            <form method="POST" action="{{ route('mining-manager.events.decline', $event->id) }}" class="modal-content bg-dark">
+                @csrf
+                <div class="modal-header">
+                    <h5 class="modal-title" id="declineEventTitle"><i class="fas fa-times"></i> {{ trans('mining-manager::events.decline_event') }}</h5>
+                    <button type="button" class="close text-white" data-dismiss="modal" aria-label="{{ trans('mining-manager::events.close') }}"><span aria-hidden="true">&times;</span></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted">{{ trans('mining-manager::events.decline_help') }}</p>
+                    <label for="decline-reason">{{ trans('mining-manager::events.reason') }} <span class="text-danger">*</span></label>
+                    <textarea class="form-control" id="decline-reason" name="reason" rows="3" maxlength="500" required placeholder="{{ trans('mining-manager::events.decline_reason_placeholder') }}"></textarea>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-dismiss="modal">{{ trans('mining-manager::events.close') }}</button>
+                    <button type="submit" class="btn btn-danger"><i class="fas fa-times"></i> {{ trans('mining-manager::events.decline_event') }}</button>
                 </div>
             </form>
         </div>

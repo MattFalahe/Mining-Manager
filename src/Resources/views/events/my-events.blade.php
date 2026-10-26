@@ -61,13 +61,13 @@
                     <i class="fas fa-play-circle"></i> {{ trans('mining-manager::menu.active_events') }}
                 </a>
             </li>
-            @can('mining-manager.director')
+            @if (app(\MiningManager\Services\Events\EventAccess::class)->canCreate(auth()->user()))
             <li class="nav-item">
                 <a class="nav-link {{ Request::is('*/events/create') ? 'active' : '' }}" href="{{ route('mining-manager.events.create') }}">
                     <i class="fas fa-plus-circle"></i> {{ trans('mining-manager::menu.create_event') }}
                 </a>
             </li>
-            @endcan
+            @endif
             <li class="nav-item">
                 <a class="nav-link {{ Request::is('*/events/calendar') ? 'active' : '' }}" href="{{ route('mining-manager.events.calendar') }}">
                     <i class="fas fa-calendar-alt"></i> {{ trans('mining-manager::menu.event_calendar') }}

@@ -82,6 +82,9 @@ class UpdateMiningEventsCommand extends Command
             if (($statusResult['applied'] ?? 0) > 0) {
                 $this->info("Applied {$statusResult['applied']} event(s) set up for days that had passed");
             }
+            if (($statusResult['lapsed'] ?? 0) > 0) {
+                $this->info("Declined {$statusResult['lapsed']} event(s) nobody approved before they started");
+            }
             if ($statusResult['started'] > 0) {
                 $this->info("Auto-started {$statusResult['started']} event(s)");
             }

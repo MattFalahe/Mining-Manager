@@ -373,11 +373,13 @@ Route::group([
             'middleware' => 'can:mining-manager.member',
         ]);
 
-        // Director - create (MUST be before /{id} wildcard to avoid route collision)
+        // Create (MUST be before /{id} wildcard to avoid route collision).
+        // Directors, and moon managers while the Events settings allow it,
+        // which EventAccess decides in the controller.
         Route::get('/create', [
             'as' => 'mining-manager.events.create',
             'uses' => 'EventController@create',
-            'middleware' => 'can:mining-manager.director',
+            'middleware' => 'can:mining-manager.member',
         ]);
 
         Route::get('/{id}', [
@@ -398,23 +400,37 @@ Route::group([
             'middleware' => 'can:mining-manager.member',
         ]);
 
-        // Director - edit, start/complete
+        // Saving and editing: directors, and a moon manager their own event
+        // until it starts, decided in the controller. Starting and
+        // completing by hand stay with the directors.
 
         Route::post('/', [
             'as' => 'mining-manager.events.store',
             'uses' => 'EventController@store',
-            'middleware' => 'can:mining-manager.director',
+            'middleware' => 'can:mining-manager.member',
         ]);
 
         Route::get('/{id}/edit', [
             'as' => 'mining-manager.events.edit',
             'uses' => 'EventController@edit',
-            'middleware' => 'can:mining-manager.director',
+            'middleware' => 'can:mining-manager.member',
         ]);
 
         Route::put('/{id}', [
             'as' => 'mining-manager.events.update',
             'uses' => 'EventController@update',
+            'middleware' => 'can:mining-manager.member',
+        ]);
+
+        Route::post('/{id}/approve', [
+            'as' => 'mining-manager.events.approve',
+            'uses' => 'EventController@approve',
+            'middleware' => 'can:mining-manager.director',
+        ]);
+
+        Route::post('/{id}/decline', [
+            'as' => 'mining-manager.events.decline',
+            'uses' => 'EventController@decline',
             'middleware' => 'can:mining-manager.director',
         ]);
 

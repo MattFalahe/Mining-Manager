@@ -64,14 +64,14 @@
                     <i class="fas fa-sync-alt"></i> {{ trans('mining-manager::moons.refresh_data') }}
                 </button>
             </form>
+            @endcan
 
-            {{-- An event on this refinery, over the days the chunk's belt can last --}}
-            @if($extraction->status !== 'cancelled' && $extraction->chunk_arrival_time)
+            {{-- An event on this refinery, over the days the chunk's belt can last; moon managers too, when the Events settings let them --}}
+            @if ($extraction->status !== 'cancelled' && $extraction->chunk_arrival_time && app(\MiningManager\Services\Events\EventAccess::class)->canCreate(auth()->user()))
                 <a href="{{ route('mining-manager.events.create', ['refinery' => $extraction->structure_id, 'arrival' => $extraction->chunk_arrival_time->toDateString()]) }}" class="btn btn-mm-primary">
                     <i class="fas fa-calendar-plus"></i> {{ trans('mining-manager::events.make_event') }}
                 </a>
             @endif
-            @endcan
 
             {{-- Report Jackpot Button (only for ready/fractured extractions — chunk must have arrived) --}}
             @if(!$extraction->is_jackpot && in_array($extraction->getEffectiveStatus(), ['ready', 'unstable']))

@@ -43,18 +43,20 @@ class EventManagementService
      * Called by the `mining-manager:update-events` command on every run.
      *
      * Transitions:
-     *   held    → completed when applies_at <= now (fires 'event_completed', with its figures, and locks it)
-     *   planned → active   when start_time <= now  (fires 'event_started' notification)
-     *   active  → completed when end_time  <= now  (fires 'event_completed' notification)
+     *   held              → completed when applies_at <= now (fires 'event_completed', with its figures, and locks it)
+     *   awaiting_approval → declined  when start_time <= now (tells the Event Review webhooks)
+     *   planned           → active    when start_time <= now (fires 'event_started' notification)
+     *   active            → completed when end_time   <= now (fires 'event_completed' notification)
      *
      * Cancelled events are never touched.
      *
-     * @return array ['applied' => int, 'started' => int, 'completed' => int]
+     * @return array ['applied' => int, 'lapsed' => int, 'started' => int, 'completed' => int]
      */
     public function updateEventStatuses(): array
     {
         $now = Carbon::now();
         $applied = $this->applyHeldEvents($now);
+        $lapsed = $this->lapseUnapproved($now);
         $started = 0;
         $completed = 0;
 
@@ -157,7 +159,53 @@ class EventManagementService
             }
         }
 
-        return ['applied' => $applied, 'started' => $started, 'completed' => $completed];
+        return ['applied' => $applied, 'lapsed' => $lapsed, 'started' => $started, 'completed' => $completed];
+    }
+
+    /**
+     * Decline the moon managers' events nobody approved before they were due
+     * to start. They do not run, and the directors' channel hears so: an
+     * approval that comes too late is not taken as one.
+     *
+     * @return int events declined
+     */
+    private function lapseUnapproved(Carbon $now): int
+    {
+        if (!MiningEvent::hasGovernance()) {
+            return 0;
+        }
+
+        $lapsed = 0;
+        $due = MiningEvent::where('status', MiningEvent::STATUS_AWAITING_APPROVAL)
+            ->where('start_time', '<=', $now)
+            ->get();
+
+        foreach ($due as $event) {
+            try {
+                $claimed = MiningEvent::where('id', $event->id)
+                    ->where('status', MiningEvent::STATUS_AWAITING_APPROVAL)
+                    ->update(['status' => MiningEvent::STATUS_DECLINED]);
+
+                if ($claimed === 0) {
+                    continue;
+                }
+
+                EventHistory::record($event, EventHistory::LAPSED);
+                Log::info("Mining Manager: Event '{$event->name}' (id={$event->id}) was not approved before its start and does not run");
+
+                try {
+                    app(NotificationService::class)->sendEventReview($event->fresh(), 'lapsed');
+                } catch (\Exception $e) {
+                    Log::warning("Mining Manager: Failed to send the Event Review message for event {$event->id}: " . $e->getMessage());
+                }
+
+                $lapsed++;
+            } catch (\Exception $e) {
+                Log::error("Mining Manager: Failed to decline unapproved event {$event->id}: " . $e->getMessage());
+            }
+        }
+
+        return $lapsed;
     }
 
     /**

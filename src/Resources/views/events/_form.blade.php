@@ -13,8 +13,11 @@
 @php
     $event = $event ?? null;
     $prefill = $prefill ?? [];
-    $limits = ($limits ?? []) + ['governed' => false, 'creating' => $event === null, 'held' => false, 'earliest_day' => null, 'enforce_earliest' => false, 'can_past' => false, 'hold_minutes' => 0, 'today' => now()->toDateString()];
-    $minDayAttribute = $limits['enforce_earliest'] && $limits['earliest_day'] ? 'min="' . e($limits['earliest_day']) . '"' : '';
+    $limits = ($limits ?? []) + ['governed' => false, 'creating' => $event === null, 'held' => false, 'earliest_day' => null, 'enforce_earliest' => false, 'can_past' => false, 'hold_minutes' => 0, 'today' => now()->toDateString(), 'manager' => false, 'enforce_manager_start' => false, 'approval_rule' => 'never'];
+    // The first day the date picker offers: for a moon manager how far ahead
+    // they may start, for anyone else the first day not billed yet.
+    $minDay = ($limits['manager'] ? $limits['enforce_manager_start'] : $limits['enforce_earliest']) ? $limits['earliest_day'] : null;
+    $minDayAttribute = $minDay ? 'min="' . e($minDay) . '"' : '';
     $everyoneKey = \MiningManager\Models\MiningEvent::PARTICIPATION_EVERYONE;
     $signedUpKey = \MiningManager\Models\MiningEvent::PARTICIPATION_SIGNED_UP;
 
@@ -42,7 +45,18 @@
         -100 => 'modifier_tax_free', -75 => 'modifier_reduced_75', -50 => 'modifier_reduced_50', -25 => 'modifier_reduced_25',
         0 => 'modifier_normal', 25 => 'modifier_increase_25', 50 => 'modifier_increase_50', 75 => 'modifier_increase_75', 100 => 'modifier_double',
     ];
+    if ($limits['manager']) {
+        // Raising tax is for directors and admins.
+        $modifiers = array_filter($modifiers, fn ($modifier) => $modifier <= 0, ARRAY_FILTER_USE_KEY);
+    }
 @endphp
+
+@if ($limits['manager'] && $limits['governed'])
+    <div class="mm-notice">
+        <i class="fas fa-user-astronaut"></i>
+        {{ trans('mining-manager::events.manager_form_notice', ['hours' => $limits['lead_hours'], 'day' => $limits['manager_first_label'], 'time' => $limits['manager_start_label']]) }}
+    </div>
+@endif
 
 @if ($errors->any())
     <div class="alert alert-danger">
@@ -353,6 +367,11 @@
                         @endforeach
                     </select>
                     <small class="form-text text-muted">{{ trans('mining-manager::events.tax_modifier_help') }}</small>
+                    @if ($limits['manager'] && $limits['governed'])
+                        <div class="mm-notice mm-notice-warning mt-2 mb-0" id="approval-hint" style="display: none;">
+                            <i class="fas fa-user-check"></i> {{ trans('mining-manager::events.needs_approval_notice') }}
+                        </div>
+                    @endif
                 </div>
 
                 @if ($event)
@@ -452,6 +471,15 @@ $(function () {
         if (past) {
             $('#participation-everyone').prop('checked', true);
         }
+    }
+
+    // Whether the Events settings make a moon manager's event at this rate
+    // wait for a director; the server decides the same way.
+    function applyApproval() {
+        const rule = limits.approval_rule;
+        const modifier = parseInt($('#tax_modifier').val(), 10) || 0;
+        const needs = rule === 'always' || (rule !== 'never' && modifier <= -parseInt(rule, 10));
+        $('#approval-hint').toggle(!!limits.manager && needs);
     }
 
     function applyType() {
@@ -568,6 +596,7 @@ $(function () {
     $('input[name="time_input_mode"]').on('change', updateConfirmation);
     $('#start_day, #end_day, #start_time, #end_time').on('change input', applyPast);
     $('input[name="time_input_mode"]').on('change', applyPast);
+    $('#tax_modifier').on('change', applyApproval);
 
     $('#eventForm').on('submit', function () {
         if (inputMode() !== 'local') return;
@@ -579,6 +608,7 @@ $(function () {
 
     applyType();
     updateConfirmation();
+    applyApproval();
 });
 </script>
 @endpush
