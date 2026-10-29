@@ -706,8 +706,11 @@ $(document).ready(function() {
         updateBulkActionsBar();
     });
 
-    // Individual checkboxes
-    $('.tax-checkbox').on('change', function() {
+    // Individual checkboxes. This and the row buttons below are bound on
+    // the table rather than the rows: DataTables keeps every page but the
+    // first out of the document, so a handler bound to the rows at load
+    // never reaches a row brought up later by paging or the search box.
+    $('#taxTable').on('change', '.tax-checkbox', function() {
         updateBulkActionsBar();
     });
 
@@ -742,7 +745,7 @@ $(document).ready(function() {
     });
 
     // Mark as paid - single
-    $('.mark-paid').on('click', function() {
+    $('#taxTable').on('click', '.mark-paid', function() {
         const taxId = $(this).data('tax-id');
         const row = $('tr[data-tax-id="' + taxId + '"]');
         // What is left, not the bill: markPaid adds this to whatever has
@@ -787,7 +790,7 @@ $(document).ready(function() {
     });
 
     // Send reminder - single
-    $('.send-reminder').on('click', function() {
+    $('#taxTable').on('click', '.send-reminder', function() {
         const taxId = $(this).data('tax-id');
         const characterName = $(this).data('character-name');
         
@@ -904,7 +907,7 @@ $(document).ready(function() {
     });
 
     // Delete single tax record
-    $('.delete-tax').on('click', function() {
+    $('#taxTable').on('click', '.delete-tax', function() {
         const taxId = $(this).data('tax-id');
         const characterName = $(this).data('character-name');
         const month = $(this).data('month');
