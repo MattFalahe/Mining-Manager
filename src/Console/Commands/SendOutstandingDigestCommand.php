@@ -265,8 +265,12 @@ class SendOutstandingDigestCommand extends Command
             return true;
         }
 
+        // Counted in days, not to the second. The time kept is when the last
+        // digest finished going out, a little after its run started, so a
+        // week later the run usually looked a few seconds early and waited
+        // an extra day.
         try {
-            return Carbon::parse($last)->lte(Carbon::now()->subDays(self::REPEAT_DAYS));
+            return Carbon::parse($last)->startOfDay()->addDays(self::REPEAT_DAYS)->lte(Carbon::now());
         } catch (\Exception $e) {
             return true;
         }
