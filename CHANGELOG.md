@@ -78,6 +78,7 @@ This release also brings tax periods to the ledger, My Mining and the dashboards
 - Fixed: **the Tax Codes page showed each code with the prefix in the settings rather than the one it was made with.** Where the two differed, the copy button copied a code no payment would match. Codes made by hand on that page now keep their prefix as well.
 - Fixed: **a failed wallet rescan or payment check showed `mining-manager::taxes.verification_error`** instead of a message.
 - Fixed: **a bill marked paid by hand could stay Partial over a few hundredths of an ISK, and be reminded every day.** Mark as Paid filled in what was left rounded to whole ISK, and only counted the bill paid when the payment covered all of it, so a bill ending in .01 to .49 was left that fraction short. It now counts a bill with less than 1 ISK left as paid, as payments matched from the wallet always have, and fills in what is left to the hundredth. Bills already left Partial this way stay so; Change Status to Paid on the bill's page settles one.
+- Fixed: **on Tax Overview, Mark as Paid, Send Reminder and Delete did nothing on any row past the first page.** The buttons were wired up as the page loaded, when only the table's first page is there, so a row reached by paging or the search box had buttons that did nothing. Ticking such a row did not bring up the bulk actions either.
 
 ### Theft Detection
 
