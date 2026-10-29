@@ -77,6 +77,7 @@ This release also brings tax periods to the ledger, My Mining and the dashboards
 - Fixed: **an invoice's breakdown could disagree with the bill.** It merged an ore's taxed and untaxed mining into one line, at the rate of whichever came first, so a taxed ore could read 0%, and it counted every character on the account, even one with a bill of its own for the same period.
 - Fixed: **the Tax Codes page showed each code with the prefix in the settings rather than the one it was made with.** Where the two differed, the copy button copied a code no payment would match. Codes made by hand on that page now keep their prefix as well.
 - Fixed: **a failed wallet rescan or payment check showed `mining-manager::taxes.verification_error`** instead of a message.
+- Fixed: **a bill marked paid by hand could stay Partial over a few hundredths of an ISK, and be reminded every day.** Mark as Paid filled in what was left rounded to whole ISK, and only counted the bill paid when the payment covered all of it, so a bill ending in .01 to .49 was left that fraction short. It now counts a bill with less than 1 ISK left as paid, as payments matched from the wallet always have, and fills in what is left to the hundredth. Bills already left Partial this way stay so; Change Status to Paid on the bill's page settles one.
 
 ### Theft Detection
 
@@ -105,6 +106,7 @@ This release also brings tax periods to the ledger, My Mining and the dashboards
 
 - **One message says the move happened**, to the webhooks that take Price Provider Trouble or Moon Scan Missing, with what changed and a link to the report. It goes out once. Until it has, admins see the same on the settings page and the director dashboard, for two weeks after the update. A new install, or one with no Moon Owner and no corporation settings, had nothing to move and gets neither.
 - The Discord ping test on the Diagnostic page follows each notification type's own ping settings.
+- Fixed: **the Outstanding Mining Tax digest usually came every 8 days rather than 7.** The check compared the time to the second with when the last digest went out, which is a little after its run starts, so a week later the run was usually a few seconds early and waited another day. It now counts days.
 
 ### Events
 
