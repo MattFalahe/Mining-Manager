@@ -630,7 +630,7 @@
                     <input type="hidden" id="taxIdInput" name="tax_id">
                     <div class="form-group">
                         <label>{{ trans('mining-manager::taxes.amount_paid') }}</label>
-                        <input type="number" class="form-control" id="amountPaidInput" name="amount_paid" required>
+                        <input type="number" step="any" class="form-control" id="amountPaidInput" name="amount_paid" required>
                     </div>
                     <div class="form-group">
                         <label>{{ trans('mining-manager::taxes.payment_date') }}</label>
@@ -747,8 +747,9 @@ $(document).ready(function() {
         const row = $('tr[data-tax-id="' + taxId + '"]');
         // What is left, not the bill: markPaid adds this to whatever has
         // already been paid, so the full bill on a part-paid row would be
-        // recorded as an overpayment.
-        const leftToPay = Math.round(parseFloat(row.data('amount-remaining')) || 0);
+        // recorded as an overpayment. To the cent, so the payment recorded
+        // is the bill itself rather than a whole-ISK figure either side.
+        const leftToPay = (parseFloat(row.data('amount-remaining')) || 0).toFixed(2);
         
         $('#taxIdInput').val(taxId);
         $('#amountPaidInput').val(leftToPay);

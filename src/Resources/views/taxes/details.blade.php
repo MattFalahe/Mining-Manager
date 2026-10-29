@@ -470,7 +470,7 @@ $(document).ready(function() {
             <div class="modal-body">
                 <div class="form-group">
                     <label>Amount Paid (ISK)</label>
-                    <input type="number" class="form-control" id="detailAmountPaid" value="{{ round($tax->getRemainingBalance()) }}">
+                    <input type="number" step="any" class="form-control" id="detailAmountPaid" value="{{ number_format($tax->getRemainingBalance(), 2, '.', '') }}">
                 </div>
                 <div class="form-group">
                     <label>Payment Date</label>
