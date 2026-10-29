@@ -1236,15 +1236,16 @@ class TaxController extends Controller
 
                 // Accumulate partial payments
                 $previouslyPaid = (float) ($tax->amount_paid ?? 0);
-                $totalPaid = $previouslyPaid + $amountPaid;
+                $totalPaid = round($previouslyPaid + $amountPaid, 2);
 
-                if ($totalPaid >= (float) $tax->amount_owed) {
-                    $tax->status = 'paid';
-                    $tax->amount_paid = $totalPaid;
-                } else {
-                    $tax->status = 'partial';
-                    $tax->amount_paid = $totalPaid;
-                }
+                // Settled on the wallet matcher's terms. Bills are shown in
+                // whole ISK, so a figure typed from the page can come up a
+                // fraction short, and an exact comparison left that bill
+                // part paid over pennies, with a reminder every day.
+                $settled = round((float) $tax->amount_owed - $totalPaid, 2) < PaymentAllocationService::SETTLED_TOLERANCE;
+
+                $tax->status = $settled ? 'paid' : 'partial';
+                $tax->amount_paid = $totalPaid;
                 $tax->paid_at = Carbon::parse($paymentDate);
 
                 // Append payment note to existing notes
