@@ -158,7 +158,7 @@
                                     <span class="info-box-text">{{ trans('mining-manager::taxes.amount_owed') }}</span>
                                     @php $leftToPay = in_array($tax->status, \MiningManager\Models\MiningTax::OUTSTANDING_STATUSES) ? $tax->getRemainingBalance() : 0; @endphp
                                     <span class="info-box-number">
-                                        {{ number_format($tax->amount_owed, 0) }}
+                                        {{ number_format($tax->amount_owed, 2) }}
                                         @if($leftToPay > 0)
                                         <button type="button" class="btn btn-xs btn-link text-white p-0 ml-1" onclick="copyToClipboard('{{ round($leftToPay) }}', 'ISK amount')" data-toggle="tooltip" title="Copy ISK amount">
                                             <i class="fas fa-copy"></i>
@@ -167,7 +167,10 @@
                                     </span>
                                     <small>ISK</small>
                                     @if($leftToPay > 0 && (float) $tax->amount_paid > 0)
-                                        <small class="d-block">{{ trans('mining-manager::taxes.left_to_pay_amount', ['amount' => number_format($leftToPay, 0)]) }}</small>
+                                        <small class="d-block">{{ trans('mining-manager::taxes.left_to_pay_amount', ['amount' => number_format($leftToPay, 2)]) }}</small>
+                                    @endif
+                                    @if($leftToPay > 0)
+                                        <small class="d-block">{{ trans('mining-manager::taxes.within_one_isk') }}</small>
                                     @endif
                                 </div>
                             </div>
@@ -190,7 +193,7 @@
                             @if($creditApplied >= (float) $tax->amount_owed)
                                 {{ trans('mining-manager::taxes.balance_covered_full') }}
                             @else
-                                {{ trans('mining-manager::taxes.balance_covered_this', ['amount' => number_format($creditApplied, 0)]) }}
+                                {{ trans('mining-manager::taxes.balance_covered_this', ['amount' => number_format($creditApplied, 2)]) }}
                             @endif
                         </p>
                     </div>
@@ -243,7 +246,7 @@
                             @foreach($paymentHistory as $payment)
                             <tr>
                                 <td>{{ $payment->allocated_at ? $payment->allocated_at->format('Y-m-d H:i') : '-' }}</td>
-                                <td class="text-right">{{ number_format($payment->amount, 0) }} ISK</td>
+                                <td class="text-right">{{ number_format($payment->amount, 2) }} ISK</td>
                                 <td><span class="badge badge-secondary">{{ $payment->source_label }}</span></td>
                                 <td><small class="text-muted">{{ $payment->notes ?: '-' }}</small></td>
                             </tr>
@@ -338,7 +341,7 @@
                         <div class="mm-notice mm-notice-secondary mt-3 mb-0">
                             <p class="mb-0">
                                 <i class="fas fa-info-circle"></i>
-                                {{ trans('mining-manager::taxes.breakdown_differs', ['billed' => number_format((float) $tax->amount_owed, 0), 'rows' => number_format($breakdownTax, 0)]) }}
+                                {{ trans('mining-manager::taxes.breakdown_differs', ['billed' => number_format((float) $tax->amount_owed, 2), 'rows' => number_format($breakdownTax, 0)]) }}
                                 @foreach($breakdownNotes ?? [] as $breakdownNote)
                                     {{ $breakdownNote }}
                                 @endforeach

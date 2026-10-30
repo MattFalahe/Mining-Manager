@@ -404,19 +404,21 @@
                                          796,982,374, which is what made this table look randomly
                                          ordered. --}}
                                     <td class="text-right" data-order="{{ (float) $tax->amount_owed }}">
-                                        <strong>{{ number_format($tax->amount_owed, 0) }}</strong>
+                                        <strong>{{ number_format($tax->amount_owed, 2) }}</strong>
                                         <small class="text-muted">ISK</small>
                                     </td>
                                     <td class="text-right" data-order="{{ (float) $tax->amount_paid }}">
-                                        <strong>{{ number_format($tax->amount_paid, 0) }}</strong>
+                                        <strong>{{ number_format($tax->amount_paid, 2) }}</strong>
                                         <small class="text-muted">ISK</small>
                                     </td>
                                     {{-- What still has to be paid, so nobody has to subtract the two
-                                         columns before it, and the figure the Copy button hands over. --}}
+                                         columns before it. The Copy button hands it over in whole ISK,
+                                         leaving nothing after a decimal point for an EVE client in another
+                                         language to read differently; within 1 ISK counts as paid. --}}
                                     @php $leftToPay = in_array($tax->status, \MiningManager\Models\MiningTax::OUTSTANDING_STATUSES) ? $tax->getRemainingBalance() : 0; @endphp
                                     <td class="text-right" data-order="{{ $leftToPay }}">
                                         @if($leftToPay > 0)
-                                        <strong>{{ number_format($leftToPay, 0) }}</strong>
+                                        <strong>{{ number_format($leftToPay, 2) }}</strong>
                                         <small class="text-muted">ISK</small>
                                         <button type="button" class="btn btn-xs btn-link p-0 ml-1" onclick="copyToClipboard('{{ round($leftToPay) }}', 'ISK amount')" data-toggle="tooltip" title="Copy ISK amount">
                                             <i class="fas fa-copy"></i>
@@ -1055,8 +1057,8 @@ $(document).ready(function() {
                 '<small class="text-muted ml-2">(' + g.rows.length + ' {{ trans("mining-manager::taxes.entries") }})</small>' +
                 '</div>' +
                 '<div class="text-right">' +
-                '<span class="mr-3"><strong>' + Number(g.totalOwed).toLocaleString() + '</strong> <small class="text-muted">ISK {{ trans("mining-manager::taxes.owed") }}</small></span>' +
-                '<span class="mr-3"><strong>' + Number(g.totalPaid).toLocaleString() + '</strong> <small class="text-muted">ISK {{ trans("mining-manager::taxes.paid") }}</small></span>' +
+                '<span class="mr-3"><strong>' + Math.round(g.totalOwed).toLocaleString() + '</strong> <small class="text-muted">ISK {{ trans("mining-manager::taxes.owed") }}</small></span>' +
+                '<span class="mr-3"><strong>' + Math.round(g.totalPaid).toLocaleString() + '</strong> <small class="text-muted">ISK {{ trans("mining-manager::taxes.paid") }}</small></span>' +
                 (g.totalLeft > 0 ? '<span class="mr-3"><strong>' + Math.round(g.totalLeft).toLocaleString() + '</strong> <small class="text-muted">ISK {{ trans("mining-manager::taxes.left_to_pay_short") }}</small></span>' : '') +
                 statusBadge +
                 '<i class="fas fa-chevron-down ml-2"></i>' +

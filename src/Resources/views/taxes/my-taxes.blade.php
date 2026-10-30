@@ -74,7 +74,7 @@
                                 <span class="info-box-icon"><i class="fas fa-coins"></i></span>
                                 <div class="info-box-content">
                                     <span class="info-box-text">{{ trans('mining-manager::taxes.balance_available') }}</span>
-                                    <span class="info-box-number">{{ number_format($creditBalance, 0) }}</span>
+                                    <span class="info-box-number">{{ number_format($creditBalance, 2) }}</span>
                                     <span class="info-box-text">ISK</span>
                                 </div>
                             </div>
@@ -114,10 +114,10 @@
                                 </span>
                                 <div class="info-box-content">
                                     <span class="info-box-text">{{ trans('mining-manager::taxes.current_balance') }}</span>
-                                    <span class="info-box-number">{{ number_format($currentTax ? $currentTax->getRemainingBalance() : 0, 0) }}</span>
+                                    <span class="info-box-number">{{ number_format($currentTax ? $currentTax->getRemainingBalance() : 0, 2) }}</span>
                                     <small>
                                         @if($currentTax && $currentTax->status !== 'paid' && (float) $currentTax->amount_paid > 0)
-                                            {{ trans('mining-manager::taxes.left_of_billed', ['owed' => number_format($currentTax->amount_owed, 0), 'period' => $currentTax->formatted_period]) }}
+                                            {{ trans('mining-manager::taxes.left_of_billed', ['owed' => number_format($currentTax->amount_owed, 2), 'period' => $currentTax->formatted_period]) }}
                                         @else
                                             ISK {{ trans('mining-manager::taxes.for') }}
                                             {{ $currentTax ? $currentTax->formatted_period : ($currentPeriodLabel ?? now()->format('F Y')) }}
@@ -135,7 +135,7 @@
                                 </span>
                                 <div class="info-box-content">
                                     <span class="info-box-text">{{ trans('mining-manager::taxes.paid_so_far') }}</span>
-                                    <span class="info-box-number">{{ number_format($currentTax->amount_paid ?? 0, 0) }}</span>
+                                    <span class="info-box-number">{{ number_format($currentTax->amount_paid ?? 0, 2) }}</span>
                                     <small>ISK</small>
                                 </div>
                             </div>
@@ -175,7 +175,7 @@
                                 @if((float) $currentTax->amount_paid > 0)
                                 <p class="mb-2">
                                     <i class="fas fa-adjust"></i>
-                                    {{ trans('mining-manager::taxes.part_paid_received', ['paid' => number_format($currentTax->amount_paid, 0), 'owed' => number_format($currentTax->amount_owed, 0)]) }}
+                                    {{ trans('mining-manager::taxes.part_paid_received', ['paid' => number_format($currentTax->amount_paid, 2), 'owed' => number_format($currentTax->amount_owed, 2)]) }}
                                 </p>
                                 @endif
 
@@ -200,10 +200,14 @@
                                             </li>
                                             @endif
                                             <li class="mb-2">
-                                                Enter the amount: <strong>{{ number_format($currentTax->getRemainingBalance(), 0) }} ISK</strong>
+                                                Enter the amount: <strong>{{ number_format($currentTax->getRemainingBalance(), 2) }} ISK</strong>
+                                                {{-- Copied in whole ISK, leaving nothing after a decimal point
+                                                     for an EVE client in another language to read differently.
+                                                     Within 1 ISK of the bill counts as paid. --}}
                                                 <button type="button" class="btn btn-xs btn-outline-primary ml-2" onclick="copyToClipboard('{{ round($currentTax->getRemainingBalance()) }}', 'ISK amount')">
                                                     <i class="fas fa-copy"></i> Copy
                                                 </button>
+                                                <br><small class="text-muted">{{ trans('mining-manager::taxes.within_one_isk') }}</small>
                                             </li>
                                             <li class="mb-2">
                                                 In the <strong>"Reason"</strong> field, paste your tax code:
@@ -288,9 +292,9 @@
                                             <tr>
                                                 <td>{{ $unpaidTax->formatted_period }}</td>
                                                 <td class="text-right">
-                                                    {{ number_format($unpaidTax->getRemainingBalance(), 0) }} ISK
+                                                    {{ number_format($unpaidTax->getRemainingBalance(), 2) }} ISK
                                                     @if((float) $unpaidTax->amount_paid > 0)
-                                                        <br><small class="text-muted">of {{ number_format($unpaidTax->amount_owed, 0) }}</small>
+                                                        <br><small class="text-muted">of {{ number_format($unpaidTax->amount_owed, 2) }}</small>
                                                     @endif
                                                 </td>
                                                 <td>
@@ -575,10 +579,10 @@
                                     </td>
                                     @endif
                                     <td class="text-right">
-                                        {{ number_format($tax->amount_owed, 0) }} ISK
+                                        {{ number_format($tax->amount_owed, 2) }} ISK
                                     </td>
                                     <td class="text-right">
-                                        {{ number_format($tax->amount_paid, 0) }} ISK
+                                        {{ number_format($tax->amount_paid, 2) }} ISK
                                         @if($tax->amount_paid > 0 && $tax->amount_paid < $tax->amount_owed)
                                             @php $paidShare = ($tax->amount_paid / $tax->amount_owed) * 100; @endphp
                                             {{-- A token payment rounds to 0.0%, which reads as nothing paid. --}}
@@ -588,7 +592,7 @@
                                     @php $leftToPay = in_array($tax->status, \MiningManager\Models\MiningTax::OUTSTANDING_STATUSES) ? $tax->getRemainingBalance() : 0; @endphp
                                     <td class="text-right">
                                         @if($leftToPay > 0)
-                                        {{ number_format($leftToPay, 0) }} ISK
+                                        {{ number_format($leftToPay, 2) }} ISK
                                         <button type="button"
                                                 class="btn btn-xs btn-link"
                                                 onclick="copyToClipboard('{{ round($leftToPay) }}', 'ISK amount')"

@@ -409,7 +409,7 @@ class NotificationService
             'period_type' => $periodType,
             'tax_count' => $taxCount,
             'total_amount' => $totalAmount,
-            'formatted_amount' => number_format($totalAmount, 2) . ' ISK',
+            'formatted_amount' => number_format($totalAmount, 0) . ' ISK',
             'due_date' => $dueDate,
             'corp_name' => $corpName,
             'wallet_division' => $divisionName,
@@ -2663,7 +2663,7 @@ class NotificationService
                     $data['character_name'] ?? 'Unknown',
                     $data['severity_label'] ?? ucfirst($data['severity'] ?? 'unknown'),
                     isset($data['ore_value']) ? number_format((float) $data['ore_value'], 0) : 'Unknown',
-                    isset($data['tax_owed']) ? number_format((float) $data['tax_owed'], 0) : 'Unknown',
+                    isset($data['tax_owed']) ? number_format((float) $data['tax_owed'], 2) : 'Unknown',
                     $data['detected_at_display'] ?? ($data['detected_at'] ?? 'Unknown'),
                     (($type === self::TYPE_ACTIVE_THEFT && isset($data['new_mining_value']))
                         ? (isset($data['mining_date']) ? "Mined on {$data['mining_date']} so far: " : 'New Activity Value: ')
@@ -3455,7 +3455,7 @@ class NotificationService
                 ['title' => 'Character', 'value' => $data['character_name'] ?? 'Unknown', 'short' => true],
                 isset($data['severity_label']) ? ['title' => 'Severity', 'value' => $data['severity_label'], 'short' => true] : null,
                 isset($data['ore_value']) ? ['title' => 'Ore Value', 'value' => number_format($data['ore_value'], 0) . ' ISK', 'short' => true] : null,
-                isset($data['tax_owed']) ? ['title' => 'Tax Owed', 'value' => number_format($data['tax_owed'], 0) . ' ISK', 'short' => true] : null,
+                isset($data['tax_owed']) ? ['title' => 'Tax Owed', 'value' => number_format($data['tax_owed'], 2) . ' ISK', 'short' => true] : null,
                 isset($data['reason']) ? ['title' => 'Reason', 'value' => $data['reason'], 'short' => false] : null,
                 ($type === self::TYPE_ACTIVE_THEFT && isset($data['new_mining_value'])) ? [
                     'title' => 'Active Theft Alert',
@@ -3803,7 +3803,7 @@ class NotificationService
                 ['name' => '👤 Character', 'value' => $data['character_name'] ?? 'Unknown', 'inline' => true],
                 isset($data['severity_label']) ? ['name' => '⚠️ Severity', 'value' => $data['severity_label'], 'inline' => true] : null,
                 isset($data['ore_value']) ? ['name' => '💰 Ore Value', 'value' => number_format($data['ore_value'], 0) . ' ISK', 'inline' => true] : null,
-                isset($data['tax_owed']) ? ['name' => '📋 Tax Owed', 'value' => number_format($data['tax_owed'], 0) . ' ISK', 'inline' => true] : null,
+                isset($data['tax_owed']) ? ['name' => '📋 Tax Owed', 'value' => number_format($data['tax_owed'], 2) . ' ISK', 'inline' => true] : null,
                 isset($data['detected_at_display']) ? ['name' => '📅 Detected', 'value' => $data['detected_at_display'], 'inline' => true] : null,
                 isset($data['status_label']) ? ['name' => '🔍 Status', 'value' => $data['status_label'], 'inline' => true] : null,
                 isset($data['reason']) ? ['name' => '📝 Reason', 'value' => $data['reason'], 'inline' => false] : null,

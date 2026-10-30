@@ -708,7 +708,7 @@ return [
 
     'pay_ingame_title' => 'How to Send Payment In-Game',
     'pay_ingame_step_1' => 'In EVE Online, right-click your corporation\'s name and choose "Give Money". "Give ISK" in your own wallet can\'t send to a corporation.',
-    'pay_ingame_step_4' => 'Enter the amount shown in the payment steps on My Taxes, or part of it if you are paying in instalments. After a part payment it shows only what is left.',
+    'pay_ingame_step_4' => 'Enter the amount shown in the payment steps on My Taxes, or part of it if you are paying in instalments. After a part payment it shows only what is left. The cents can be left off: anything within 1 ISK of the bill counts as paid.',
     'pay_ingame_step_5' => 'In the "Reason" field, paste your tax code exactly as shown (e.g. TAX-A1B2C3). This is the most important step — without the code, the system cannot match your payment.',
 
     'pay_reason_warning' => 'The tax code MUST be in the "Reason" field of the wallet transfer, not the description or anywhere else. If you forget the code or type it wrong, your payment will not be automatically matched and a director will need to manually verify it.',

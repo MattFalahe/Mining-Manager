@@ -104,7 +104,7 @@
                             @foreach($heldCredits as $credit)
                             <tr>
                                 <td>{{ $credit->character_name }}</td>
-                                <td class="text-right">{{ number_format($credit->remaining, 0) }} ISK</td>
+                                <td class="text-right">{{ number_format($credit->remaining, 2) }} ISK</td>
                             </tr>
                             @endforeach
                         </tbody>
@@ -188,7 +188,7 @@
                             <tr>
                                 <td>{{ \Carbon\Carbon::parse($transaction->date)->format('Y-m-d H:i') }}</td>
                                 <td>{{ $transaction->character_name }}</td>
-                                <td class="text-right">{{ number_format($transaction->amount, 0) }} ISK</td>
+                                <td class="text-right">{{ number_format($transaction->amount, 2) }} ISK</td>
                                 <td><small>{{ $transaction->description }}</small></td>
                                 <td>
                                     @if($transaction->reason)
@@ -375,7 +375,7 @@ function openAssign(button) {
 
     $('#apTransactionId').val($btn.data('transaction-id'));
     $('#apPayerName').text($btn.data('payer-name') || ('Character #' + payerId));
-    $('#apAmount').text(amount.toLocaleString() + ' ISK');
+    $('#apAmount').text(amount.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' ISK');
 
     var allowed = payerInvoices[payerId] || [];
     var $select = $('#apTaxId');
@@ -541,9 +541,9 @@ $(document).on('change', '#rpTaxId', function() {
     var amount = selected.data('amount');
     var remaining = selected.data('remaining');
     if (remaining !== undefined) {
-        $('#rpAmount').val(parseFloat(remaining).toFixed(0));
+        $('#rpAmount').val(parseFloat(remaining).toFixed(2));
     } else if (amount !== undefined) {
-        $('#rpAmount').val(parseFloat(amount).toFixed(0));
+        $('#rpAmount').val(parseFloat(amount).toFixed(2));
     }
 });
 </script>
@@ -602,7 +602,7 @@ $(document).on('change', '#rpTaxId', function() {
                                 $statusBadge = $tax->status === 'overdue' ? '(overdue)' : ($tax->status === 'partial' ? '(partial)' : '');
                             @endphp
                             <option value="{{ $tax->id }}" data-remaining="{{ $remaining }}">
-                                {{ $charName }} &mdash; {{ $period }} &mdash; {{ number_format($remaining, 0) }} ISK outstanding {{ $statusBadge }}
+                                {{ $charName }} &mdash; {{ $period }} &mdash; {{ number_format($remaining, 2) }} ISK outstanding {{ $statusBadge }}
                             </option>
                         @endforeach
                     </select>
@@ -702,7 +702,7 @@ $(document).on('change', '#rpTaxId', function() {
                                         <option value="{{ $tax->id }}"
                                                 data-amount="{{ $tax->amount_owed }}"
                                                 data-remaining="{{ $remaining }}">
-                                            {{ $statusBadge }} {{ $charName }} &mdash; {{ $period }} &mdash; {{ number_format($remaining, 0) }} ISK remaining
+                                            {{ $statusBadge }} {{ $charName }} &mdash; {{ $period }} &mdash; {{ number_format($remaining, 2) }} ISK remaining
                                         </option>
                                     @empty
                                         <option value="" disabled>{{ trans('mining-manager::taxes.no_unpaid_invoices') }}</option>
@@ -713,7 +713,7 @@ $(document).on('change', '#rpTaxId', function() {
                                 <div class="col-md-6">
                                     <div class="form-group">
                                         <label>{{ trans('mining-manager::taxes.amount') }} (ISK)</label>
-                                        <input type="number" class="form-control" id="rpAmount" min="1" required>
+                                        <input type="number" step="any" class="form-control" id="rpAmount" min="1" required>
                                         <small class="text-muted">{{ trans('mining-manager::taxes.partial_payment_note') }}</small>
                                     </div>
                                 </div>

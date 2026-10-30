@@ -485,6 +485,7 @@ return [
     'left_to_pay' => 'Left to Pay',
     'left_to_pay_short' => 'left',
     'left_to_pay_amount' => ':amount ISK left to pay',
+    'within_one_isk' => 'The cents can be left off: anything within 1 ISK of the bill counts as paid.',
     'left_of_billed' => 'ISK left of :owed for :period',
     'part_paid_received' => ':paid ISK of this :owed ISK bill has already been received, so only the rest is asked for below.',
     'due_in_days' => '{1} 1 day left to pay|[2,*] :count days left to pay',

@@ -168,22 +168,22 @@
                                 @endif
                                 <td>{{ $credit->created_at ? $credit->created_at->format('Y-m-d H:i') : '-' }}</td>
                                 <td class="text-right">
-                                    {{ number_format($credit->payment_total, 0) }}
+                                    {{ number_format($credit->payment_total, 2) }}
                                     {{-- The split is the answer to "I sent 1.2b, where did it
                                          go?". Without it the row only shows the leftover and
                                          looks like the payment was smaller than it was. --}}
                                     @if($credit->settled_on_arrival > 0)
                                     <div class="small text-muted">
                                         {{ trans('mining-manager::taxes.balance_settled_on_arrival', [
-                                            'amount' => number_format($credit->settled_on_arrival, 0),
+                                            'amount' => number_format($credit->settled_on_arrival, 2),
                                         ]) }}
                                     </div>
                                     @endif
                                 </td>
-                                <td class="text-right">{{ number_format($credit->amount, 0) }}</td>
+                                <td class="text-right">{{ number_format($credit->amount, 2) }}</td>
                                 <td class="text-right">
                                     @if((float) $credit->remaining > 0)
-                                        <strong class="text-success">{{ number_format($credit->remaining, 0) }}</strong>
+                                        <strong class="text-success">{{ number_format($credit->remaining, 2) }}</strong>
                                     @else
                                         <span class="badge badge-secondary">{{ trans('mining-manager::taxes.balance_fully_used') }}</span>
                                     @endif
@@ -200,7 +200,7 @@
                                                     : trans('mining-manager::taxes.view_tax') }}
                                             </a>
                                             <span class="text-muted">
-                                                &mdash; {{ number_format($use->amount, 0) }} ISK
+                                                &mdash; {{ number_format($use->amount, 2) }} ISK
                                                 on {{ $use->allocated_at ? $use->allocated_at->format('Y-m-d') : '' }}
                                             </span>
                                         </div>
@@ -212,7 +212,7 @@
                                         <i class="fas fa-undo text-warning mr-1"></i>
                                         <span class="text-muted">
                                             {{ trans('mining-manager::taxes.refund_balance') }}
-                                            &mdash; {{ number_format($refund->amount, 0) }} ISK
+                                            &mdash; {{ number_format($refund->amount, 2) }} ISK
                                             on {{ $refund->created_at ? $refund->created_at->format('Y-m-d') : '' }}
                                         </span>
                                         @if($refund->status === \MiningManager\Models\PaymentRefund::STATUS_PENDING)
@@ -415,7 +415,7 @@ function copyCodeText(elementId) {
 function openRefund(creditId, holder, available) {
     $('#rfCreditId').val(creditId);
     $('#rfHolder').text(holder);
-    $('#rfAvailable').text(Number(available).toLocaleString('en-US', {maximumFractionDigits: 0}) + ' ISK');
+    $('#rfAvailable').text(Number(available).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' ISK');
     $('#rfAmount').val('').attr('max', available);
     $('#rfReason').val('');
     $('#rfSubmit').prop('disabled', false);
@@ -461,7 +461,7 @@ function submitRefund() {
 function openMarkSent(refundId, amount, holder) {
     $('#msRefundId').val(refundId);
     $('#msHolder').text(holder);
-    $('#msAmount').text(Number(amount).toLocaleString('en-US', {maximumFractionDigits: 0}) + ' ISK');
+    $('#msAmount').text(Number(amount).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' ISK');
     $('#msNote').val('');
     $('#msSubmit').prop('disabled', false);
 

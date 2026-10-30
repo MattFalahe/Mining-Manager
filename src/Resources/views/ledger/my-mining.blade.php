@@ -229,7 +229,7 @@
                             @if($nextPayment['overdue_count'] > 0)
                                 <div class="small-box bg-gradient-danger">
                                     <div class="inner">
-                                        <h3>{{ number_format($nextPayment['overdue_amount'], 0) }}</h3>
+                                        <h3>{{ number_format($nextPayment['overdue_amount'], 2) }}</h3>
                                         <p>{{ trans_choice('mining-manager::ledger.overdue_bills', $nextPayment['overdue_count'], ['count' => $nextPayment['overdue_count']]) }}</p>
                                     </div>
                                     <div class="icon">
@@ -242,7 +242,7 @@
                             @elseif($nextPayment['next'])
                                 <div class="small-box bg-gradient-info">
                                     <div class="inner">
-                                        <h3>{{ number_format($nextPayment['next']->getRemainingBalance(), 0) }}</h3>
+                                        <h3>{{ number_format($nextPayment['next']->getRemainingBalance(), 2) }}</h3>
                                         <p>{{ trans('mining-manager::ledger.next_payment_due', ['date' => $nextPayment['next']->effectiveDueDate()->format('M j'), 'countdown' => $nextPayment['next']->dueCountdown()]) }}</p>
                                     </div>
                                     <div class="icon">
