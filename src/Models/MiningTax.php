@@ -34,6 +34,12 @@ class MiningTax extends Model
     public const OUTSTANDING_STATUSES = ['unpaid', 'partial', 'overdue'];
 
     /**
+     * Statuses of a bill a director let off. Nothing is owed on it, it never
+     * goes overdue, and it counts as never billed.
+     */
+    public const WRITTEN_OFF_STATUSES = ['waived', 'exempted'];
+
+    /**
      * tax_profile on a bill billed by the Global profile. A bill billed by a
      * configured corporation's profile holds that corporation's id, and one
      * from before tax profiles holds nothing.
@@ -343,7 +349,7 @@ class MiningTax extends Model
      */
     public function isOverdue()
     {
-        if ($this->status === 'paid' || $this->status === 'waived') {
+        if ($this->status === 'paid' || in_array($this->status, self::WRITTEN_OFF_STATUSES, true)) {
             return false;
         }
 

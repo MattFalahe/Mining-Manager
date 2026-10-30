@@ -474,6 +474,12 @@
                                                 </span>
                                                 @endif
                                                 @break
+                                            @case('exempted')
+                                            @case('waived')
+                                                <span class="badge badge-secondary">
+                                                    <i class="fas fa-minus-circle"></i> {{ trans('mining-manager::taxes.' . $tax->status) }}
+                                                </span>
+                                                @break
                                         @endswitch
                                     </td>
                                     <td data-order="{{ $tax->due_date ? \Carbon\Carbon::parse($tax->due_date)->format('Y-m-d') : '' }}">

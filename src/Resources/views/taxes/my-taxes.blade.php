@@ -625,6 +625,12 @@
                                                     <i class="fas fa-adjust"></i> {{ trans('mining-manager::taxes.partial') }}
                                                 </span>
                                                 @break
+                                            @case('exempted')
+                                            @case('waived')
+                                                <span class="badge badge-secondary">
+                                                    <i class="fas fa-minus-circle"></i> {{ trans('mining-manager::taxes.' . $tax->status) }}
+                                                </span>
+                                                @break
                                         @endswitch
                                     </td>
                                     <td>

@@ -18,6 +18,8 @@ return [
     'paid' => 'Paid',
     'partial' => 'Partial',
     'overdue' => 'Overdue',
+    'exempted' => 'Exempted',
+    'waived' => 'Waived',
     'pending' => 'Pending',
     'active' => 'Active',
     'expired' => 'Expired',

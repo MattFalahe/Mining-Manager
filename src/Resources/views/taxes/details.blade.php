@@ -80,6 +80,10 @@
                                     @case('partial')
                                         <span class="badge badge-info">{{ trans('mining-manager::taxes.partial') }}</span>
                                         @break
+                                    @case('exempted')
+                                    @case('waived')
+                                        <span class="badge badge-secondary">{{ trans('mining-manager::taxes.' . $tax->status) }}</span>
+                                        @break
                                 @endswitch
                             </span>
                         </li>

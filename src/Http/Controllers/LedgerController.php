@@ -279,7 +279,7 @@ class LedgerController extends Controller
         // days. Bills from before periods were stored cover their month.
         $bills = MiningTax::whereIn('character_id', $characterIds)
             ->when($specificCharacterId, fn($q) => $q->where('character_id', $specificCharacterId))
-            ->where('status', '!=', 'waived')
+            ->whereNotIn('status', MiningTax::WRITTEN_OFF_STATUSES)
             ->whereRaw('COALESCE(period_start, month) <= ?', [$endDate])
             ->whereRaw('COALESCE(period_end, LAST_DAY(month)) >= ?', [$startDate])
             ->get();

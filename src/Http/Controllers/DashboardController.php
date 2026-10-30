@@ -748,7 +748,7 @@ class DashboardController extends Controller
         $stats = $this->getDirectorCurrentMonthStats($corporationId, $start, Carbon::now()->min($end));
 
         $bills = MiningTax::whereIn('character_id', $this->getCorporationCharacterIds($corporationId))
-            ->where('status', '!=', 'waived')
+            ->whereNotIn('status', MiningTax::WRITTEN_OFF_STATUSES)
             ->whereRaw('COALESCE(period_start, month) <= ?', [$end->toDateString()])
             ->whereRaw('COALESCE(period_end, LAST_DAY(month)) >= ?', [$start->toDateString()])
             ->get(['amount_paid']);
