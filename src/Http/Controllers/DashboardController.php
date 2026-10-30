@@ -13,8 +13,6 @@ use MiningManager\Services\Configuration\SettingsManagerService;
 use MiningManager\Services\TypeIdRegistry;
 use MiningManager\Models\MiningLedger;
 use MiningManager\Models\MiningTax;
-use MiningManager\Models\MiningEvent;
-use MiningManager\Models\MoonExtraction;
 use MiningManager\Models\MonthlyStatistic;
 use MiningManager\Models\MiningLedgerDailySummary;
 use Seat\Eveapi\Models\Character\CharacterInfo;
@@ -502,53 +500,6 @@ class DashboardController extends Controller
     // ==================== HELPER METHODS ====================
 
     /**
-     * Get or calculate monthly statistics (uses stored data for closed months)
-     *
-     * @param int $userId
-     * @param array $characterIds
-     * @param Carbon $startDate
-     * @param Carbon $endDate
-     * @return array|null Returns stored stats if available, null if needs calculation
-     */
-    private function getStoredMonthlyStats($userId, $characterIds, $startDate, $endDate)
-    {
-        // Only use stored stats for complete closed months
-        $isCurrentMonth = $startDate->isSameMonth(Carbon::now());
-        if ($isCurrentMonth) {
-            return null; // Current month data changes, calculate live
-        }
-
-        // Check if we have stored statistics for this closed month
-        $storedStats = MonthlyStatistic::where('user_id', $userId)
-            ->where('year', $startDate->year)
-            ->where('month', $startDate->month)
-            ->where('is_closed', true)
-            ->first();
-
-        if ($storedStats) {
-            // Return stats in the format expected by the dashboard
-            return [
-                'total_quantity' => $storedStats->total_quantity,
-                'total_value' => $storedStats->total_value,
-                'total_isk' => $storedStats->total_value,
-                'ore_value' => $storedStats->ore_value,
-                'mineral_value' => $storedStats->mineral_value,
-                'tax_isk' => $storedStats->tax_owed,
-                'mining_days' => $storedStats->mining_days,
-                'moon_ore_value' => $storedStats->moon_ore_value,
-                'ice_value' => $storedStats->ice_value,
-                'gas_value' => $storedStats->gas_value,
-                'regular_ore_value' => $storedStats->regular_ore_value,
-                'daily_chart_data' => $storedStats->daily_chart_data,
-                'ore_type_chart_data' => $storedStats->ore_type_chart_data,
-                'top_systems' => $storedStats->top_systems,
-            ];
-        }
-
-        return null; // No stored stats, need to calculate
-    }
-
-    /**
      * Get current month statistics for member
      */
     private function getMemberCurrentMonthStats($characterIds, $startDate, $endDate)
@@ -971,35 +922,6 @@ class DashboardController extends Controller
     }
 
     /**
-     * Get top miners for corporation (overall or for period)
-     */
-    private function getTopMinersOverall($corporationId, $oreType, $limit = 10)
-    {
-        // For moon ore, only count mining at corporation-owned moon structures
-        if ($oreType === 'moon_ore') {
-            return $this->getTopMoonMinersFromLedger($corporationId, null, null, $limit);
-        }
-
-        $characterIds = $this->filterLeaderboardCharacterIds(
-            $this->getCorporationCharacterIds($corporationId)
-        );
-
-        if (empty($characterIds)) {
-            return [];
-        }
-
-        $topCharacters = MiningLedgerDailySummary::whereIn('character_id', $characterIds)
-            ->selectRaw("character_id, SUM(total_value) as total_value, SUM(total_quantity) as total_quantity")
-            ->groupBy('character_id')
-            ->having('total_value', '>', 0)
-            ->orderByDesc('total_value')
-            ->limit($limit * 3)
-            ->get();
-
-        return $this->aggregateTopMinersFromSummary($topCharacters, $limit);
-    }
-
-    /**
      * Get top miners for specific period
      */
     private function getTopMinersForPeriod($corporationId, $oreType, $startDate, $endDate, $limit = 10)
@@ -1107,56 +1029,6 @@ class DashboardController extends Controller
         $topCharacters = $query->get();
 
         return $this->aggregateTopMinersFromSummary($topCharacters, $limit);
-    }
-
-    /**
-     * Aggregate top miners from mining data
-     * UPDATED: Uses CharacterInfoService for proper character/corp names
-     */
-    private function aggregateTopMiners($miningData, $limit)
-    {
-        // Get all unique character IDs
-        $characterIds = $miningData->pluck('character_id')->unique()->toArray();
-        
-        // Get character info in batch (optimized)
-        $charactersInfo = $this->characterInfoService->getBatchCharacterInfo($characterIds);
-        
-        // Group by main character
-        $grouped = $miningData->groupBy(function($entry) use ($charactersInfo) {
-            $charInfo = $charactersInfo[$entry->character_id] ?? null;
-            
-            // Use main_character_id if available, otherwise use character_id
-            if ($charInfo && $charInfo['main_character_id']) {
-                return $charInfo['main_character_id'];
-            }
-            
-            return $entry->character_id;
-        });
-
-        $miners = [];
-        foreach ($grouped as $mainCharId => $entries) {
-            $totalValue = $this->calculateTotalValue($entries);
-            
-            // ALWAYS get fresh info for the main character (not from cache of alts)
-            // This ensures we show the MAIN's corporation, not an alt's corporation
-            $mainCharInfo = $this->characterInfoService->getCharacterInfo($mainCharId);
-            
-            $miners[] = [
-                'character_id' => $mainCharId,
-                'character_name' => $mainCharInfo['name'],
-                'corporation_name' => $mainCharInfo['corporation_name'],
-                'total_value' => $totalValue,
-                'total_quantity' => $entries->sum('quantity'),
-                'is_registered' => $mainCharInfo['is_registered'],
-                'alt_count' => $entries->pluck('character_id')->unique()->count() - 1,
-            ];
-        }
-
-        usort($miners, function($a, $b) {
-            return $b['total_value'] <=> $a['total_value'];
-        });
-
-        return array_slice($miners, 0, $limit);
     }
 
     /**
@@ -2098,62 +1970,9 @@ class DashboardController extends Controller
         }
     }
 
-    /**
-     * Value mining the way the ledger values it, through OreValuationService.
-     */
-    private function calculateTotalValue($miningData)
-    {
-        if ($miningData->isEmpty()) {
-            return 0;
-        }
-
-        // Use OreValuationService for proper valuation
-        $valuationService = app(\MiningManager\Services\Pricing\OreValuationService::class);
-
-        return $miningData->sum(function($entry) use ($valuationService) {
-            $values = $valuationService->calculateOreValue($entry->type_id, $entry->quantity, ['mining_date' => $entry->date ?? null]);
-            return $values['total_value'];
-        });
-    }
-
-    /**
-     * Value one entry the way the ledger values it, through OreValuationService.
-     * This is used by chart methods and performance calculations
-     */
-    private function calculateEntryValue($entry)
-    {
-        try {
-            // Use OreValuationService for proper valuation
-            $valuationService = app(\MiningManager\Services\Pricing\OreValuationService::class);
-
-            $values = $valuationService->calculateOreValue($entry->type_id, $entry->quantity, ['mining_date' => $entry->date ?? null]);
-
-            return $values['total_value'];
-        } catch (\Exception $e) {
-            \Log::error('Error calculating entry value', [
-                'type_id' => $entry->type_id ?? 'unknown',
-                'entry_id' => $entry->id ?? 'unknown',
-                'error' => $e->getMessage()
-            ]);
-            return 0;
-        }
-    }
-
-    private function calculateTaxForPeriod($characterIds, $startDate, $endDate)
-    {
-        return MiningTax::whereIn('character_id', $characterIds)
-            ->whereBetween('month', [$startDate->format('Y-m-01'), $endDate->format('Y-m-01')])
-            ->sum('amount_owed');
-    }
-
     private function isMoonOre($typeId)
     {
         return TypeIdRegistry::isMoonOre($typeId);
-    }
-
-    private function getMoonOreTypeIds()
-    {
-        return TypeIdRegistry::getAllMoonOres();
     }
 
     private function getOreGroup($typeId)
