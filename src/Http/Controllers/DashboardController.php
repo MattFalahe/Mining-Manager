@@ -932,7 +932,6 @@ class DashboardController extends Controller
             ->groupBy('character_id')
             ->having('total_value', '>', 0)
             ->orderByDesc('total_value')
-            ->limit($limit * 3)
             ->get();
 
         // Supplement: if today has no daily summary yet, add today's data from MiningLedger.
@@ -1024,7 +1023,6 @@ class DashboardController extends Controller
             ->groupBy('character_id')
             ->having('total_value', '>', 0)
             ->orderByDesc('total_value')
-            ->limit($limit * 3)
             ->get();
 
         // Supplement: add today's data if no summary exists yet
@@ -1100,8 +1098,7 @@ class DashboardController extends Controller
             ->selectRaw("character_id, SUM(total_value) as total_value, SUM(quantity) as total_quantity")
             ->groupBy('character_id')
             ->having('total_value', '>', 0)
-            ->orderByDesc('total_value')
-            ->limit($limit * 3);
+            ->orderByDesc('total_value');
 
         if ($startDate && $endDate) {
             $query->whereBetween('date', [$startDate, $endDate]);
@@ -1165,6 +1162,11 @@ class DashboardController extends Controller
     /**
      * Aggregate top miners from daily summary SQL results (fast path)
      * Groups by main character, resolves names in batch.
+     *
+     * The rows must be every member's total, not the top few. Accounts are
+     * only formed here, so a list cut by character beforehand drops any alt
+     * below the cut: its mining from the account's total, its count from the
+     * alts badge, and an account of many small miners from the ranking.
      */
     private function aggregateTopMinersFromSummary($summaryRows, $limit)
     {
@@ -1209,7 +1211,8 @@ class DashboardController extends Controller
                 'total_value' => $data['total_value'],
                 'total_quantity' => $data['total_quantity'],
                 'is_registered' => $mainCharInfo['is_registered'] ?? false,
-                'alt_count' => count(array_unique($data['alt_ids'])) - 1,
+                // Everyone but the main, who may not have mined in this period.
+                'alt_count' => count(array_diff(array_unique($data['alt_ids']), [$mainCharId])),
             ];
         }
 
