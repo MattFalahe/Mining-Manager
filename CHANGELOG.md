@@ -62,6 +62,7 @@ This release also brings tax periods to the ledger, My Mining and the dashboards
 - **On twice-a-month billing the dashboards show the current tax period.** The member dashboard and both tabs of the director dashboard show a **Current Tax Period** card above Current Month, with the same boxes for the half of the month we are in. On the corporation tab, Tax Collected for a period not billed yet says when its bills go out. On monthly billing nothing changes, since the card would only repeat the month.
 - The tax box on the dashboards is called **Estimated Tax** on both, since it is the tax on the mining shown, worked out every day. The director's personal tab called it Tax Owed, and the member dashboard Tax ISK.
 - Fixed: **the mining tax banner at the top of the dashboards was barely readable on light themes.** It was a faint tint over the page with light text on it. It is now a panel of its own, red once a bill is late and amber before, that reads the same on any SeAT theme.
+- Fixed: **Top Miners left out alts, and sometimes whole accounts.** Each board took the 30 characters who mined most and only then added alts to their mains, so an alt below that line was missing from its account's total and from the alts badge, and an account of many smaller miners could miss the board altogether. On a busy corporation the same player showed a different alt count from board to board, and the order could be wrong. Every member's mining now counts, and the badge counts the account's other characters who mined, whether or not the main did.
 
 ### Tax Calculation
 
