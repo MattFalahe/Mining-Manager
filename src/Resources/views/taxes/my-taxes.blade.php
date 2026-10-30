@@ -201,10 +201,9 @@
                                             @endif
                                             <li class="mb-2">
                                                 Enter the amount: <strong>{{ number_format($currentTax->getRemainingBalance(), 2) }} ISK</strong>
-                                                {{-- Copied in whole ISK, leaving nothing after a decimal point
-                                                     for an EVE client in another language to read differently.
-                                                     Within 1 ISK of the bill counts as paid. --}}
-                                                <button type="button" class="btn btn-xs btn-outline-primary ml-2" onclick="copyToClipboard('{{ round($currentTax->getRemainingBalance()) }}', 'ISK amount')">
+                                                {{-- Copied to the cent: EVE's Transfer ISK takes cents even
+                                                     with the wallet set to hide them. --}}
+                                                <button type="button" class="btn btn-xs btn-outline-primary ml-2" onclick="copyToClipboard('{{ number_format($currentTax->getRemainingBalance(), 2, '.', '') }}', 'ISK amount')">
                                                     <i class="fas fa-copy"></i> Copy
                                                 </button>
                                                 <br><small class="text-muted">{{ trans('mining-manager::taxes.within_one_isk') }}</small>
@@ -595,7 +594,7 @@
                                         {{ number_format($leftToPay, 2) }} ISK
                                         <button type="button"
                                                 class="btn btn-xs btn-link"
-                                                onclick="copyToClipboard('{{ round($leftToPay) }}', 'ISK amount')"
+                                                onclick="copyToClipboard('{{ number_format($leftToPay, 2, '.', '') }}', 'ISK amount')"
                                                 data-toggle="tooltip"
                                                 title="{{ trans('mining-manager::taxes.copy') }} ISK">
                                             <i class="fas fa-copy"></i>

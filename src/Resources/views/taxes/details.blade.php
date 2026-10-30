@@ -160,7 +160,7 @@
                                     <span class="info-box-number">
                                         {{ number_format($tax->amount_owed, 2) }}
                                         @if($leftToPay > 0)
-                                        <button type="button" class="btn btn-xs btn-link text-white p-0 ml-1" onclick="copyToClipboard('{{ round($leftToPay) }}', 'ISK amount')" data-toggle="tooltip" title="Copy ISK amount">
+                                        <button type="button" class="btn btn-xs btn-link text-white p-0 ml-1" onclick="copyToClipboard('{{ number_format($leftToPay, 2, '.', '') }}', 'ISK amount')" data-toggle="tooltip" title="Copy ISK amount">
                                             <i class="fas fa-copy"></i>
                                         </button>
                                         @endif
