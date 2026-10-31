@@ -261,6 +261,22 @@ class DiagnosticController extends Controller
                 : 'is_final, final_marked_by and final_marked_at present.',
         ];
 
+        // 4e. Moon blueprints
+        $hasBlueprints = \Schema::hasTable('mining_manager_moon_rotations')
+            && \Schema::hasTable('mining_manager_moon_rotation_slots');
+        $missingBlueprint = array_values(array_filter([
+            \Schema::hasTable('mining_manager_moon_rotations') ? null : 'mining_manager_moon_rotations',
+            \Schema::hasTable('mining_manager_moon_rotation_slots') ? null : 'mining_manager_moon_rotation_slots',
+            $hasPlans && \Schema::hasColumn('moon_extraction_plans', 'rotation_id') ? null : 'moon_extraction_plans.rotation_id',
+        ]));
+        $checks[] = [
+            'label'   => 'Migration 000031: moon blueprints',
+            'status'  => $missingBlueprint ? 'fail' : 'ok',
+            'message' => $missingBlueprint
+                ? 'Missing: ' . implode(', ', $missingBlueprint) . '. Run migrations. Blueprints cannot be saved or applied.'
+                : 'Blueprint tables and the blueprint columns on planned pulls present.',
+        ];
+
         // 5. Moon Owner Corporation — the planner's operating scope
         $moonOwner = $this->settingsService->getTaxProgramCorporationId();
         $checks[] = [
@@ -339,6 +355,24 @@ class DiagnosticController extends Controller
                         ? 'No moons currently scheduled off-plan.'
                         : "{$openMismatches} plan(s) flagged as scheduled off-plan. Review the warning banner on the planner and dismiss once reconciled.",
                 ];
+
+                // A refinery that is gone stays in its blueprints until someone
+                // clears it on the Blueprints tab, so a moment's gap in SeAT's
+                // structure list can never strip a blueprint on its own.
+                if ($hasBlueprints) {
+                    $rotations = app(\MiningManager\Services\Moon\MoonRotationService::class);
+                    $blueprints = $rotations->listForCorporation((int) $moonOwner);
+                    $gone = $rotations->slotsWithMissingRefineries((int) $moonOwner);
+                    $checks[] = [
+                        'label'   => 'Blueprints: refineries still owned',
+                        'status'  => $gone->isEmpty() ? 'ok' : 'warn',
+                        'message' => empty($blueprints)
+                            ? 'No blueprints set up.'
+                            : ($gone->isEmpty()
+                                ? count($blueprints) . ' blueprint(s), with ' . array_sum(array_column($blueprints, 'planned_ahead')) . ' pull(s) planned ahead from them. Every refinery in them is still owned.'
+                                : $gone->count() . ' pull(s) in ' . $gone->pluck('rotation_id')->unique()->count() . ' blueprint(s) are on refineries the corporation no longer owns. Clear them on the Blueprints tab, which also takes off the pulls they planned ahead.'),
+                    ];
+                }
             } catch (\Throwable $e) {
                 $checks[] = [
                     'label'   => 'Planner data sanity',
