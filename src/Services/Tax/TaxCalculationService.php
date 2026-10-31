@@ -1096,21 +1096,29 @@ class TaxCalculationService
 
         foreach ($summaries as $summary) {
             foreach ($summary->ore_types ?? [] as $ore) {
-                $key = $ore['ore_name'] ?? "Type {$ore['type_id']}";
+                $name = $ore['ore_name'] ?? "Type {$ore['type_id']}";
+
+                // A line per ore and rate it was taxed at, and one for the
+                // ore's untaxed mining. Keyed on the name alone, taxed and
+                // untaxed mining of one ore shared a line at the rate of
+                // whichever came first, so a taxed ore could read 0%.
+                $taxable = !empty($ore['is_taxable']);
+                $rate = $taxable ? (float) ($ore['tax_rate'] ?? 0) : 0.0;
+                $key = $name . '|' . ($taxable ? $rate : 'untaxed');
 
                 if (!isset($breakdown[$key])) {
                     $breakdown[$key] = [
                         'type_id' => $ore['type_id'],
-                        'name' => $key,
+                        'name' => $name,
                         'category' => $ore['category'] ?? 'ore',
                         'rarity' => $ore['moon_rarity'] ?? null,
                         'quantity' => 0,
                         'value' => 0,
-                        'tax_rate' => $ore['tax_rate'] ?? 0,
+                        'tax_rate' => $rate,
                         'event_modifier' => $ore['event_modifier'] ?? 0,
                         'event_qualified_value' => 0,
                         'event_discount_amount' => 0,
-                        'effective_rate' => $ore['effective_rate'] ?? $ore['tax_rate'] ?? 0,
+                        'effective_rate' => $rate,
                         'tax' => 0,
                     ];
                 }
@@ -1140,6 +1148,15 @@ class TaxCalculationService
                 $totalEventDiscount += $discount;
             }
         }
+
+        // The rate shown is what the line was charged on average, events
+        // included, not the first day's.
+        foreach ($breakdown as &$line) {
+            if ($line['value'] > 0) {
+                $line['effective_rate'] = round($line['tax'] / $line['value'] * 100, 2);
+            }
+        }
+        unset($line);
 
         return [
             'breakdown' => array_values($breakdown),
