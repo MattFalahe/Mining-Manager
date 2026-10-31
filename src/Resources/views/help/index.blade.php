@@ -951,6 +951,15 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                         </li>
                     </ul>
 
+                    <h4><i class="fas fa-broadcast-tower"></i> Other plugins hear about bills, events and reports</h4>
+                    <ul>
+                        <li>
+                            With Manager Core installed, plugins such as HR Manager are told when a bill is paid or
+                            goes overdue, when an invoice goes out, when an event is announced, starts or completes,
+                            when a report is made and when a jackpot turns up. Published Events lists them all.
+                        </li>
+                    </ul>
+
                     <h4><i class="fas fa-shield-alt"></i> Nothing set before is lost, and nothing taxed before changes</h4>
                     <ul>
                         <li>
@@ -2887,6 +2896,19 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                         <i class="fas fa-shield-alt"></i>
                         <strong>Catch-up logic:</strong> if the scanner first observes an extraction already in the unstable or expired state (Manager Core was down, cron paused, fresh install with already-active moons), earlier stages are back-filled so subscribers see a complete lifecycle picture.
                     </div>
+
+                    <h4 class="mt-4">Bills, events, reports and jackpots</h4>
+                    <p>Each of these goes out once, as it happens, and only once the change behind it is saved. Without Manager Core nothing is sent.</p>
+                    <ul>
+                        <li><code>mining.tax_created</code>: a bill was raised, with what held credit paid of it and what is left to pay.</li>
+                        <li><code>mining.tax_paid</code>: a bill was paid in full, from the wallet, held credit or by a director, and whether it was late.</li>
+                        <li><code>mining.tax_overdue</code>: a bill nothing was paid on went past its due date.</li>
+                        <li><code>mining.invoice_sent</code>: an invoice for a bill went out.</li>
+                        <li><code>mining.event_created</code>, <code>mining.event_started</code> and <code>mining.event_completed</code>: an event was announced, started or completed. One set up without notifications is not announced here either.</li>
+                        <li><code>mining.report_generated</code>: a report was made.</li>
+                        <li><code>mining.jackpot_detected</code>: jackpot ore turned up in a chunk's mining, found by the import or bearing out a member's report.</li>
+                        <li><code>mining.theft_detected</code>: a theft incident was opened.</li>
+                    </ul>
                 </div>
 
                 {{-- Moon Classification --}}
