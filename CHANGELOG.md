@@ -56,6 +56,7 @@ This release also brings tax periods to the ledger, My Mining and the dashboards
 - Fixed: **the event discount under Total Tax never showed** on the Mining Summary. Only the daily summaries keep it, and the page never read them for it.
 - A past month the Mining Summary works out from the ledger, which the At our moons view always does, says *From the ledger* rather than *Finalized*.
 - **The old ledger list page is gone.** Since before 1.0.0 the Mining Ledger page has been the summary, but the list it replaced stayed in the code, and no release ever linked to it. Its export, delete and bulk delete endpoints went with it, since nothing else called them. Opening a single ledger entry from a character's page works as before.
+- Fixed: **one refinery row that failed to import held back the rest of the run.** `process-ledger` stopped at the first error, before rebuilding the day summaries of the rows it had imported and before looking for jackpot ore, so a row that kept failing kept every miner's daily figures and the jackpot check from updating. The rows that go in now get both, and the run still reports the failure.
 
 ### Dashboard
 
@@ -81,6 +82,7 @@ This release also brings tax periods to the ledger, My Mining and the dashboards
 - Fixed: **a failed wallet rescan or payment check showed `mining-manager::taxes.verification_error`** instead of a message.
 - Fixed: **a bill marked paid by hand could stay Partial over a few hundredths of an ISK, and be reminded every day.** Mark as Paid filled in what was left rounded to whole ISK, and only counted the bill paid when the payment covered all of it, so a bill ending in .01 to .49 was left that fraction short. It now counts a bill with less than 1 ISK left as paid, as payments matched from the wallet always have, and fills in what is left to the hundredth. Bills already left Partial this way stay so; Change Status to Paid on the bill's page settles one.
 - Fixed: **on Tax Overview, Mark as Paid, Send Reminder and Delete did nothing on any row past the first page.** The buttons were wired up as the page loaded, when only the table's first page is there, so a row reached by paging or the search box had buttons that did nothing. Ticking such a row did not bring up the bulk actions either.
+- Fixed: **a bill set to Exempted showed no status** on Tax Overview, its own page or My Taxes. It now reads Exempted, and like a waived bill it never turns overdue and is not counted as billed.
 
 ### Theft Detection
 
@@ -104,12 +106,14 @@ This release also brings tax periods to the ledger, My Mining and the dashboards
 ### Moon Extractions
 
 - A cancelled extraction's moon rig record is no longer refreshed every two hours until the time its chunk would have arrived. The chunk never comes, so the record stays as it was when the cancellation was picked up.
+- Fixed: **a jackpot could be announced twice**, when a member reported it at the moment the refinery import or the daily scan found it in the mining. Whichever marks it first now sends the only ping.
 
 ### Notifications
 
 - **One message says the move happened**, to the webhooks that take Price Provider Trouble or Moon Scan Missing, with what changed and a link to the report. It goes out once. Until it has, admins see the same on the settings page and the director dashboard, for two weeks after the update. A new install, or one with no Moon Owner and no corporation settings, had nothing to move and gets neither.
 - The Discord ping test on the Diagnostic page follows each notification type's own ping settings.
 - Fixed: **the Outstanding Mining Tax digest usually came every 8 days rather than 7.** The check compared the time to the second with when the last digest went out, which is a little after its run starts, so a week later the run was usually a few seconds early and waited another day. It now counts days.
+- Fixed: **a Metenox cargo alert that failed to send was never sent.** The drill was marked alerted before the message went out, so a webhook that was down missed it for good. It is now sent again an hour later, for as long as the bay stays over the line.
 
 ### Events
 
@@ -150,6 +154,11 @@ This release also brings tax periods to the ledger, My Mining and the dashboards
 
 - Fixed: **`backup-data` left out fifteen of the plugin's tables**, so a backup could not bring back payment allocations, balances held, refunds, the planner's pulls and their history, blueprints, moon claims and the watchlist, the plugin's character lookups, or what the alerts remember having said, which would send them all again. It now takes every table the plugin owns, the new settings archive included. Backups made before this update restore as before, without those tables.
 - Tables keyed on something other than an id are written in one go instead of failing part way through and being tried again, and the manifest records the installed version instead of `dev-5.0`.
+- Fixed: **`restore-data` emptied a table before reading its backup file**, so a file that was missing or cut short left the table empty. Every file is now read before anything is touched, and nothing is restored when one cannot be. Each table is emptied and refilled in one go, so a row the table refuses puts back what was there.
+
+### Commands
+
+- Fixed: **`initialize` called a step complete when it had been skipped**, because its feature was switched off or a scheduled run of the same command was going. It now waits for a run that is already going, says which steps were skipped and why, and lists them at the end.
 
 ### Scheduled Commands
 
