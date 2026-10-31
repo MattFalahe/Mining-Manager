@@ -124,6 +124,26 @@ class RestoreDataCommand extends Command
             return [$table, $info['rows'] ?? 0, $info['file'] ?? 'N/A'];
         })->toArray());
 
+        // Every file is read before any table is touched. A file that is
+        // missing, cut short or not a list of rows would otherwise only be
+        // found once its table had been emptied, and leave it empty.
+        $unreadable = [];
+        foreach ($tables as $table) {
+            $info = $manifest['tables'][$table] ?? [];
+            if (($info['status'] ?? '') === 'ok' && !empty($info['file'])
+                && $this->readRows($backupPath . '/' . $info['file']) === null) {
+                $unreadable[] = "{$table}: {$info['file']} is missing or is not a list of rows";
+            }
+        }
+
+        if (!empty($unreadable)) {
+            $this->error('These backup files cannot be read, so nothing was restored:');
+            foreach ($unreadable as $problem) {
+                $this->error("  - {$problem}");
+            }
+            return Command::FAILURE;
+        }
+
         // Confirm
         if (!$this->option('force')) {
             $truncateMsg = $this->option('no-truncate') ? 'Data will be APPENDED to existing tables.' : 'Existing data in these tables will be REPLACED.';
@@ -171,34 +191,30 @@ class RestoreDataCommand extends Command
                     continue;
                 }
 
-                $filePath = $backupPath . '/' . $info['file'];
-                if (!file_exists($filePath)) {
-                    $errors[] = "{$table}: backup file not found ({$info['file']})";
+                // Read again here, before the table is emptied, in case the
+                // file changed since the check above.
+                $rows = $this->readRows($backupPath . '/' . $info['file']);
+                if ($rows === null) {
+                    $errors[] = "{$table}: {$info['file']} is missing or is not a list of rows";
                     $bar->advance();
                     continue;
                 }
 
                 try {
-                    // Truncate existing data unless --no-truncate
-                    if (!$this->option('no-truncate')) {
-                        DB::table($table)->truncate();
-                    }
+                    // Emptied and refilled in one transaction, so a row the
+                    // table refuses puts back what was there rather than
+                    // leaving it half restored. TRUNCATE would commit on its
+                    // own and could not be undone.
+                    DB::transaction(function () use ($table, $rows) {
+                        if (!$this->option('no-truncate')) {
+                            DB::table($table)->delete();
+                        }
 
-                    // Stream the JSON file and insert in batches
-                    $jsonContent = file_get_contents($filePath);
-                    $rows = json_decode($jsonContent, true);
-
-                    if (!is_array($rows)) {
-                        $errors[] = "{$table}: invalid JSON data";
-                        $bar->advance();
-                        continue;
-                    }
-
-                    // Insert in chunks of 500 to avoid query size limits
-                    $chunks = array_chunk($rows, 500);
-                    foreach ($chunks as $chunk) {
-                        DB::table($table)->insert($chunk);
-                    }
+                        // Insert in chunks of 500 to avoid query size limits
+                        foreach (array_chunk($rows, 500) as $chunk) {
+                            DB::table($table)->insert($chunk);
+                        }
+                    });
 
                     $restoredRows += count($rows);
 
@@ -264,6 +280,30 @@ class RestoreDataCommand extends Command
         ]);
 
         return empty($errors) ? Command::SUCCESS : Command::FAILURE;
+    }
+
+    /**
+     * The rows in one backup file, or null when it cannot be read as a list
+     * of rows.
+     */
+    private function readRows(string $filePath): ?array
+    {
+        if (!is_file($filePath) || !is_readable($filePath)) {
+            return null;
+        }
+
+        $rows = json_decode((string) file_get_contents($filePath), true);
+        if (!is_array($rows) || !array_is_list($rows)) {
+            return null;
+        }
+
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                return null;
+            }
+        }
+
+        return $rows;
     }
 
     private function getTableList(array $manifest): array
