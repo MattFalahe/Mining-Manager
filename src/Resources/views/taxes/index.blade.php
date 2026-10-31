@@ -987,6 +987,8 @@ $(document).ready(function() {
 
     // View toggle: Flat / Grouped by Account
     var isGrouped = false;
+    var flatPageLength = null;
+    var taxTable = $.fn.DataTable.isDataTable('#taxTable') ? $('#taxTable').DataTable() : null;
 
     $('#view-flat-btn').on('click', function() {
         if (!isGrouped) return;
@@ -1004,17 +1006,42 @@ $(document).ready(function() {
         showGroupedView();
     });
 
+    // DataTables keeps only the page being shown in the table, so grouping
+    // what is there grouped one page of bills. The grouped view shows every
+    // bill the search matches on one page instead, and groups them again
+    // whenever DataTables redraws, as a search or a sort makes it.
+    if (taxTable) {
+        taxTable.on('draw', function() {
+            if (isGrouped) groupRows();
+        });
+    }
+
     function showFlatView() {
         // Remove grouped header rows
         $('.grouped-header-row').remove();
-        // Show all original tax rows
-        $('.tax-row').show();
+        // Show all original tax rows, the ones on other pages too
+        if (taxTable) {
+            $(taxTable.rows().nodes()).show();
+            taxTable.page.len(flatPageLength).draw(false);
+        } else {
+            $('.tax-row').show();
+        }
     }
 
     function showGroupedView() {
+        if (taxTable) {
+            flatPageLength = taxTable.page.len();
+            // Redraws with every bill on the page, which groups them.
+            taxTable.page.len(-1).draw(false);
+        } else {
+            groupRows();
+        }
+    }
+
+    function groupRows() {
         // Group rows by character_id
         var groups = {};
-        $('.tax-row').each(function() {
+        $('#taxTable tbody .tax-row').each(function() {
             var charId = $(this).data('character-id');
             if (!groups[charId]) {
                 groups[charId] = {
@@ -1035,7 +1062,7 @@ $(document).ready(function() {
         });
 
         // Hide all original rows and insert grouped headers
-        $('.tax-row').hide();
+        $('#taxTable tbody .tax-row').hide();
         $('.grouped-header-row').remove();
 
         var tbody = $('#taxTable tbody');
