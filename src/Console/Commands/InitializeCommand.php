@@ -3,10 +3,13 @@
 namespace MiningManager\Console\Commands;
 
 use Illuminate\Console\Command;
+use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
+use Symfony\Component\Console\Output\Output;
+use Symfony\Component\Console\Output\OutputInterface;
 
 class InitializeCommand extends Command
 {
@@ -31,6 +34,19 @@ class InitializeCommand extends Command
      */
     private int $currentStep = 0;
     private int $totalSteps = 0;
+
+    /**
+     * Longest a step waits for a run of its command that is already going,
+     * such as one the schedule started.
+     */
+    private const WAIT_FOR_RUN_SECONDS = 300;
+
+    /**
+     * Steps that did not run, each with its command and why.
+     *
+     * @var string[]
+     */
+    private array $notRun = [];
 
     /**
      * Execute the console command.
@@ -109,11 +125,19 @@ class InitializeCommand extends Command
         // DONE
         // ─────────────────────────────────────────────────────
         $this->newLine(2);
-        $this->line('╔══════════════════════════════════════════════════════════════╗');
-        $this->line('║                                                              ║');
-        $this->line('║              ✅  Mining Manager — Setup Complete!             ║');
-        $this->line('║                                                              ║');
-        $this->line('╚══════════════════════════════════════════════════════════════╝');
+        if (!empty($this->notRun)) {
+            $this->warn('  Setup finished, but these steps did not run:');
+            foreach ($this->notRun as $line) {
+                $this->warn("     • {$line}");
+            }
+            $this->warn('  Run this command again once the cause is sorted, or run the commands named above.');
+        } else {
+            $this->line('╔══════════════════════════════════════════════════════════════╗');
+            $this->line('║                                                              ║');
+            $this->line('║              ✅  Mining Manager — Setup Complete!             ║');
+            $this->line('║                                                              ║');
+            $this->line('╚══════════════════════════════════════════════════════════════╝');
+        }
         $this->newLine();
 
         $this->info('Next steps:');
@@ -282,7 +306,11 @@ class InitializeCommand extends Command
         }
 
         $this->newLine();
-        $this->info('  ✅ Current month setup complete!');
+        if (empty($this->notRun)) {
+            $this->info('  ✅ Current month setup complete!');
+        } else {
+            $this->warn('  ⚠️  Current month setup finished, but ' . count($this->notRun) . ' step(s) did not run (listed at the end).');
+        }
     }
 
     /**
@@ -393,13 +421,19 @@ class InitializeCommand extends Command
         $steps[] = ['Reconstruct historical extraction records', 'mining-manager:backfill-extraction-history', ['--days' => $days]];
 
         $this->totalSteps = count($steps);
+        $notRunBefore = count($this->notRun);
 
         foreach ($steps as $index => $step) {
             $this->runStep($index + 1, $step[0], $step[1], $step[2]);
         }
 
         $this->newLine();
-        $this->info("  ✅ Historical backfill complete! ({$months} months)");
+        $missed = count($this->notRun) - $notRunBefore;
+        if ($missed === 0) {
+            $this->info("  ✅ Historical backfill complete! ({$months} months)");
+        } else {
+            $this->warn("  ⚠️  Historical backfill finished, but {$missed} step(s) did not run (listed at the end).");
+        }
     }
 
     /**
@@ -414,12 +448,28 @@ class InitializeCommand extends Command
 
         $startTime = microtime(true);
 
+        if (!$this->waitForRunningCopy($command)) {
+            $this->newLine();
+            $this->warn("  ⏭️  Step {$step}/{$this->totalSteps} skipped: a run of {$command} that was already going did not finish within " . (self::WAIT_FOR_RUN_SECONDS / 60) . ' minutes');
+            $this->notRun[] = "{$description} ({$command}): a run of it that was already going did not finish in time";
+            return;
+        }
+
         try {
-            $exitCode = Artisan::call($command, $options, $this->getOutput());
+            $output = $this->recordingOutput();
+            $exitCode = Artisan::call($command, $options, $output);
             $elapsed = round(microtime(true) - $startTime, 1);
 
             $this->newLine();
-            if ($exitCode === 0) {
+
+            // A command that skips its whole run says so in a line ending in
+            // "Skipping." and still exits 0, so the exit code alone would call
+            // the step done.
+            $skipped = $this->skipLine($output->text);
+            if ($skipped !== null) {
+                $this->warn("  ⏭️  Step {$step}/{$this->totalSteps} skipped: {$skipped}");
+                $this->notRun[] = "{$description} ({$command}): {$skipped}";
+            } elseif ($exitCode === 0) {
                 $this->info("  ✅ Step {$step}/{$this->totalSteps} complete ({$elapsed}s)");
             } else {
                 $this->warn("  ⚠️  Step {$step}/{$this->totalSteps} completed with warnings ({$elapsed}s)");
@@ -428,7 +478,65 @@ class InitializeCommand extends Command
             $elapsed = round(microtime(true) - $startTime, 1);
             $this->newLine();
             $this->error("  ❌ Step {$step}/{$this->totalSteps} failed ({$elapsed}s): {$e->getMessage()}");
+            $this->notRun[] = "{$description} ({$command}): failed, {$e->getMessage()}";
         }
+    }
+
+    /**
+     * Wait for a run of this command that is already going. Each command the
+     * setup runs takes a lock named after itself and skips when it finds it
+     * taken, which a run the schedule started would cause. False when that run
+     * does not finish in time.
+     */
+    private function waitForRunningCopy(string $command): bool
+    {
+        $lock = Cache::lock($command, 10);
+
+        if (!$lock->get()) {
+            $this->line('  Waiting for a run of this command that is already going...');
+
+            try {
+                $lock->block(self::WAIT_FOR_RUN_SECONDS);
+            } catch (LockTimeoutException $e) {
+                return false;
+            }
+        }
+
+        $lock->release();
+
+        return true;
+    }
+
+    /**
+     * An output that passes a step's lines straight through and keeps them,
+     * so a step that skipped can be told from one that ran.
+     */
+    private function recordingOutput(): Output
+    {
+        return new class($this->getOutput()) extends Output {
+            public string $text = '';
+
+            public function __construct(private OutputInterface $inner)
+            {
+                parent::__construct($inner->getVerbosity(), $inner->isDecorated(), $inner->getFormatter());
+            }
+
+            protected function doWrite(string $message, bool $newline): void
+            {
+                $this->inner->write($message, $newline, OutputInterface::OUTPUT_RAW);
+                $this->text .= $message . ($newline ? "\n" : '');
+            }
+        };
+    }
+
+    /**
+     * The line in which a step's command said it skipped its run, or null.
+     */
+    private function skipLine(string $text): ?string
+    {
+        $plain = preg_replace('/\e\[[\d;]*m/', '', $text);
+
+        return preg_match('/^\s*(.*\bSkipping\.)\s*$/m', $plain, $match) ? trim($match[1]) : null;
     }
 
     /**
