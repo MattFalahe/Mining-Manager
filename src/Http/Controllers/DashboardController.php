@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Cache;
 use Seat\Web\Http\Controllers\Controller;
 use MiningManager\Services\Analytics\DashboardMetricsService;
+use MiningManager\Services\Analytics\Players;
 use MiningManager\Services\Pricing\MarketDataService;
 use MiningManager\Services\Character\CharacterInfoService;
 use MiningManager\Services\Configuration\SettingsManagerService;
@@ -636,20 +637,23 @@ class DashboardController extends Controller
     {
         $characterIds = $this->getCorporationCharacterIds($corporationId);
 
-        $stats = MiningLedgerDailySummary::whereIn('character_id', $characterIds)
-            ->whereBetween('date', [$startDate, $endDate])
+        $summaries = MiningLedgerDailySummary::whereIn('character_id', $characterIds)
+            ->whereBetween('date', [$startDate, $endDate]);
+        $stats = (clone $summaries)
             ->selectRaw('
                 SUM(total_value) as all_ore_value,
                 SUM(total_quantity) as all_ore_quantity,
-                SUM(moon_ore_value) as moon_ore_value,
-                COUNT(DISTINCT character_id) as active_miners
+                SUM(moon_ore_value) as moon_ore_value
             ')
             ->first();
 
         $allOreValue = $stats->all_ore_value ?? 0;
         $allOreQuantity = $stats->all_ore_quantity ?? 0;
         $moonOreValue = $stats->moon_ore_value ?? 0;
-        $activeMiners = $stats->active_miners ?? 0;
+
+        // Miners are counted as players, a main and their alts once, as the
+        // Top Miners boards beside them count them.
+        $miners = (clone $summaries)->distinct()->pluck('character_id')->all();
 
         // Supplement: if today has no daily summary yet, add today's data from MiningLedger
         $today = now()->format('Y-m-d');
@@ -659,14 +663,14 @@ class DashboardController extends Controller
                 ->exists();
 
             if (!$todayHasSummary) {
-                $todayStats = \MiningManager\Models\MiningLedger::whereIn('character_id', $characterIds)
+                $todayRows = \MiningManager\Models\MiningLedger::whereIn('character_id', $characterIds)
                     ->where('date', $today)
-                    ->whereNotNull('processed_at')
+                    ->whereNotNull('processed_at');
+                $todayStats = (clone $todayRows)
                     ->selectRaw('
                         SUM(total_value) as all_ore_value,
                         SUM(quantity) as all_ore_quantity,
-                        SUM(CASE WHEN is_moon_ore = 1 THEN total_value ELSE 0 END) as moon_ore_value,
-                        COUNT(DISTINCT character_id) as active_miners
+                        SUM(CASE WHEN is_moon_ore = 1 THEN total_value ELSE 0 END) as moon_ore_value
                     ')
                     ->first();
 
@@ -674,10 +678,11 @@ class DashboardController extends Controller
                     $allOreValue += (float) $todayStats->all_ore_value;
                     $allOreQuantity += (int) ($todayStats->all_ore_quantity ?? 0);
                     $moonOreValue += (float) ($todayStats->moon_ore_value ?? 0);
-                    $activeMiners = max($activeMiners, (int) ($todayStats->active_miners ?? 0));
+                    $miners = array_merge($miners, (clone $todayRows)->distinct()->pluck('character_id')->all());
                 }
             }
         }
+        $activeMiners = Players::count($miners);
 
         // Tax estimate from daily summaries (single source of truth)
         $taxAmount = (float) MiningLedgerDailySummary::whereIn('character_id', $characterIds)
@@ -767,15 +772,16 @@ class DashboardController extends Controller
     {
         $characterIds = $this->getCorporationCharacterIds($corporationId);
 
-        $stats = MiningLedgerDailySummary::whereIn('character_id', $characterIds)
-            ->where('date', '>=', $startDate)
+        $summaries = MiningLedgerDailySummary::whereIn('character_id', $characterIds)
+            ->where('date', '>=', $startDate);
+        $stats = (clone $summaries)
             ->selectRaw('
                 SUM(total_value) as all_ore_value,
                 SUM(total_quantity) as all_ore_quantity,
-                SUM(moon_ore_value) as moon_ore_value,
-                COUNT(DISTINCT character_id) as active_miners
+                SUM(moon_ore_value) as moon_ore_value
             ')
             ->first();
+        $activeMiners = Players::count((clone $summaries)->distinct()->pluck('character_id'));
 
         $allOreValue = $stats->all_ore_value ?? 0;
         $moonOreValue = $stats->moon_ore_value ?? 0;
@@ -794,7 +800,7 @@ class DashboardController extends Controller
             'moon_ore_total_value' => $moonOreValue,
             'moon_ore_quantity' => 0, // Not tracked separately in daily summaries
             'tax_collected' => $taxCollected,
-            'active_miners' => $stats->active_miners ?? 0,
+            'active_miners' => $activeMiners,
         ];
     }
 

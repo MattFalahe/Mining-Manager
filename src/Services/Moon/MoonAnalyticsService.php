@@ -5,6 +5,7 @@ namespace MiningManager\Services\Moon;
 use MiningManager\Models\MiningLedger;
 use MiningManager\Models\MoonExtraction;
 use MiningManager\Models\MoonExtractionHistory;
+use MiningManager\Services\Analytics\Players;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Cache;
@@ -161,7 +162,7 @@ class MoonAnalyticsService
                     }
                 }
 
-                $uniqueMiners = count(array_unique($minerIds));
+                $uniqueMiners = Players::count($minerIds);
                 usort($chunks, fn ($a, $b) => $a['at'] <=> $b['at']);
 
                 // Get structure name from the first extraction's structure_id
@@ -229,31 +230,33 @@ class MoonAnalyticsService
         $startDate = $extraction->chunk_arrival_time ?? $extraction->extraction_start_time;
         $endDate = $this->miningWindowEnd($extraction, $startDate);
 
-        $minedData = MiningLedger::where('observer_id', $extraction->structure_id)
+        $mined = MiningLedger::where('observer_id', $extraction->structure_id)
             ->whereBetween('date', [$startDate->toDateString(), $endDate->toDateString()])
-            ->where('is_moon_ore', true)
+            ->where('is_moon_ore', true);
+
+        // Miners are counted as players, a main and their alts once.
+        $pairs = (clone $mined)->toBase()->select('type_id', 'character_id')->distinct()->get();
+        $playersPerOre = Players::perGroup($pairs, fn ($row) => $row->type_id);
+
+        $minedData = (clone $mined)
             ->join('invTypes', 'mining_ledger.type_id', '=', 'invTypes.typeID')
             ->select(
                 'mining_ledger.type_id',
                 'invTypes.typeName',
                 DB::raw('SUM(mining_ledger.quantity) as qty'),
                 DB::raw('SUM(mining_ledger.quantity * invTypes.volume) as mined_m3'),
-                DB::raw('SUM(mining_ledger.total_value) as mined_isk'),
-                DB::raw('COUNT(DISTINCT mining_ledger.character_id) as miners')
+                DB::raw('SUM(mining_ledger.total_value) as mined_isk')
             )
             ->groupBy('mining_ledger.type_id', 'invTypes.typeName')
             ->orderByDesc('mined_isk')
-            ->get();
+            ->get()
+            ->each(fn ($ore) => $ore->miners = $playersPerOre[(string) $ore->type_id] ?? 0);
 
         $totalMinedM3 = $minedData->sum('mined_m3');
         $totalMinedIsk = $minedData->sum('mined_isk');
 
         // Unique miners across all ores
-        $uniqueMiners = MiningLedger::where('observer_id', $extraction->structure_id)
-            ->whereBetween('date', [$startDate->toDateString(), $endDate->toDateString()])
-            ->where('is_moon_ore', true)
-            ->distinct('character_id')
-            ->count('character_id');
+        $uniqueMiners = Players::count($pairs->pluck('character_id'));
 
         [$hulls, $rigsNow] = $this->refineryRigs([(int) $extraction->structure_id]);
 
@@ -383,13 +386,20 @@ class MoonAnalyticsService
             $monthStart = $month->copy()->startOfMonth();
             $monthEnd = $month->copy()->endOfMonth();
 
-            // Get unique miners per observer
-            $minerData = MiningLedger::whereIn('observer_id', $structureIds)
+            $mined = MiningLedger::whereIn('observer_id', $structureIds)
                 ->whereBetween('date', [$monthStart, $monthEnd])
-                ->where('is_moon_ore', true)
+                ->where('is_moon_ore', true);
+
+            // Players per moon, a main and their alts once, and once however
+            // many of the moon's refineries they mined at.
+            $playersPerMoon = Players::perGroup(
+                (clone $mined)->toBase()->select('observer_id', 'character_id')->distinct()->get(),
+                fn ($row) => $structureToMoon[$row->observer_id] ?? 0
+            );
+
+            $minerData = (clone $mined)
                 ->select(
                     'observer_id',
-                    DB::raw('COUNT(DISTINCT character_id) as unique_miners'),
                     DB::raw('COUNT(DISTINCT date) as active_days'),
                     DB::raw('SUM(total_value) as total_isk')
                 )
@@ -401,11 +411,8 @@ class MoonAnalyticsService
             foreach ($minerData as $row) {
                 $moonId = $structureToMoon[$row->observer_id] ?? 0;
                 if (!isset($byMoon[$moonId])) {
-                    $byMoon[$moonId] = ['miners' => [], 'active_days' => 0, 'total_isk' => 0];
+                    $byMoon[$moonId] = ['active_days' => 0, 'total_isk' => 0];
                 }
-                // We can't just sum unique_miners across structures — need to collect and dedupe
-                // For simplicity, sum them (they're likely the same structure per moon)
-                $byMoon[$moonId]['miners'][] = $row->unique_miners;
                 $byMoon[$moonId]['active_days'] += $row->active_days;
                 $byMoon[$moonId]['total_isk'] += $row->total_isk;
             }
@@ -434,7 +441,7 @@ class MoonAnalyticsService
                     'moon_id' => $moonId,
                     'moon_name' => $moonNames[$moonId] ?? "Moon {$moonId}",
                     'structure_name' => $moonStructureNames[$moonId] ?? null,
-                    'unique_miners' => max($data['miners']),
+                    'unique_miners' => $playersPerMoon[(string) $moonId] ?? 0,
                     'active_days' => $data['active_days'],
                     'total_isk' => $data['total_isk'],
                 ];
@@ -611,21 +618,22 @@ class MoonAnalyticsService
             return ['total_m3' => 0, 'total_isk' => 0, 'unique_miners' => 0];
         }
 
-        $result = MiningLedger::whereIn('observer_id', $structureIds)
+        $mined = MiningLedger::whereIn('observer_id', $structureIds)
             ->whereBetween('date', [$window[0]->toDateString(), $window[1]->toDateString()])
-            ->where('is_moon_ore', true)
+            ->where('is_moon_ore', true);
+
+        $result = (clone $mined)
             ->join('invTypes', 'mining_ledger.type_id', '=', 'invTypes.typeID')
             ->select(
                 DB::raw('COALESCE(SUM(mining_ledger.quantity * invTypes.volume), 0) as total_m3'),
-                DB::raw('COALESCE(SUM(mining_ledger.total_value), 0) as total_isk'),
-                DB::raw('COUNT(DISTINCT mining_ledger.character_id) as unique_miners')
+                DB::raw('COALESCE(SUM(mining_ledger.total_value), 0) as total_isk')
             )
             ->first();
 
         return [
             'total_m3' => (float) ($result->total_m3 ?? 0),
             'total_isk' => (float) ($result->total_isk ?? 0),
-            'unique_miners' => (int) ($result->unique_miners ?? 0),
+            'unique_miners' => Players::count((clone $mined)->distinct()->pluck('character_id')),
         ];
     }
 
@@ -654,7 +662,6 @@ class MoonAnalyticsService
                 'mining_ledger.observer_id',
                 DB::raw('COALESCE(SUM(mining_ledger.quantity * invTypes.volume), 0) as mined_m3'),
                 DB::raw('COALESCE(SUM(mining_ledger.total_value), 0) as mined_isk'),
-                DB::raw('COUNT(DISTINCT mining_ledger.character_id) as unique_miners'),
                 DB::raw('GROUP_CONCAT(DISTINCT mining_ledger.character_id) as miner_ids')
             )
             ->groupBy('mining_ledger.observer_id')

@@ -458,7 +458,7 @@ return [
 
     // Analytics & Reports
     'analytics_reports_guide' => 'Analytics & Reports Guide',
-    'analytics_intro' => 'The analytics section provides comprehensive insights into your corporation\'s mining performance with interactive charts and detailed breakdowns.',
+    'analytics_intro' => 'The analytics section provides comprehensive insights into your corporation\'s mining performance with interactive charts and detailed breakdowns. Miners are counted as players: a main and their alts count once, as on the Top Miners boards.',
     'available_reports' => 'Available Reports',
     'report_monthly' => 'Monthly Mining Report',
     'report_monthly_desc' => 'Complete breakdown of mining activity, taxes collected, and top performers for each month.',

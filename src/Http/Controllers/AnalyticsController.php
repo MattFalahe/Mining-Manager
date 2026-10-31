@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
 use MiningManager\Http\Controllers\Concerns\GuardsDataExport;
 use MiningManager\Services\Analytics\ChartFilter;
+use MiningManager\Services\Analytics\Players;
 use MiningManager\Services\Tax\Concerns\ResolvesCharacterOwnership;
 use MiningManager\Services\Tax\ClassificationEpoch;
 
@@ -178,7 +179,7 @@ class AnalyticsController extends Controller
             $analytics = [
                 'total_volume' => $this->analyticsService->getTotalVolume($startDate, $endDate, $corporationId),
                 'total_value' => $this->analyticsService->getTotalValue($startDate, $endDate, $corporationId),
-                'unique_miners' => $this->analyticsService->getUniqueMinerCount($startDate, $endDate, $corporationId),
+                'unique_miners' => $this->analyticsService->getUniquePlayerCount($startDate, $endDate, $corporationId),
                 'top_miners' => $topMiners,
                 'ore_breakdown' => $this->analyticsService->getOreBreakdown($startDate, $endDate, $oreCategory, $corporationId),
                 'system_breakdown' => $this->analyticsService->getSystemBreakdown($startDate, $endDate, $corporationId),
@@ -434,7 +435,7 @@ class AnalyticsController extends Controller
             'total_volume' => $this->analyticsService->getTotalVolume($startDate, $endDate, $corporationId),
             'total_volume_m3' => $this->analyticsService->getTotalVolumeM3($startDate, $endDate, $corporationId),
             'total_value' => $this->analyticsService->getTotalValue($startDate, $endDate, $corporationId),
-            'unique_miners' => $this->analyticsService->getUniqueMinerCount($startDate, $endDate, $corporationId),
+            'unique_miners' => $this->analyticsService->getUniquePlayerCount($startDate, $endDate, $corporationId),
             'ore_breakdown' => $this->analyticsService->getOreBreakdown($startDate, $endDate, null, $corporationId),
             'system_breakdown' => $this->analyticsService->getSystemBreakdown($startDate, $endDate, $corporationId),
         ];
@@ -654,15 +655,21 @@ class AnalyticsController extends Controller
 
         // Get mining activity by system
         $query = MiningLedger::whereBetween('date', [$startDate, $endDate])
-            ->whereNotNull('solar_system_id')
-            ->selectRaw('solar_system_id, SUM(quantity) as total_quantity, SUM(total_value) as total_value, COUNT(DISTINCT character_id) as unique_miners, COUNT(DISTINCT date) as days_active')
-            ->groupBy('solar_system_id')
-            ->orderByDesc('total_value')
-            ->limit($limit);
+            ->whereNotNull('solar_system_id');
         if ($corpCharIds !== null) {
             $query->whereIn('character_id', $corpCharIds);
         }
-        $systemStats = $query->get()
+        $players = Players::perGroup(
+            (clone $query)->toBase()->select('solar_system_id', 'character_id')->distinct()->get(),
+            fn ($row) => $row->solar_system_id
+        );
+        $systemStats = $query
+            ->selectRaw('solar_system_id, SUM(quantity) as total_quantity, SUM(total_value) as total_value, COUNT(DISTINCT date) as days_active')
+            ->groupBy('solar_system_id')
+            ->orderByDesc('total_value')
+            ->limit($limit)
+            ->get()
+            ->each(fn ($stat) => $stat->unique_miners = $players[(string) $stat->solar_system_id] ?? 0)
             ->map(function($stat) {
                 // Get system name from SeAT's database
                 $systemName = \DB::table('solar_systems')
@@ -712,15 +719,21 @@ class AnalyticsController extends Controller
             : null;
 
         // Get ore statistics by value
-        $queryByVal = MiningLedger::whereBetween('date', [$startDate, $endDate])
-            ->selectRaw('type_id, SUM(quantity) as total_quantity, SUM(total_value) as total_value, COUNT(DISTINCT character_id) as miners_count')
-            ->groupBy('type_id')
-            ->orderByDesc('total_value')
-            ->limit($limit);
+        $queryByVal = MiningLedger::whereBetween('date', [$startDate, $endDate]);
         if ($corpCharIds !== null) {
             $queryByVal->whereIn('character_id', $corpCharIds);
         }
-        $oreStats = $queryByVal->get()
+        $players = Players::perGroup(
+            (clone $queryByVal)->toBase()->select('type_id', 'character_id')->distinct()->get(),
+            fn ($row) => $row->type_id
+        );
+        $oreStats = $queryByVal
+            ->selectRaw('type_id, SUM(quantity) as total_quantity, SUM(total_value) as total_value')
+            ->groupBy('type_id')
+            ->orderByDesc('total_value')
+            ->limit($limit)
+            ->get()
+            ->each(fn ($stat) => $stat->miners_count = $players[(string) $stat->type_id] ?? 0)
             ->map(function($stat) {
                 $oreName = \DB::table('invTypes')
                     ->where('typeID', $stat->type_id)
@@ -934,7 +947,7 @@ class AnalyticsController extends Controller
                     return response()->json([
                         'total_volume' => $this->analyticsService->getTotalVolume($startDate, $endDate, $corporationId),
                         'total_value' => $this->analyticsService->getTotalValue($startDate, $endDate, $corporationId),
-                        'unique_miners' => $this->analyticsService->getUniqueMinerCount($startDate, $endDate, $corporationId),
+                        'unique_miners' => $this->analyticsService->getUniquePlayerCount($startDate, $endDate, $corporationId),
                     ]);
             }
         } catch (\Exception $e) {
