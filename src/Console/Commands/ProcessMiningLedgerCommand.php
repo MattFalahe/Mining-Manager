@@ -800,20 +800,36 @@ class ProcessMiningLedgerCommand extends Command
                     continue;
                 }
 
-                // Distinguish auto-detect (was not jackpot) from user-report
-                // verification (was already jackpot via manual report).
-                $wasAutoDetected = !$extraction->is_jackpot;
-
-                $extraction->is_jackpot = true;
-                if (!$extraction->jackpot_detected_at) {
-                    $extraction->jackpot_detected_at = now();
-                }
                 // Real mining data IS the verification. Both paths land here
                 // so the daily DetectJackpotsCommand backstop has nothing to
                 // do for this extraction.
-                $extraction->jackpot_verified = true;
-                $extraction->jackpot_verified_at = now();
-                $extraction->save();
+                //
+                // An extraction nobody has marked yet is claimed in one
+                // statement, the way a member's Report Jackpot claims it. That
+                // report or the daily scan can land between the read above and
+                // this write, and only whoever flips the flag sends the ping,
+                // so one jackpot is never announced twice.
+                $wasAutoDetected = !$extraction->is_jackpot && MoonExtraction::where('id', $extraction->id)
+                    ->where('is_jackpot', false)
+                    ->update([
+                        'is_jackpot' => true,
+                        'jackpot_detected_at' => $extraction->jackpot_detected_at ?? now(),
+                        'jackpot_verified' => true,
+                        'jackpot_verified_at' => now(),
+                    ]) === 1;
+
+                if (!$wasAutoDetected) {
+                    // Marked already, by a member's report or another run: the
+                    // mark stands, and the mining bears it out.
+                    MoonExtraction::where('id', $extraction->id)
+                        ->whereNull('jackpot_verified')
+                        ->update([
+                            'jackpot_verified' => true,
+                            'jackpot_verified_at' => now(),
+                        ]);
+                }
+
+                $extraction->refresh();
 
                 if ($wasAutoDetected) {
                     $jackpotsFound++;

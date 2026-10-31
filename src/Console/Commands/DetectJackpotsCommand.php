@@ -131,11 +131,25 @@ class DetectJackpotsCommand extends Command
                 $hasJackpot = $this->checkForJackpotOres($extraction);
 
                 if ($hasJackpot) {
-                    $extraction->is_jackpot = true;
-                    $extraction->jackpot_detected_at = now();
-                    $extraction->jackpot_verified = true;
-                    $extraction->jackpot_verified_at = now();
-                    $extraction->save();
+                    // Claimed in one statement, as process-ledger and a
+                    // member's Report Jackpot do: whoever flips the flag sends
+                    // the ping, so one jackpot is never announced twice.
+                    $claimed = MoonExtraction::where('id', $extraction->id)
+                        ->where('is_jackpot', false)
+                        ->update([
+                            'is_jackpot' => true,
+                            'jackpot_detected_at' => now(),
+                            'jackpot_verified' => true,
+                            'jackpot_verified_at' => now(),
+                        ]);
+
+                    if ($claimed === 0) {
+                        $alreadyMarked++;
+                        $bar->advance();
+                        continue;
+                    }
+
+                    $extraction->refresh();
                     $detected++;
 
                     $this->newLine();
