@@ -37,6 +37,13 @@ class ScanMetenoxCargoFillCommand extends Command
 
     protected $description = 'Scan Metenox MoonMaterialBays and dispatch metenox_cargo_full notifications on threshold transitions';
 
+    /**
+     * How long an alert that reached nobody waits before it is sent again. A
+     * webhook that is down gets it once an hour while the bay stays full,
+     * rather than on every five-minute scan.
+     */
+    private const RETRY_MINUTES = 60;
+
     public function handle(): int
     {
         $lock = Cache::lock('mining-manager:scan-metenox-cargo-fill', 600);
@@ -109,6 +116,14 @@ class ScanMetenoxCargoFillCommand extends Command
 
                 $crossedUp = ($currentPct >= $thresholdPct) && ($previousPct < $thresholdPct);
 
+                // A crossing whose alert reached nobody keeps the latch as it
+                // was while it waits to be sent again, so the crossing is still
+                // there when the wait is over.
+                if ($crossedUp && Cache::has(self::retryKey($structureId))) {
+                    $totalSkipped++;
+                    continue;
+                }
+
                 // Always update the latch with the current observation —
                 // even when no notification fires — so the next tick sees
                 // an accurate "previous" reading.
@@ -129,6 +144,14 @@ class ScanMetenoxCargoFillCommand extends Command
                     continue;
                 }
 
+                // With no webhook or Slack channel taking this alert there is
+                // nobody to tell, now or on a later scan, so the crossing is
+                // only recorded.
+                if (!$notifyService->reachesAnyone(NotificationService::TYPE_METENOX_CARGO_FULL)) {
+                    $totalSkipped++;
+                    continue;
+                }
+
                 // Lock the latch row to alerted state before dispatching so
                 // a concurrent tick (or notification retry) can't fire twice.
                 DB::table('metenox_cargo_alert_state')
@@ -139,6 +162,7 @@ class ScanMetenoxCargoFillCommand extends Command
                         'updated_at'         => Carbon::now(),
                     ]);
 
+                $result = null;
                 try {
                     // Compute the ISK value of the bay contents using the
                     // moon-material-only filter that forCorporation() returns.
@@ -169,7 +193,7 @@ class ScanMetenoxCargoFillCommand extends Command
 
                     $cargoUrl = url(route('mining-manager.moon.metenox-cargo', [], false));
 
-                    $notifyService->sendMetenoxCargoFull([
+                    $result = $notifyService->sendMetenoxCargoFull([
                         'structure_id'      => $structureId,
                         'structure_name'    => $row->structure_name ?? ('Structure #' . $structureId),
                         'corporation_id'    => $corpId,
@@ -185,7 +209,17 @@ class ScanMetenoxCargoFillCommand extends Command
                             ->where('system_id', $row->system_id)
                             ->value('name') ?? ('System ' . ($row->system_id ?? '?')),
                     ]);
+                } catch (\Throwable $e) {
+                    Log::warning('[MM] Metenox cargo fill: notification dispatch failed', [
+                        'structure_id' => $structureId,
+                        'corp_id'      => $corpId,
+                        'error'        => $e->getMessage(),
+                    ]);
+                }
 
+                if (!empty($result[NotificationService::CHANNEL_DISCORD]['sent'])
+                    || !empty($result[NotificationService::CHANNEL_SLACK]['success'])) {
+                    Cache::forget(self::retryKey($structureId));
                     $totalAlerts++;
                     $this->line(sprintf(
                         '  Fired alert for structure %d (%s) — %s%% full',
@@ -193,14 +227,26 @@ class ScanMetenoxCargoFillCommand extends Command
                         $row->structure_name ?? 'Unknown',
                         number_format($currentPct, 1)
                     ));
-                } catch (\Throwable $e) {
-                    $totalErrors++;
-                    Log::warning('[MM] Metenox cargo fill: notification dispatch failed', [
-                        'structure_id' => $structureId,
-                        'corp_id'      => $corpId,
-                        'error'        => $e->getMessage(),
-                    ]);
+                    continue;
                 }
+
+                // It reached nobody. The latch goes back to how it was, so the
+                // first scan after the wait sees the crossing again and sends it.
+                DB::table('metenox_cargo_alert_state')
+                    ->where('structure_id', $structureId)
+                    ->update([
+                        'last_fill_pct'      => $previousPct,
+                        'last_alerted_at'    => $latch->last_alerted_at ?? null,
+                        'fill_pct_at_alert'  => $latch->fill_pct_at_alert ?? null,
+                        'updated_at'         => Carbon::now(),
+                    ]);
+                Cache::put(self::retryKey($structureId), true, Carbon::now()->addMinutes(self::RETRY_MINUTES));
+                $totalErrors++;
+                $this->warn(sprintf(
+                    '  Alert for structure %d reached nobody; it is sent again in %d minutes',
+                    $structureId,
+                    self::RETRY_MINUTES
+                ));
             }
         }
 
@@ -214,5 +260,14 @@ class ScanMetenoxCargoFillCommand extends Command
         ));
 
         return self::SUCCESS;
+    }
+
+    /**
+     * Cache key marking a drill whose alert reached nobody and is waiting to
+     * be sent again.
+     */
+    private static function retryKey(int $structureId): string
+    {
+        return 'mining-manager:metenox-cargo-retry:' . $structureId;
     }
 }
