@@ -97,10 +97,21 @@ class DetectJackpotsCommand extends Command
                         $hasJackpot = $this->checkForJackpotOres($extraction);
 
                         if ($hasJackpot) {
-                            $extraction->jackpot_verified = true;
-                            $extraction->jackpot_verified_at = now();
-                            $extraction->save();
+                            // Claimed in one statement too, so the report is
+                            // borne out, and announced, once whichever of this
+                            // scan and the refinery import gets to it first.
+                            $boreOut = MoonExtraction::where('id', $extraction->id)
+                                ->whereNull('jackpot_verified')
+                                ->update([
+                                    'jackpot_verified' => true,
+                                    'jackpot_verified_at' => now(),
+                                ]) === 1;
                             $verified++;
+
+                            if ($boreOut) {
+                                $extraction->refresh();
+                                \MiningManager\Integrations\ManagerCoreEvents::jackpotDetected($extraction);
+                            }
 
                             $this->newLine();
                             $this->info("  ✅ VERIFIED: {$extraction->moon_name} (reported by character {$extraction->jackpot_reported_by})");
@@ -155,21 +166,10 @@ class DetectJackpotsCommand extends Command
                     $this->newLine();
                     $this->info("  ⭐ JACKPOT DETECTED: {$extraction->moon_name}");
 
-                    // B1c: announce on the cross-plugin event bus. Idempotency
-                    // key (jackpot_detected:{extraction_id}) guarantees re-runs
-                    // of this command on the same extraction won't re-publish.
-                    // Standalone-safe via class_exists guard.
-                    if (class_exists(\ManagerCore\Topics::class)) {
-                        \ManagerCore\Topics::publish('mining.jackpot_detected', [
-                            'extraction_id'  => $extraction->id,
-                            'moon_id'        => $extraction->moon_id ?? null,
-                            'moon_name'      => $extraction->moon_name ?? null,
-                            'structure_id'   => $extraction->structure_id ?? null,
-                            'corporation_id' => $extraction->corporation_id ?? null, // visibility scoping
-                            'role_id'        => null,
-                            'detected_at'    => $extraction->jackpot_detected_at->toIso8601String(),
-                        ]);
-                    }
+                    // Announced on the cross-plugin event bus once: the claim
+                    // above lets only one run, or the refinery import, get here
+                    // for an extraction.
+                    \MiningManager\Integrations\ManagerCoreEvents::jackpotDetected($extraction);
 
                     // Send webhook notification
                     try {

@@ -832,18 +832,25 @@ class ProcessMiningLedgerCommand extends Command
                         'jackpot_verified_at' => now(),
                     ]) === 1;
 
+                $boreOut = false;
                 if (!$wasAutoDetected) {
                     // Marked already, by a member's report or another run: the
                     // mark stands, and the mining bears it out.
-                    MoonExtraction::where('id', $extraction->id)
+                    $boreOut = MoonExtraction::where('id', $extraction->id)
                         ->whereNull('jackpot_verified')
                         ->update([
                             'jackpot_verified' => true,
                             'jackpot_verified_at' => now(),
-                        ]);
+                        ]) === 1;
                 }
 
                 $extraction->refresh();
+
+                // Manager Core hears of it once, from whichever of the writes
+                // above changed the extraction.
+                if ($wasAutoDetected || $boreOut) {
+                    \MiningManager\Integrations\ManagerCoreEvents::jackpotDetected($extraction);
+                }
 
                 if ($wasAutoDetected) {
                     $jackpotsFound++;
