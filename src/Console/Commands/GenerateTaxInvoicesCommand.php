@@ -5,6 +5,7 @@ namespace MiningManager\Console\Commands;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
+use MiningManager\Integrations\ManagerCoreEvents;
 use MiningManager\Models\MiningTax;
 use MiningManager\Models\TaxInvoice;
 use MiningManager\Services\Tax\TaxCodeGeneratorService;
@@ -175,6 +176,8 @@ class GenerateTaxInvoicesCommand extends Command
                             'error' => $e->getMessage(),
                         ]);
                     }
+
+                    ManagerCoreEvents::invoiceSent($invoice, $tax);
 
                     $this->line("Generated invoice for character {$tax->character_id}: " . number_format($outstanding, 2) . " ISK");
                     $generated++;

@@ -2,6 +2,7 @@
 
 namespace MiningManager\Services\Tax;
 
+use MiningManager\Integrations\ManagerCoreEvents;
 use MiningManager\Models\MiningLedger;
 use MiningManager\Models\MiningLedgerDailySummary;
 use MiningManager\Models\MiningTax;
@@ -452,6 +453,11 @@ class TaxCalculationService
                                 'period_start'   => $startDate->format('Y-m-d'),
                                 'period_end'     => $endDate->format('Y-m-d'),
                                 'amount_owed'    => round($combinedTaxAmount, 2),
+                                // Held credit can settle some or all of a bill as it is
+                                // raised, so what is left to pay is not always the bill.
+                                'amount_paid'    => round((float) $newTax->amount_paid, 2),
+                                'outstanding'    => $newTax->getRemainingBalance(),
+                                'status'         => $newTax->status,
                                 'due_date'       => $dueDate->format('Y-m-d'),
                                 'corporation_id' => null, // visibility scoping (subscriber may filter)
                                 'role_id'        => null,
@@ -1012,7 +1018,7 @@ class TaxCalculationService
         // must not make a bill late before its due date is over.
         $overdueThreshold = Carbon::now()->subHours($esiGraceHours)->min(Carbon::today());
 
-        $updated = MiningTax::where('status', 'unpaid')
+        $turningOverdue = MiningTax::where('status', 'unpaid')
             ->where(function ($q) use ($overdueThreshold) {
                 // Prefer due_date. Fall back to period_end or month for
                 // historical records that don't have it populated.
@@ -1028,8 +1034,17 @@ class TaxCalculationService
                           ->whereNull('period_end')
                           ->where('month', '<', $overdueThreshold->copy()->startOfMonth());
                 });
-            })
-            ->update(['status' => 'overdue']);
+            });
+
+        // Read before the update, which saves no model, so each bill turning
+        // overdue can be announced to Manager Core once, as it turns.
+        $bills = (clone $turningOverdue)->get();
+        $updated = $turningOverdue->update(['status' => 'overdue']);
+
+        foreach ($bills as $bill) {
+            $bill->status = 'overdue';
+            ManagerCoreEvents::taxOverdue($bill);
+        }
 
         if ($updated > 0) {
             Log::info("Mining Manager: Marked {$updated} taxes as overdue (ESI lag buffer: {$esiGraceHours}h)");

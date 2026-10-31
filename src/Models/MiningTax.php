@@ -7,6 +7,7 @@ use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Facades\Schema;
+use MiningManager\Integrations\ManagerCoreEvents;
 use MiningManager\Services\Tax\PartPaymentEpoch;
 use MiningManager\Services\Tax\TaxPeriodHelper;
 use Seat\Eveapi\Models\Character\CharacterInfo;
@@ -48,6 +49,18 @@ class MiningTax extends Model
 
     private static bool $recordsTaxProfile = false;
     private static int $recordsTaxProfileCheckedAt = 0;
+
+    protected static function booted(): void
+    {
+        // A bill paid off is announced once, when its status turns paid,
+        // however the money came: the wallet, held credit, Mark as Paid,
+        // Change Status or the bulk mark. All of them save the bill.
+        static::updated(function (MiningTax $tax) {
+            if ($tax->wasChanged('status') && $tax->status === 'paid') {
+                ManagerCoreEvents::taxPaid($tax);
+            }
+        });
+    }
 
     /**
      * The attributes that are mass assignable.
