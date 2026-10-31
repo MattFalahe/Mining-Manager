@@ -57,6 +57,7 @@ This release also brings tax periods to the ledger, My Mining and the dashboards
 - A past month the Mining Summary works out from the ledger, which the At our moons view always does, says *From the ledger* rather than *Finalized*.
 - **The old ledger list page is gone.** Since before 1.0.0 the Mining Ledger page has been the summary, but the list it replaced stayed in the code, and no release ever linked to it. Its export, delete and bulk delete endpoints went with it, since nothing else called them. Opening a single ledger entry from a character's page works as before.
 - Fixed: **one refinery row that failed to import held back the rest of the run.** `process-ledger` stopped at the first error, before rebuilding the day summaries of the rows it had imported and before looking for jackpot ore, so a row that kept failing kept every miner's daily figures and the jackpot check from updating. The rows that go in now get both, and the run still reports the failure.
+- Fixed: **refinery mining could cut or delete a pilot's mining in another system.** When a pilot mined the same ore at one of your refineries and somewhere else on the same day, the import took the refinery's share off whichever of their personal rows it found first. When that was the other system's, the mining there was cut or deleted and the refinery mining was counted twice. It now takes it off the row in the refinery's own system. Rows already imported stay as they are.
 
 ### Dashboard
 
@@ -83,6 +84,9 @@ This release also brings tax periods to the ledger, My Mining and the dashboards
 - Fixed: **a bill marked paid by hand could stay Partial over a few hundredths of an ISK, and be reminded every day.** Mark as Paid filled in what was left rounded to whole ISK, and only counted the bill paid when the payment covered all of it, so a bill ending in .01 to .49 was left that fraction short. It now counts a bill with less than 1 ISK left as paid, as payments matched from the wallet always have, and fills in what is left to the hundredth. Bills already left Partial this way stay so; Change Status to Paid on the bill's page settles one.
 - Fixed: **on Tax Overview, Mark as Paid, Send Reminder and Delete did nothing on any row past the first page.** The buttons were wired up as the page loaded, when only the table's first page is there, so a row reached by paging or the search box had buttons that did nothing. Ticking such a row did not bring up the bulk actions either.
 - Fixed: **a bill set to Exempted showed no status** on Tax Overview, its own page or My Taxes. It now reads Exempted, and like a waived bill it never turns overdue and is not counted as billed.
+- Fixed: **Tax Overview's Grouped by Account view grouped only the page shown**, and lost its groups at the next search or sort. Going back to the flat view also left some bills hidden on later pages. It now groups every bill the search matches.
+- Fixed: **Remind All Unpaid on Tax Overview only reminded the bills on the page shown.** It now reminds every unpaid bill in the list.
+- Fixed: **My Taxes' mining breakdown could show a rate the ore was never charged.** Each ore was one line, its untaxed mining included, at the rate of the first day read, so a taxed ore could read 0%. Each rate an ore was taxed at now has a line of its own, showing what it was charged on average, events included, and its untaxed mining another.
 
 ### Theft Detection
 
@@ -159,6 +163,7 @@ This release also brings tax periods to the ledger, My Mining and the dashboards
 ### Commands
 
 - Fixed: **`initialize` called a step complete when it had been skipped**, because its feature was switched off or a scheduled run of the same command was going. It now waits for a run that is already going, says which steps were skipped and why, and lists them at the end.
+- Fixed: **`finalize-month` held the whole month in one transaction**, keeping every summary it touched locked against the refinery import until the last character was done, and a character that failed part way kept what it had written. Each character is now finalized on its own, and one that fails is put back as it was.
 
 ### Scheduled Commands
 
