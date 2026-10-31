@@ -848,9 +848,12 @@ $(document).ready(function() {
     // Bulk send reminders
     // Remind All Unpaid — sends reminders for all unpaid/overdue taxes without checkbox selection
     $('#remindAllUnpaid').on('click', function() {
-        // Collect all tax IDs with unpaid/overdue/partial status
+        // Collect all tax IDs with unpaid/overdue/partial status, on every
+        // page: DataTables keeps only the page shown in the table, so reading
+        // the table reminded one page of bills and left out the rest.
         var unpaidIds = [];
-        $('.tax-row').each(function() {
+        var allRows = $.fn.DataTable.isDataTable('#taxTable') ? $($('#taxTable').DataTable().rows().nodes()) : $('.tax-row');
+        allRows.each(function() {
             var status = $(this).data('status');
             if (status === 'unpaid' || status === 'overdue' || status === 'partial') {
                 unpaidIds.push($(this).data('tax-id'));
