@@ -260,18 +260,20 @@ $(document).ready(function() {
         return ores;
     }
 
+    // The colours every other page gives a kind of ore: moon yellow, regular
+    // ore grey, ice cyan, gas green.
     function getCategoryBadge(category) {
         var badges = {
-            'moon': '<span class="badge badge-secondary"><i class="fas fa-moon"></i> Moon</span>',
-            'regular': '<span class="badge badge-primary"><i class="fas fa-gem"></i> Regular</span>',
+            'moon': '<span class="badge badge-warning"><i class="fas fa-moon"></i> Moon</span>',
+            'regular': '<span class="badge badge-secondary"><i class="fas fa-gem"></i> Regular</span>',
             'ice': '<span class="badge badge-info"><i class="fas fa-snowflake"></i> Ice</span>',
-            'gas': '<span class="badge badge-warning"><i class="fas fa-cloud"></i> Gas</span>',
-            'compressed moon': '<span class="badge badge-secondary"><i class="fas fa-compress-alt"></i> Compressed Moon</span>',
-            'compressed regular': '<span class="badge badge-primary"><i class="fas fa-compress-alt"></i> Compressed Regular</span>',
+            'gas': '<span class="badge badge-success"><i class="fas fa-cloud"></i> Gas</span>',
+            'compressed moon': '<span class="badge badge-warning"><i class="fas fa-compress-alt"></i> Compressed Moon</span>',
+            'compressed regular': '<span class="badge badge-secondary"><i class="fas fa-compress-alt"></i> Compressed Regular</span>',
             'compressed ice': '<span class="badge badge-info"><i class="fas fa-compress-alt"></i> Compressed Ice</span>',
-            'compressed gas': '<span class="badge badge-warning"><i class="fas fa-compress-alt"></i> Compressed Gas</span>'
+            'compressed gas': '<span class="badge badge-success"><i class="fas fa-compress-alt"></i> Compressed Gas</span>'
         };
-        return badges[category] || '<span class="badge badge-primary"><i class="fas fa-gem"></i> ' + category.charAt(0).toUpperCase() + category.slice(1) + '</span>';
+        return badges[category] || '<span class="badge badge-secondary"><i class="fas fa-gem"></i> ' + category.charAt(0).toUpperCase() + category.slice(1) + '</span>';
     }
 
     function renderResults(data) {
