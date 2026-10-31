@@ -1116,10 +1116,11 @@ class TaxCalculationService
                 // A line per ore and rate it was taxed at, and one for the
                 // ore's untaxed mining. Keyed on the name alone, taxed and
                 // untaxed mining of one ore shared a line at the rate of
-                // whichever came first, so a taxed ore could read 0%.
+                // whichever came first, so a taxed ore could read 0%. Keyed
+                // on the type, not the name, which can differ between days.
                 $taxable = !empty($ore['is_taxable']);
                 $rate = $taxable ? (float) ($ore['tax_rate'] ?? 0) : 0.0;
-                $key = $name . '|' . ($taxable ? $rate : 'untaxed');
+                $key = ($ore['type_id'] ?? $name) . '|' . ($taxable ? $rate : 'untaxed');
 
                 if (!isset($breakdown[$key])) {
                     $breakdown[$key] = [
@@ -1165,11 +1166,14 @@ class TaxCalculationService
         }
 
         // The rate shown is what the line was charged on average, events
-        // included, not the first day's.
+        // included, not the first day's. The name is what SeAT's static data
+        // calls the ore now, not what a day was saved with.
+        $names = LedgerSummaryService::currentOreNames(array_column($breakdown, 'type_id'));
         foreach ($breakdown as &$line) {
             if ($line['value'] > 0) {
                 $line['effective_rate'] = round($line['tax'] / $line['value'] * 100, 2);
             }
+            $line['name'] = $names[(int) $line['type_id']] ?? $line['name'];
         }
         unset($line);
 
@@ -1249,6 +1253,23 @@ class TaxCalculationService
                 $kinds[$kind][$classKey]['ores'][$typeId] = $name;
             }
         }
+
+        // Each ore under the name SeAT's static data has now, not the one a
+        // day was saved with: ore it did not know then shows as "Unknown Ore".
+        $names = LedgerSummaryService::currentOreNames(array_column($rows, 'type_id'));
+        foreach ($rows as &$row) {
+            $row['name'] = $names[$row['type_id']] ?? $row['name'];
+        }
+        unset($row);
+        foreach ($kinds as &$classes) {
+            foreach ($classes as &$class) {
+                foreach ($class['ores'] as $typeId => $oreName) {
+                    $class['ores'][$typeId] = $names[$typeId] ?? $oreName;
+                }
+            }
+            unset($class);
+        }
+        unset($classes);
 
         // Moon ore first, by rarity, then the rest in the order the tax
         // settings list them.

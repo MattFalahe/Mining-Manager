@@ -11,6 +11,7 @@ use MiningManager\Services\Analytics\Players;
 use MiningManager\Services\Pricing\MarketDataService;
 use MiningManager\Services\Character\CharacterInfoService;
 use MiningManager\Services\Configuration\SettingsManagerService;
+use MiningManager\Services\Ledger\LedgerSummaryService;
 use MiningManager\Services\TypeIdRegistry;
 use MiningManager\Models\MiningLedger;
 use MiningManager\Models\MiningTax;
@@ -1231,6 +1232,12 @@ class DashboardController extends Controller
                 $byType[$typeId]['quantity'] += (float) ($ore['quantity'] ?? 0);
                 $byType[$typeId]['value'] += (float) ($ore['total_value'] ?? 0);
             }
+        }
+
+        // The names SeAT's static data has now, ahead of the ones days were
+        // saved with: ore it did not know then shows as "Unknown Ore (id)".
+        foreach (LedgerSummaryService::currentOreNames(array_keys($byType)) as $typeId => $name) {
+            $byType[$typeId]['name'] = $name;
         }
 
         // Fallback: if no daily summaries exist yet, use raw ledger with SQL aggregation

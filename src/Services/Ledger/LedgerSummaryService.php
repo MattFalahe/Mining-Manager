@@ -874,6 +874,33 @@ class LedgerSummaryService
     // modifier only to the actually-event-qualified slice.
 
     /**
+     * What SeAT's static data calls these types now. A day's summary keeps the
+     * ore names the data had when the day was worked out, and ore newer than
+     * that data was saved as "Unknown Ore (id)". Pages listing a day's ore go
+     * by these names first, so updating the data fixes days already worked out.
+     *
+     * @param array<int, int|string> $typeIds
+     * @return array<int, string> type id => name, for the types the data knows
+     */
+    public static function currentOreNames(array $typeIds): array
+    {
+        $typeIds = array_values(array_unique(array_filter(array_map('intval', $typeIds))));
+        if (!$typeIds) {
+            return [];
+        }
+
+        try {
+            return DB::table('invTypes')
+                ->whereIn('typeID', $typeIds)
+                ->pluck('typeName', 'typeID')
+                ->map(fn ($name) => (string) $name)
+                ->all();
+        } catch (\Exception $e) {
+            return [];
+        }
+    }
+
+    /**
      * Get ore name from invTypes table.
      *
      * @param int $typeId
