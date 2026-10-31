@@ -364,10 +364,18 @@ class ProcessMiningLedgerCommand extends Command
                         // Character ESI combines ALL mining of a type in a system into one entry,
                         // so if a character mined at both a corp moon and non-corp moon,
                         // we subtract the observer quantity and keep the remainder as untaxed.
+                        //
+                        // The personal row is the one in the refinery's own system. The
+                        // same ore mined in another system that day has a row of its own,
+                        // and reducing that one instead left both wrong: mining that never
+                        // happened kept as personal mining, and the real refinery mining
+                        // counted twice. Where SeAT has not resolved the refinery's system
+                        // the day's row is taken as before.
                         $personalDupe = MiningLedger::where('character_id', $entry->character_id)
                             ->whereDate('date', Carbon::parse($entry->last_updated)->toDateString())
                             ->where('type_id', $entry->type_id)
                             ->whereNull('observer_id')
+                            ->when($solarSystemId, fn ($query) => $query->where('solar_system_id', $solarSystemId))
                             ->first();
 
                         // Dedup is a correction, and a correction to mining that
