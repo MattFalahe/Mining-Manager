@@ -963,16 +963,24 @@ class LedgerSummaryService
 
             foreach ($characters as $characterId) {
                 try {
-                    // Generate monthly summary
-                    $this->generateMonthlySummary($characterId, $month);
-                    $stats['monthly_summaries']++;
+                    // One transaction per character. The whole month in one
+                    // held every summary it touched locked against the
+                    // importer until the last character was done, and a
+                    // character that failed part way kept what it had written.
+                    $days = DB::transaction(function () use ($characterId, $month, $datesByCharacter) {
+                        // Generate monthly summary
+                        $this->generateMonthlySummary($characterId, $month);
 
-                    // Generate daily summaries only for days with actual data
-                    $characterDates = $datesByCharacter->get($characterId, collect());
-                    foreach ($characterDates as $pair) {
-                        $this->generateDailySummary($characterId, $pair->mining_date);
-                        $stats['daily_summaries']++;
-                    }
+                        // Generate daily summaries only for days with actual data
+                        $characterDates = $datesByCharacter->get($characterId, collect());
+                        foreach ($characterDates as $pair) {
+                            $this->generateDailySummary($characterId, $pair->mining_date);
+                        }
+
+                        return $characterDates->count();
+                    });
+                    $stats['monthly_summaries']++;
+                    $stats['daily_summaries'] += $days;
                 } catch (\Exception $e) {
                     $stats['errors'][] = "Character {$characterId}: " . $e->getMessage();
                     Log::error("Failed to finalize summaries for character {$characterId}", [
