@@ -57,6 +57,7 @@ This release also brings tax periods to the ledger, My Mining and the dashboards
 - A past month the Mining Summary works out from the ledger, which the At our moons view always does, says *From the ledger* rather than *Finalized*.
 - **The old ledger list page is gone.** Since before 1.0.0 the Mining Ledger page has been the summary, but the list it replaced stayed in the code, and no release ever linked to it. Its export, delete and bulk delete endpoints went with it, since nothing else called them. Opening a single ledger entry from a character's page works as before.
 - Fixed: **one refinery row that failed to import held back the rest of the run.** `process-ledger` stopped at the first error, before rebuilding the day summaries of the rows it had imported and before looking for jackpot ore, so a row that kept failing kept every miner's daily figures and the jackpot check from updating. The rows that go in now get both, and the run still reports the failure.
+- The Reprocessing page colours each kind of ore as every other page does: moon ore yellow, regular ore grey, ice cyan, gas green.
 - Fixed: **refinery mining could cut or delete a pilot's mining in another system.** When a pilot mined the same ore at one of your refineries and somewhere else on the same day, the import took the refinery's share off whichever of their personal rows it found first. When that was the other system's, the mining there was cut or deleted and the refinery mining was counted twice. It now takes it off the row in the refinery's own system. Rows already imported stay as they are.
 
 ### Dashboard
@@ -123,6 +124,12 @@ This release also brings tax periods to the ledger, My Mining and the dashboards
 - Fixed: **the Outstanding Mining Tax digest usually came every 8 days rather than 7.** The check compared the time to the second with when the last digest went out, which is a little after its run starts, so a week later the run was usually a few seconds early and waited another day. It now counts days.
 - Fixed: **a Metenox cargo alert that failed to send was never sent.** The drill was marked alerted before the message went out, so a webhook that was down missed it for good. It is now sent again an hour later, for as long as the bay stays over the line.
 
+### Manager Core
+
+- **Manager Core hears about bills, events and reports.** When a bill is paid in full (`mining.tax_paid`, saying whether it was late), when a bill nothing was paid on goes overdue (`mining.tax_overdue`), when an invoice goes out (`mining.invoice_sent`), when an event is announced, starts or completes (`mining.event_created`, `mining.event_started`, `mining.event_completed`), and when a report is made (`mining.report_generated`). Each goes out once, as it happens, from the update on, so plugins such as HR Manager can follow a member's bills.
+- `mining.tax_created` also says what held credit already paid of the new bill and what is left (`amount_paid`, `outstanding`, `status`).
+- Fixed: **a jackpot the refinery import found was never announced to Manager Core.** Only the daily scan announced one, and the import finds nearly all of them first. Both announce now, once, and so does a member's report once the mining bears it out.
+
 ### Events
 
 - **Events count what you tell them to.** A moon event is set in whole EVE days and can be narrowed to some of your refineries: the form lists each one with its chunks and the days their belts can last, so an event can count one chunk when several arrive the same day. A moon event can count only some rarities, and a special event the ore you tick. **Make an Event** on an extraction's page starts one on its chunk.
@@ -180,6 +187,7 @@ This release also brings tax periods to the ledger, My Mining and the dashboards
 - Health Checks lists the tax profiles, and the Valuation Test shows what each profile charges. The Master Test checks the Moon Owner, runs the Settings Health checks and matches the upfront keyword against every profile's code prefix.
 - The Master Test no longer checks that the moon value shown matches the value taxed. They can no longer differ.
 - The Event Diagnostic says whether the event tables from 000041 and 000042 are in place, and what events do until they are.
+- The Planner card checks moon blueprints: that their tables are in place, and whether any of their pulls are on refineries the corporation no longer owns.
 
 ### Schema
 
