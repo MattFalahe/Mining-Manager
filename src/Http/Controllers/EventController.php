@@ -5,6 +5,7 @@ namespace MiningManager\Http\Controllers;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Seat\Web\Http\Controllers\Controller;
+use MiningManager\Integrations\ManagerCoreEvents;
 use MiningManager\Services\Events\EventManagementService;
 use MiningManager\Services\Notification\NotificationService;
 use MiningManager\Models\MiningEvent;
@@ -554,7 +555,8 @@ class EventController extends Controller
                     ->with('success', trans('mining-manager::events.awaiting_created'));
             }
 
-            // Send notifications if requested
+            // Send notifications if requested. Manager Core hears of the event
+            // only then too, as a plugin subscribed to it may ping Discord.
             if ($request->input('send_notifications')) {
                 try {
                     $this->notificationService->sendEventCreated($event);
@@ -565,6 +567,7 @@ class EventController extends Controller
                     ]);
                 }
 
+                ManagerCoreEvents::eventCreated($event);
             }
 
             return redirect()->route('mining-manager.events.show', $event->id)
@@ -953,6 +956,8 @@ class EventController extends Controller
                 'error' => $e->getMessage(),
             ]);
         }
+
+        ManagerCoreEvents::eventCreated($event);
     }
 
     /**
@@ -1207,6 +1212,7 @@ class EventController extends Controller
                     'error' => $e->getMessage()
                 ]);
             }
+            ManagerCoreEvents::eventStarted($event);
 
             return redirect()->route('mining-manager.events.show', $event->id)
                 ->with('success', 'Event started successfully');
@@ -1267,6 +1273,7 @@ class EventController extends Controller
                     'error' => $e->getMessage()
                 ]);
             }
+            ManagerCoreEvents::eventCompleted($event);
 
             return redirect()->route('mining-manager.events.show', $event->id)
                 ->with('success', 'Event completed successfully. Tax modifier: ' . $event->getTaxModifierLabel());

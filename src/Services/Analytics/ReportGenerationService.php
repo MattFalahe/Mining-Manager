@@ -63,6 +63,8 @@ class ReportGenerationService
             $report->update(['file_path' => $filePath]);
         }
 
+        \MiningManager\Integrations\ManagerCoreEvents::reportGenerated($report);
+
         // Auto-dispatch to subscribed webhooks. Callers that want to handle
         // dispatch themselves (e.g. the manual UI path that sends to a single
         // user-picked webhook) should pass $dispatch = false to avoid sending

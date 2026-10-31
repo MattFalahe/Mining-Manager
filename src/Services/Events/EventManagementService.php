@@ -2,6 +2,7 @@
 
 namespace MiningManager\Services\Events;
 
+use MiningManager\Integrations\ManagerCoreEvents;
 use MiningManager\Models\EventHistory;
 use MiningManager\Models\MiningEvent;
 use MiningManager\Services\Configuration\SettingsManagerService;
@@ -101,6 +102,7 @@ class EventManagementService
                     } catch (\Exception $e) {
                         Log::warning("Mining Manager: Failed to send event_started notification for event {$event->id}: " . $e->getMessage());
                     }
+                    ManagerCoreEvents::eventStarted($event->fresh());
                 }
 
                 $started++;
@@ -152,6 +154,7 @@ class EventManagementService
                 } catch (\Exception $e) {
                     Log::warning("Mining Manager: Failed to send event_completed notification for event {$event->id}: " . $e->getMessage());
                 }
+                ManagerCoreEvents::eventCompleted($event->fresh());
 
                 $completed++;
             } catch (\Exception $e) {
@@ -254,6 +257,7 @@ class EventManagementService
                 } catch (\Exception $e) {
                     Log::warning("Mining Manager: Failed to send event_completed notification for event {$event->id}: " . $e->getMessage());
                 }
+                ManagerCoreEvents::eventCompleted($event->fresh());
 
                 $applied++;
             } catch (\Exception $e) {
