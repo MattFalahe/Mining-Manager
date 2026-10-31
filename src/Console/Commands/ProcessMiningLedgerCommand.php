@@ -467,12 +467,6 @@ class ProcessMiningLedgerCommand extends Command
                 $this->line("   • Total est. taxes (per settings): " . number_format($totalTaxes, 0) . " ISK");
             }
 
-            if ($errors > 0) {
-                $this->line('');
-                $this->warn("⚠️  Completed with {$errors} errors. Check logs for details.");
-                return Command::FAILURE;
-            }
-
             // Check for jackpot ores in observer entries.
             //
             // BUG FIX 2026-04-27: previously gated on `$processed > 0` which
@@ -541,6 +535,18 @@ class ProcessMiningLedgerCommand extends Command
 
             // Clear dashboard cache so new data shows immediately
             \MiningManager\Http\Controllers\DashboardController::clearDashboardCache();
+
+            // Errors are reported last. A row that failed waits for the next
+            // run, and every row that went in still gets the jackpot check,
+            // its day summaries and the theft check above. Stopping at the
+            // first error held all three back for every row, and one row that
+            // keeps failing would have held them back on every run.
+            if ($errors > 0) {
+                $this->line('');
+                $this->warn("⚠️  Completed with {$errors} errors. Check logs for details. Dashboard cache cleared.");
+                return Command::FAILURE;
+            }
+
             $this->info("\n✅ Processing complete. Dashboard cache cleared.");
 
             return Command::SUCCESS;
