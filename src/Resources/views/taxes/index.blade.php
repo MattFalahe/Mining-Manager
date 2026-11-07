@@ -4,7 +4,7 @@
 @section('page_header', trans('mining-manager::menu.tax_management'))
 
 @push('head')
-<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=8">
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=10">
 <link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/tax-management.css') }}">
 @include('mining-manager::taxes.partials.datatables-styles')
 @endpush
@@ -245,7 +245,7 @@
                                             <i class="fas fa-building"></i> Corp Members
                                         </option>
                                         <option value="guest" {{ request('miner_type') == 'guest' ? 'selected' : '' }}>
-                                            <i class="fas fa-user-friends"></i> Guest Miners
+                                            <i class="fas fa-user-friends"></i> Non-member Miners
                                         </option>
                                     </select>
                                 </div>
@@ -376,8 +376,8 @@
                                             {{ $tax->character_info['name'] ?? $tax->character_name }}
                                         </a>
                                         @if($moonOwnerCorpId)
-                                            @php $taxCorpId = $tax->character_info['corporation_id'] ?? $tax->corporation_id ?? null; @endphp
-                                            @if($taxCorpId == $moonOwnerCorpId)
+                                            {{-- The same split as the cards above: by the profile that billed it. --}}
+                                            @if($tax->isBilledToMember($homeCorporationIds))
                                                 <span class="badge badge-primary ml-1" data-toggle="tooltip" title="{{ trans('mining-manager::taxes.corporation_member') }}">
                                                     <i class="fas fa-building"></i>
                                                 </span>
@@ -404,21 +404,23 @@
                                          796,982,374, which is what made this table look randomly
                                          ordered. --}}
                                     <td class="text-right" data-order="{{ (float) $tax->amount_owed }}">
-                                        <strong>{{ number_format($tax->amount_owed, 0) }}</strong>
+                                        <strong>{{ number_format($tax->amount_owed, 2) }}</strong>
                                         <small class="text-muted">ISK</small>
                                     </td>
                                     <td class="text-right" data-order="{{ (float) $tax->amount_paid }}">
-                                        <strong>{{ number_format($tax->amount_paid, 0) }}</strong>
+                                        <strong>{{ number_format($tax->amount_paid, 2) }}</strong>
                                         <small class="text-muted">ISK</small>
                                     </td>
                                     {{-- What still has to be paid, so nobody has to subtract the two
-                                         columns before it, and the figure the Copy button hands over. --}}
+                                         columns before it, and the figure the Copy button hands over, to
+                                         the cent: EVE's Transfer ISK takes cents even with the wallet set
+                                         to hide them. --}}
                                     @php $leftToPay = in_array($tax->status, \MiningManager\Models\MiningTax::OUTSTANDING_STATUSES) ? $tax->getRemainingBalance() : 0; @endphp
                                     <td class="text-right" data-order="{{ $leftToPay }}">
                                         @if($leftToPay > 0)
-                                        <strong>{{ number_format($leftToPay, 0) }}</strong>
+                                        <strong>{{ number_format($leftToPay, 2) }}</strong>
                                         <small class="text-muted">ISK</small>
-                                        <button type="button" class="btn btn-xs btn-link p-0 ml-1" onclick="copyToClipboard('{{ round($leftToPay) }}', 'ISK amount')" data-toggle="tooltip" title="Copy ISK amount">
+                                        <button type="button" class="btn btn-xs btn-link p-0 ml-1" onclick="copyToClipboard('{{ number_format($leftToPay, 2, '.', '') }}', 'ISK amount')" data-toggle="tooltip" title="Copy ISK amount">
                                             <i class="fas fa-copy"></i>
                                         </button>
                                         @else
@@ -471,6 +473,12 @@
                                                     <i class="fas fa-exclamation-circle"></i> {{ trans('mining-manager::taxes.overdue') }}
                                                 </span>
                                                 @endif
+                                                @break
+                                            @case('exempted')
+                                            @case('waived')
+                                                <span class="badge badge-secondary">
+                                                    <i class="fas fa-minus-circle"></i> {{ trans('mining-manager::taxes.' . $tax->status) }}
+                                                </span>
                                                 @break
                                         @endswitch
                                     </td>
@@ -630,7 +638,7 @@
                     <input type="hidden" id="taxIdInput" name="tax_id">
                     <div class="form-group">
                         <label>{{ trans('mining-manager::taxes.amount_paid') }}</label>
-                        <input type="number" class="form-control" id="amountPaidInput" name="amount_paid" required>
+                        <input type="number" step="any" class="form-control" id="amountPaidInput" name="amount_paid" required>
                     </div>
                     <div class="form-group">
                         <label>{{ trans('mining-manager::taxes.payment_date') }}</label>
@@ -706,8 +714,11 @@ $(document).ready(function() {
         updateBulkActionsBar();
     });
 
-    // Individual checkboxes
-    $('.tax-checkbox').on('change', function() {
+    // Individual checkboxes. This and the row buttons below are bound on
+    // the table rather than the rows: DataTables keeps every page but the
+    // first out of the document, so a handler bound to the rows at load
+    // never reaches a row brought up later by paging or the search box.
+    $('#taxTable').on('change', '.tax-checkbox', function() {
         updateBulkActionsBar();
     });
 
@@ -742,13 +753,14 @@ $(document).ready(function() {
     });
 
     // Mark as paid - single
-    $('.mark-paid').on('click', function() {
+    $('#taxTable').on('click', '.mark-paid', function() {
         const taxId = $(this).data('tax-id');
         const row = $('tr[data-tax-id="' + taxId + '"]');
         // What is left, not the bill: markPaid adds this to whatever has
         // already been paid, so the full bill on a part-paid row would be
-        // recorded as an overpayment.
-        const leftToPay = Math.round(parseFloat(row.data('amount-remaining')) || 0);
+        // recorded as an overpayment. To the cent, so the payment recorded
+        // is the bill itself rather than a whole-ISK figure either side.
+        const leftToPay = (parseFloat(row.data('amount-remaining')) || 0).toFixed(2);
         
         $('#taxIdInput').val(taxId);
         $('#amountPaidInput').val(leftToPay);
@@ -786,7 +798,7 @@ $(document).ready(function() {
     });
 
     // Send reminder - single
-    $('.send-reminder').on('click', function() {
+    $('#taxTable').on('click', '.send-reminder', function() {
         const taxId = $(this).data('tax-id');
         const characterName = $(this).data('character-name');
         
@@ -836,9 +848,12 @@ $(document).ready(function() {
     // Bulk send reminders
     // Remind All Unpaid — sends reminders for all unpaid/overdue taxes without checkbox selection
     $('#remindAllUnpaid').on('click', function() {
-        // Collect all tax IDs with unpaid/overdue/partial status
+        // Collect all tax IDs with unpaid/overdue/partial status, on every
+        // page: DataTables keeps only the page shown in the table, so reading
+        // the table reminded one page of bills and left out the rest.
         var unpaidIds = [];
-        $('.tax-row').each(function() {
+        var allRows = $.fn.DataTable.isDataTable('#taxTable') ? $($('#taxTable').DataTable().rows().nodes()) : $('.tax-row');
+        allRows.each(function() {
             var status = $(this).data('status');
             if (status === 'unpaid' || status === 'overdue' || status === 'partial') {
                 unpaidIds.push($(this).data('tax-id'));
@@ -903,7 +918,7 @@ $(document).ready(function() {
     });
 
     // Delete single tax record
-    $('.delete-tax').on('click', function() {
+    $('#taxTable').on('click', '.delete-tax', function() {
         const taxId = $(this).data('tax-id');
         const characterName = $(this).data('character-name');
         const month = $(this).data('month');
@@ -975,6 +990,8 @@ $(document).ready(function() {
 
     // View toggle: Flat / Grouped by Account
     var isGrouped = false;
+    var flatPageLength = null;
+    var taxTable = $.fn.DataTable.isDataTable('#taxTable') ? $('#taxTable').DataTable() : null;
 
     $('#view-flat-btn').on('click', function() {
         if (!isGrouped) return;
@@ -992,17 +1009,42 @@ $(document).ready(function() {
         showGroupedView();
     });
 
+    // DataTables keeps only the page being shown in the table, so grouping
+    // what is there grouped one page of bills. The grouped view shows every
+    // bill the search matches on one page instead, and groups them again
+    // whenever DataTables redraws, as a search or a sort makes it.
+    if (taxTable) {
+        taxTable.on('draw', function() {
+            if (isGrouped) groupRows();
+        });
+    }
+
     function showFlatView() {
         // Remove grouped header rows
         $('.grouped-header-row').remove();
-        // Show all original tax rows
-        $('.tax-row').show();
+        // Show all original tax rows, the ones on other pages too
+        if (taxTable) {
+            $(taxTable.rows().nodes()).show();
+            taxTable.page.len(flatPageLength).draw(false);
+        } else {
+            $('.tax-row').show();
+        }
     }
 
     function showGroupedView() {
+        if (taxTable) {
+            flatPageLength = taxTable.page.len();
+            // Redraws with every bill on the page, which groups them.
+            taxTable.page.len(-1).draw(false);
+        } else {
+            groupRows();
+        }
+    }
+
+    function groupRows() {
         // Group rows by character_id
         var groups = {};
-        $('.tax-row').each(function() {
+        $('#taxTable tbody .tax-row').each(function() {
             var charId = $(this).data('character-id');
             if (!groups[charId]) {
                 groups[charId] = {
@@ -1023,7 +1065,7 @@ $(document).ready(function() {
         });
 
         // Hide all original rows and insert grouped headers
-        $('.tax-row').hide();
+        $('#taxTable tbody .tax-row').hide();
         $('.grouped-header-row').remove();
 
         var tbody = $('#taxTable tbody');
@@ -1051,8 +1093,8 @@ $(document).ready(function() {
                 '<small class="text-muted ml-2">(' + g.rows.length + ' {{ trans("mining-manager::taxes.entries") }})</small>' +
                 '</div>' +
                 '<div class="text-right">' +
-                '<span class="mr-3"><strong>' + Number(g.totalOwed).toLocaleString() + '</strong> <small class="text-muted">ISK {{ trans("mining-manager::taxes.owed") }}</small></span>' +
-                '<span class="mr-3"><strong>' + Number(g.totalPaid).toLocaleString() + '</strong> <small class="text-muted">ISK {{ trans("mining-manager::taxes.paid") }}</small></span>' +
+                '<span class="mr-3"><strong>' + Math.round(g.totalOwed).toLocaleString() + '</strong> <small class="text-muted">ISK {{ trans("mining-manager::taxes.owed") }}</small></span>' +
+                '<span class="mr-3"><strong>' + Math.round(g.totalPaid).toLocaleString() + '</strong> <small class="text-muted">ISK {{ trans("mining-manager::taxes.paid") }}</small></span>' +
                 (g.totalLeft > 0 ? '<span class="mr-3"><strong>' + Math.round(g.totalLeft).toLocaleString() + '</strong> <small class="text-muted">ISK {{ trans("mining-manager::taxes.left_to_pay_short") }}</small></span>' : '') +
                 statusBadge +
                 '<i class="fas fa-chevron-down ml-2"></i>' +

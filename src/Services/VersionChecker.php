@@ -247,7 +247,7 @@ class VersionChecker
                     'verify' => true,
                     'headers' => [
                         'Accept' => 'application/vnd.github+json',
-                        'User-Agent' => 'SeAT-MiningManager/' . config('mining-manager.version', 'unknown'),
+                        'User-Agent' => 'SeAT-MiningManager/' . $this->installedVersion(),
                     ],
                 ]);
 
@@ -280,6 +280,15 @@ class VersionChecker
                 return $empty;
             }
         });
+    }
+
+    /**
+     * The installed version as Composer has it, such as 3.0.0 or
+     * dev-dev-7.0, without asking Packagist or GitHub.
+     */
+    public function installedVersion(): string
+    {
+        return $this->resolveInstalledVersion()[0];
     }
 
     protected function resolveInstalledVersion(): array
@@ -327,7 +336,7 @@ class VersionChecker
                     'verify'          => true, // TLS verification on
                     'headers'         => [
                         'Accept'     => 'application/json',
-                        'User-Agent' => 'SeAT-MiningManager/' . config('mining-manager.version', 'unknown'),
+                        'User-Agent' => 'SeAT-MiningManager/' . $this->installedVersion(),
                     ],
                 ]);
 

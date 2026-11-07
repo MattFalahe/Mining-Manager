@@ -86,6 +86,8 @@ function loadWebhookData(webhookId) {
                 document.getElementById('notify-event-created').checked = webhook.notify_event_created;
                 document.getElementById('notify-event-started').checked = webhook.notify_event_started;
                 document.getElementById('notify-event-completed').checked = webhook.notify_event_completed;
+                const eventReviewField = document.getElementById('notify-event-review');
+                if (eventReviewField) eventReviewField.checked = !!webhook.notify_event_review;
                 document.getElementById('notify-tax-generated').checked = webhook.notify_tax_generated;
                 document.getElementById('notify-tax-announcement').checked = webhook.notify_tax_announcement;
                 document.getElementById('notify-tax-reminder').checked = webhook.notify_tax_reminder;
@@ -172,6 +174,7 @@ function saveWebhook() {
         notify_event_created: document.getElementById('notify-event-created').checked ? 1 : 0,
         notify_event_started: document.getElementById('notify-event-started').checked ? 1 : 0,
         notify_event_completed: document.getElementById('notify-event-completed').checked ? 1 : 0,
+        notify_event_review: document.getElementById('notify-event-review')?.checked ? 1 : 0,
         notify_tax_generated: document.getElementById('notify-tax-generated').checked ? 1 : 0,
         notify_tax_announcement: document.getElementById('notify-tax-announcement').checked ? 1 : 0,
         notify_tax_reminder: document.getElementById('notify-tax-reminder').checked ? 1 : 0,

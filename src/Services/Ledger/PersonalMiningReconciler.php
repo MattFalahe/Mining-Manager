@@ -7,31 +7,33 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use MiningManager\Models\MiningLedger;
 use MiningManager\Services\Configuration\SettingsManagerService;
+use MiningManager\Services\Pricing\OreValuationService;
 use MiningManager\Services\Tax\InvoiceCoverage;
 
 /**
- * Clears out personal mining rows that our own corporation observer has
- * already accounted for.
+ * Keeps personal moon mining rows to what no refinery accounts for.
  *
  * The two sources overlap. Character ESI reports everything a pilot mined of
- * one ore in one system that day; the corporation observer reports what came
- * off our refinery. The importer subtracts one from the other the first time
- * it meets an observer entry, and only then, so a single missed match leaves
- * the same mining in the ledger twice: a taxed observer row and an untaxed
- * personal copy, with nothing to notice or correct it afterwards.
+ * one ore in one system that day; a refinery reports what came off it. The
+ * importer subtracts one from the other the first time it meets a report, and
+ * only then, and a report can still be partial at that point. When it catches
+ * up the refinery row grows and the difference stays behind on the personal
+ * row: the same mining in the ledger twice, and charged twice by a profile that
+ * taxes all moon ore.
+ *
+ * So each night a finished day's personal rows are worked out again from SeAT's
+ * full figure, never from what the row holds. Refineries that account for all
+ * of it mean the row goes. Refineries that account for part of it mean the row
+ * is set to the rest, which was mined somewhere else. A row with no report in
+ * its own system is left alone.
  *
  * This is the second attempt, and unlike the first it can run as often as it
- * likes without doing damage.
+ * likes without doing damage. Subtracting from the row on every pass took the
+ * same report off twice and destroyed a legitimate remainder, which is what the
+ * version this replaces did on the second day.
  *
- * **It only removes a row whose quantity is exactly the observer total.** That
- * equality is the one thing that can be proved: every unit the pilot mined was
- * seen by our refinery, so no share of anybody else's moon is hiding in it.
- * Anything less than exact is left where it is, for two reasons. A smaller
- * personal figure is what a subtraction that already worked looks like, and is
- * indistinguishable from a pilot who also mined a neighbour's rock. And
- * subtracting again on a later pass would take the same observer quantity off
- * twice and destroy a legitimate remainder, which is what the version this
- * replaces did on the second day.
+ * Until settings moved into tax profiles only our own refineries count, because
+ * the daily summaries leave other corporations' out. See RefineryCoverage.
  */
 class PersonalMiningReconciler
 {
@@ -54,13 +56,14 @@ class PersonalMiningReconciler
     }
 
     /**
-     * @return array{examined:int,removed:int,billed_skipped:int,quantity:int,value:float,summaries:int,rows:array,moon_owner:?int}
+     * @return array{examined:int,removed:int,adjusted:int,billed_skipped:int,quantity:int,value:float,summaries:int,rows:array,moon_owner:?int}
      */
     public function reconcile(int $days = self::DEFAULT_DAYS, bool $dryRun = false): array
     {
         $result = [
             'examined' => 0,
             'removed' => 0,
+            'adjusted' => 0,
             'billed_skipped' => 0,
             'quantity' => 0,
             'value' => 0.0,
@@ -91,12 +94,14 @@ class PersonalMiningReconciler
             return $result;
         }
 
-        // Yesterday backwards. Today is left alone on purpose: the personal
-        // import will not recreate a row once an observer row exists for that
-        // pilot, ore and day, so removing one while the day is still being
-        // mined would lose whatever they mine afterwards somewhere else.
+        // Yesterday backwards. Today is left alone on purpose: once a refinery
+        // has reported a pilot's ore for the day, the personal import leaves
+        // that system's row to this check, so a row removed while the day is
+        // still being mined would lose whatever they mine afterwards somewhere
+        // else in that system.
         $until = Carbon::yesterday()->endOfDay();
         $since = Carbon::today()->subDays(max(1, $days))->startOfDay();
+        $profilesFrom = $this->settings->profilesTaxFrom()?->toDateString();
 
         $touched = [];
 
@@ -111,13 +116,14 @@ class PersonalMiningReconciler
                     ->whereColumn('o.character_id', 'mining_ledger.character_id')
                     ->whereColumn('o.date', 'mining_ledger.date')
                     ->whereColumn('o.type_id', 'mining_ledger.type_id')
-                    ->whereNotNull('o.observer_id')
-                    ->where('o.corporation_id', $moonOwnerCorpId);
+                    ->whereNotNull('o.observer_id');
             })
             // Paged by id, because the loop deletes rows this very query
             // selects on and offset paging would walk straight past the ones
             // that shuffle back.
-            ->chunkById(500, function ($rows) use (&$result, &$touched, $dryRun, $moonOwnerCorpId) {
+            ->chunkById(500, function ($rows) use (&$result, &$touched, $dryRun, $moonOwnerCorpId, $profilesFrom) {
+                $uncovered = RefineryCoverage::uncovered($rows, $moonOwnerCorpId, $profilesFrom);
+
                 foreach ($rows as $row) {
                     $result['examined']++;
 
@@ -128,7 +134,8 @@ class PersonalMiningReconciler
                         continue;
                     }
 
-                    if ((int) $row->quantity !== $this->observerTotal($row, $moonOwnerCorpId)) {
+                    $left = $uncovered[(int) $row->id] ?? null;
+                    if ($left === null || $left === (int) $row->quantity) {
                         continue;
                     }
 
@@ -136,9 +143,13 @@ class PersonalMiningReconciler
                         ? $row->date->toDateString()
                         : (string) $row->date;
 
-                    $result['removed']++;
-                    $result['quantity'] += (int) $row->quantity;
-                    $result['value'] += (float) $row->total_value;
+                    $values = $left > 0
+                        ? app(OreValuationService::class)->calculateOreValue((int) $row->type_id, $left, ['mining_date' => $row->date])
+                        : [];
+
+                    $result[$left > 0 ? 'adjusted' : 'removed']++;
+                    $result['quantity'] += max(0, (int) $row->quantity - $left);
+                    $result['value'] += max(0.0, (float) $row->total_value - (float) ($values['total_value'] ?? 0));
                     $touched[$row->character_id . '|' . $day] = [
                         'character_id' => (int) $row->character_id,
                         'date' => $day,
@@ -151,20 +162,37 @@ class PersonalMiningReconciler
                             'date' => $day,
                             'type_id' => (int) $row->type_id,
                             'quantity' => (int) $row->quantity,
+                            'left' => $left,
                             'value' => (float) $row->total_value,
                         ];
                     }
 
-                    if (! $dryRun) {
-                        Log::info('Mining Manager: removed a personal mining row the observer already covered', [
-                            'ledger_id' => $row->id,
-                            'character_id' => $row->character_id,
-                            'date' => $day,
-                            'type_id' => $row->type_id,
-                            'quantity' => $row->quantity,
-                        ]);
+                    if ($dryRun) {
+                        continue;
+                    }
 
+                    Log::info('Mining Manager: set a personal mining row to what no refinery accounts for', [
+                        'ledger_id' => $row->id,
+                        'character_id' => $row->character_id,
+                        'date' => $day,
+                        'type_id' => $row->type_id,
+                        'quantity' => $row->quantity,
+                        'left' => $left,
+                    ]);
+
+                    if ($left === 0) {
                         $row->delete();
+                    } else {
+                        $row->update([
+                            'quantity' => $left,
+                            'unit_price' => $values['unit_price'] ?? 0,
+                            'ore_value' => $values['ore_value'] ?? 0,
+                            'mineral_value' => $values['mineral_value'] ?? 0,
+                            'total_value' => $values['total_value'] ?? 0,
+                            'tax_rate' => 0,
+                            'tax_amount' => 0,
+                            'processed_at' => Carbon::now(),
+                        ]);
                     }
                 }
             });
@@ -177,20 +205,6 @@ class PersonalMiningReconciler
         }
 
         return $result;
-    }
-
-    /**
-     * What our own refinery already accounts for, for the same pilot, ore and
-     * day. Other corporations' observers are not ours to match against.
-     */
-    protected function observerTotal(MiningLedger $row, int $moonOwnerCorpId): int
-    {
-        return (int) MiningLedger::where('character_id', $row->character_id)
-            ->whereDate('date', $row->date)
-            ->where('type_id', $row->type_id)
-            ->whereNotNull('observer_id')
-            ->where('corporation_id', $moonOwnerCorpId)
-            ->sum('quantity');
     }
 
     /**

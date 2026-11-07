@@ -97,7 +97,7 @@
                         <div class="invalid-feedback">{{ $message }}</div>
                     @enderror
                     <small class="form-text text-muted">
-                        Get your free API key from <a href="https://janice.e-351.com/settings" target="_blank" class="text-info"><i class="fas fa-external-link-alt"></i> Janice Settings</a>
+                        Get your free API key from <a href="https://janice.e-351.com/settings" target="_blank" rel="noopener" class="text-info"><i class="fas fa-external-link-alt"></i> Janice Settings</a>
                         <br><strong>ENV Fallback:</strong> If left blank, will use <code>MINING_MANAGER_JANICE_API_KEY</code> environment variable
                     </small>
                 </div>
@@ -444,24 +444,7 @@
             <div class="info-banner mb-3">
                 <i class="fas fa-info-circle"></i>
                 <strong>Info:</strong>
-                Decides which value the Extraction Simulator and Find Moons lead with: what the ore reprocesses into at your refining efficiency, or what the raw ore is worth on the market. Raw moon ore barely trades, so a thin market can put a silly price on it, which is why refined value is the default. Both are always shown, and Find Moons can be switched per search with Value by. Mining taxes are not affected.
-            </div>
-
-            <div class="form-group">
-                <div class="custom-control custom-switch">
-                    <input type="checkbox" 
-                           class="custom-control-input" 
-                           id="use_refined_value"
-                           name="use_refined_value"
-                           value="1"
-                           {{ old('use_refined_value', $settings['pricing']['use_refined_value'] ?? false) ? 'checked' : '' }}>
-                    <label class="custom-control-label" for="use_refined_value">
-                        <strong>Use Refined Mineral Value</strong>
-                    </label>
-                </div>
-                <small class="form-text text-muted">
-                    Lead with refined value on the Extraction Simulator and Find Moons
-                </small>
+                Every ore is valued as the minerals it reprocesses into at this refining efficiency, for mining tax and on the Extraction Simulator and Find Moons alike. Raw moon ore barely trades, so a thin market can put a silly price on it, while what it reprocesses into holds steady. Gas cannot be reprocessed, so it is valued at its own market price. Find Moons can still show raw ore value for a search with Value by.
             </div>
 
             <div class="form-group">
@@ -582,7 +565,8 @@ $(document).ready(function() {
     $('#price_provider').on('change', function() {
         if ($(this).val() === 'janice') {
             const apiKey = $('#janice_api_key').val().trim();
-            const envKey = '{{ config("mining-manager.general.price_provider_api_key") }}';
+            // Only whether a key is set in the environment, never the key.
+            const envKey = {{ config('mining-manager.general.price_provider_api_key') ? 'true' : 'false' }};
             
             if (!apiKey && !envKey) {
                 setTimeout(function() {

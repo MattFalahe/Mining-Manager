@@ -20,6 +20,8 @@ use MiningManager\Services\Notification\NotificationService;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Http;
 use MiningManager\Services\OreClassifier;
+use MiningManager\Services\Diagnostic\TaxTraceDays;
+use MiningManager\Services\Diagnostic\TestDataLeftovers;
 
 class DiagnosticController extends Controller
 {
@@ -131,6 +133,8 @@ class DiagnosticController extends Controller
 
         // Get notification settings for default values
         $notificationSettings = $this->settingsService->getNotificationSettings();
+        $taxPingsOn = collect(['tax_reminder', 'tax_invoice', 'tax_overdue'])
+            ->contains(fn ($type) => $notificationSettings['type_settings'][$type]['ping_user'] ?? false);
 
         // System Validation: Metenox Cargo Subsystem health probe (v2.0.1).
         // Server-side rendered so the operator sees results immediately when
@@ -147,6 +151,7 @@ class DiagnosticController extends Controller
             'webhooks',
             'seatCharacters',
             'notificationSettings',
+            'taxPingsOn',
             'metenoxValidation',
             'plannerValidation'
         ));
@@ -257,6 +262,22 @@ class DiagnosticController extends Controller
                 : 'is_final, final_marked_by and final_marked_at present.',
         ];
 
+        // 4e. Moon blueprints
+        $hasBlueprints = \Schema::hasTable('mining_manager_moon_rotations')
+            && \Schema::hasTable('mining_manager_moon_rotation_slots');
+        $missingBlueprint = array_values(array_filter([
+            \Schema::hasTable('mining_manager_moon_rotations') ? null : 'mining_manager_moon_rotations',
+            \Schema::hasTable('mining_manager_moon_rotation_slots') ? null : 'mining_manager_moon_rotation_slots',
+            $hasPlans && \Schema::hasColumn('moon_extraction_plans', 'rotation_id') ? null : 'moon_extraction_plans.rotation_id',
+        ]));
+        $checks[] = [
+            'label'   => 'Migration 000031: moon blueprints',
+            'status'  => $missingBlueprint ? 'fail' : 'ok',
+            'message' => $missingBlueprint
+                ? 'Missing: ' . implode(', ', $missingBlueprint) . '. Run migrations. Blueprints cannot be saved or applied.'
+                : 'Blueprint tables and the blueprint columns on planned pulls present.',
+        ];
+
         // 5. Moon Owner Corporation — the planner's operating scope
         $moonOwner = $this->settingsService->getTaxProgramCorporationId();
         $checks[] = [
@@ -264,7 +285,7 @@ class DiagnosticController extends Controller
             'status'  => $moonOwner ? 'ok' : 'warn',
             'message' => $moonOwner
                 ? "Planner scoped to corporation {$moonOwner}."
-                : 'Not set — the planner page shows an empty state. Configure it in Settings → General.',
+                : 'Not set — the planner page shows an empty state. Set it in Settings → Setup.',
         ];
 
         // 6. Manager Core fast-poll registration. This is the wiring that fails
@@ -335,6 +356,24 @@ class DiagnosticController extends Controller
                         ? 'No moons currently scheduled off-plan.'
                         : "{$openMismatches} plan(s) flagged as scheduled off-plan. Review the warning banner on the planner and dismiss once reconciled.",
                 ];
+
+                // A refinery that is gone stays in its blueprints until someone
+                // clears it on the Blueprints tab, so a moment's gap in SeAT's
+                // structure list can never strip a blueprint on its own.
+                if ($hasBlueprints) {
+                    $rotations = app(\MiningManager\Services\Moon\MoonRotationService::class);
+                    $blueprints = $rotations->listForCorporation((int) $moonOwner);
+                    $gone = $rotations->slotsWithMissingRefineries((int) $moonOwner);
+                    $checks[] = [
+                        'label'   => 'Blueprints: refineries still owned',
+                        'status'  => $gone->isEmpty() ? 'ok' : 'warn',
+                        'message' => empty($blueprints)
+                            ? 'No blueprints set up.'
+                            : ($gone->isEmpty()
+                                ? count($blueprints) . ' blueprint(s), with ' . array_sum(array_column($blueprints, 'planned_ahead')) . ' pull(s) planned ahead from them. Every refinery in them is still owned.'
+                                : $gone->count() . ' pull(s) in ' . $gone->pluck('rotation_id')->unique()->count() . ' blueprint(s) are on refineries the corporation no longer owns. Clear them on the Blueprints tab, which also takes off the pulls they planned ahead.'),
+                    ];
+                }
             } catch (\Throwable $e) {
                 $checks[] = [
                     'label'   => 'Planner data sanity',
@@ -924,6 +963,8 @@ class DiagnosticController extends Controller
                 ->whereIn('character_id', $testCharacterIds)
                 ->delete();
 
+            $leftovers = TestDataLeftovers::remove($testCharacterIds);
+
             // Delete test corporation settings (multi-corporation settings)
             $settingsDeleted = DB::table('mining_manager_settings')
                 ->whereIn('corporation_id', $testCorporationIds)
@@ -956,6 +997,9 @@ class DiagnosticController extends Controller
                 $message .= ", {$affiliationsDeleted} affiliations";
             }
             $message .= ", {$ledgerDeleted} ledger entries, {$taxesDeleted} tax records, {$settingsDeleted} settings";
+            if ($left = TestDataLeftovers::describe($leftovers)) {
+                $message .= ", {$left}";
+            }
 
             return redirect()->route('mining-manager.diagnostic.index')
                 ->with('success', $message);
@@ -982,7 +1026,6 @@ class DiagnosticController extends Controller
         ]);
 
         $provider = $request->input('provider', 'seat');
-        $originalProvider = null;
 
         try {
             // Check if Janice API key is configured when testing Janice
@@ -1024,22 +1067,18 @@ class DiagnosticController extends Controller
 
             $startTime = microtime(true);
 
-            // Temporarily set provider via settings service (ensures cache invalidation)
-            $pricingSettings = $this->settingsService->getPricingSettings();
-            $originalProvider = $pricingSettings['price_provider'] ?? 'seat';
-            $this->settingsService->updateSetting('price_provider', $provider, 'string');
-
-            $prices = $this->priceService->getPrices($testTypeIds);
+            // Asked directly, so the provider in use, its status and its alerts
+            // stay as they are while the test runs.
+            $test = $this->priceService->tryProvider($provider, $testTypeIds);
+            $prices = $test['prices'];
 
             $endTime = microtime(true);
             $duration = round(($endTime - $startTime) * 1000, 2); // milliseconds
 
-            // A provider that failed outright still hands back the cached
-            // prices, which would read here as a passing test.
-            if ($this->priceService->lastFetchStoodIn()) {
+            if ($test['error'] !== null) {
                 return response()->json([
                     'success' => false,
-                    'error' => $this->priceService->standInNotice(),
+                    'error' => $test['error'],
                     'provider' => $provider,
                 ]);
             }
@@ -1084,11 +1123,6 @@ class DiagnosticController extends Controller
                 'error' => $e->getMessage(),
                 'provider' => $provider
             ], 500);
-        } finally {
-            // Always restore original provider
-            if ($originalProvider !== null) {
-                $this->settingsService->updateSetting('price_provider', $originalProvider, 'string');
-            }
         }
     }
 
@@ -1124,7 +1158,6 @@ class DiagnosticController extends Controller
                     'price_type' => $pricingSettings['price_type'] ?? 'sell',
                     'fallback_provider' => $this->describeFallbackSetting($pricingSettings['fallback_provider'] ?? 'fuzzwork'),
                     'cache_duration' => ($pricingSettings['cache_duration'] ?? 240) . ' minutes',
-                    'use_refined_value' => ($pricingSettings['use_refined_value'] ?? false) ? 'Yes' : 'No',
                     'refining_efficiency' => ($pricingSettings['refining_efficiency'] ?? 87.5) . '%',
                     'default_region_id' => $generalSettings['default_region_id'] ?? 10000002,
                 ]
@@ -1166,7 +1199,6 @@ class DiagnosticController extends Controller
     {
         $provider = $request->input('provider', 'seat');
         $oreCategory = $request->input('category', 'all');
-        $originalProvider = null;
 
         try {
             // Check if Janice API key is configured when testing Janice
@@ -1233,20 +1265,18 @@ class DiagnosticController extends Controller
 
             $startTime = microtime(true);
 
-            // Temporarily set provider via settings service (ensures cache invalidation)
-            $pricingSettings = $this->settingsService->getPricingSettings();
-            $originalProvider = $pricingSettings['price_provider'] ?? 'seat';
-            $this->settingsService->updateSetting('price_provider', $provider, 'string');
-
-            $prices = $this->priceService->getPrices($typeIds);
+            // Asked directly, so the provider in use, its status and its alerts
+            // stay as they are while the test runs.
+            $test = $this->priceService->tryProvider($provider, $typeIds);
+            $prices = $test['prices'];
 
             $endTime = microtime(true);
             $duration = round(($endTime - $startTime) * 1000, 2);
 
-            if ($this->priceService->lastFetchStoodIn()) {
+            if ($test['error'] !== null) {
                 return response()->json([
                     'success' => false,
-                    'error' => $this->priceService->standInNotice(),
+                    'error' => $test['error'],
                     'provider' => $provider,
                 ]);
             }
@@ -1297,11 +1327,6 @@ class DiagnosticController extends Controller
                 'success' => false,
                 'error' => $e->getMessage()
             ], 500);
-        } finally {
-            // Always restore original provider
-            if ($originalProvider !== null) {
-                $this->settingsService->updateSetting('price_provider', $originalProvider, 'string');
-            }
         }
     }
 
@@ -1790,129 +1815,24 @@ class DiagnosticController extends Controller
     // ========================================================================
 
     /**
-     * Settings Health Check
-     * Shows all plugin settings with source (DB / config / default), flags mismatches
+     * Settings Health: who each tax profile taxes, what every profile holds,
+     * and each stored row checked against where the plugin reads it.
      *
      * @return \Illuminate\Http\JsonResponse
      */
-    public function settingsHealth()
+    public function settingsHealth(\MiningManager\Services\Diagnostic\SettingsHealth $health)
     {
         try {
-            $results = [];
-
-            // Define all setting groups to check.
-            //
-            // Notifications was added in v2.0.1 so the new
-            // `notifications.metenox_cargo_full_threshold_pct` setting (and
-            // any future notification-level operator knobs) surface in
-            // Settings Health alongside the other groups.
-            $settingGroups = [
-                'General' => $this->settingsService->getGeneralSettings(),
-                // Feature switches decide whole areas, upfront payments and
-                // data export among them, so their source matters as much as
-                // any other setting's.
-                'Features' => $this->settingsService->getFeatureFlags(),
-                'Tax Rates' => $this->settingsService->getTaxRates(),
-                'Pricing' => $this->settingsService->getPricingSettings(),
-                'Payment' => $this->settingsService->getPaymentSettings(),
-                'Notifications' => method_exists($this->settingsService, 'getNotificationSettings')
-                    ? $this->settingsService->getNotificationSettings()
-                    : [],
-            ];
-
-            foreach ($settingGroups as $groupName => $settings) {
-                $groupResults = [];
-                foreach ($settings as $key => $value) {
-                    // Check source: DB vs config vs hardcoded
-                    $source = 'default';
-                    $dbValue = null;
-
-                    if (is_array($value)) {
-                        // Nested settings (e.g., tax_rates.moon_ore)
-                        foreach ($value as $subKey => $subValue) {
-                            $fullKey = $key . '.' . $subKey;
-                            $dbRecord = Setting::where('key', $fullKey)->first()
-                                ?? Setting::where('key', strtolower($groupName) . '.' . $fullKey)->first();
-
-                            $groupResults[] = [
-                                'key' => $fullKey,
-                                'value' => $subValue,
-                                'source' => $dbRecord ? 'database' : (config('mining-manager.' . $fullKey) !== null ? 'config' : 'default'),
-                                'type' => gettype($subValue),
-                            ];
-                        }
-                    } else {
-                        // Check multiple possible DB key paths for this setting
-                        // Payment settings read from tax_rates.* and payment.* namespaces
-                        $dbRecord = Setting::where('key', $key)->first()
-                            ?? Setting::where('key', strtolower($groupName) . '.' . $key)->first()
-                            ?? Setting::where('key', 'tax_rates.tax_' . $key)->first()
-                            ?? Setting::where('key', 'payment.' . $key)->first()
-                            ?? Setting::where('key', 'general.' . $key)->first();
-
-                        // Mask sensitive values
-                        $displayValue = $value;
-                        if (in_array($key, ['janice_api_key']) && !empty($value)) {
-                            $displayValue = '***' . substr($value, -4);
-                        }
-
-                        $groupResults[] = [
-                            'key' => $key,
-                            'value' => $displayValue,
-                            'source' => $dbRecord ? 'database' : (config('mining-manager.' . $key) !== null ? 'config' : 'default'),
-                            'type' => gettype($value),
-                        ];
-                    }
-                }
-                $results[$groupName] = $groupResults;
-            }
-
-            // Check for corporation-specific overrides
-            $corpOverrides = Setting::whereNotNull('corporation_id')
-                ->select('corporation_id', DB::raw('COUNT(*) as setting_count'))
-                ->groupBy('corporation_id')
-                ->get()
-                ->map(function ($row) {
-                    $corpName = DB::table('corporation_infos')
-                        ->where('corporation_id', $row->corporation_id)
-                        ->value('name');
-                    return [
-                        'corporation_id' => $row->corporation_id,
-                        'corporation_name' => $corpName ?? 'Unknown',
-                        'setting_count' => $row->setting_count,
-                    ];
-                });
-
-            // Check for orphaned settings (settings for corporations that no longer exist)
-            $orphanedSettings = Setting::whereNotNull('corporation_id')
-                ->whereNotIn('corporation_id', function ($query) {
-                    $query->select('corporation_id')->from('corporation_infos');
-                })
-                ->count();
-
-            // Total DB settings count
-            $totalDbSettings = Setting::count();
-            $globalSettings = Setting::whereNull('corporation_id')->count();
-
             return response()->json([
                 'success' => true,
-                'settings' => $results,
-                'summary' => [
-                    'total_db_settings' => $totalDbSettings,
-                    'global_settings' => $globalSettings,
-                    'corporation_overrides' => $corpOverrides,
-                    'orphaned_settings' => $orphanedSettings,
-                ],
-                'issues' => $orphanedSettings > 0
-                    ? ["{$orphanedSettings} orphaned setting(s) found for non-existent corporations"]
-                    : [],
+                'report' => $health->report(),
             ]);
-
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             Log::error('Settings health check failed', ['error' => $e->getMessage()]);
+
             return response()->json([
                 'success' => false,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ], 500);
         }
     }
@@ -1976,28 +1896,35 @@ class DiagnosticController extends Controller
             // Main account mapping: character -> refresh_tokens -> users -> main_character_id
             $accountInfo = $this->resolveAccountInfo($characterId);
 
-            // Tax bill for this month (uses main character ID since taxes are grouped by main)
+            // Every bill for the month, two on a twice-monthly period. Bills go
+            // to the account's main character.
             $billCharacterId = $accountInfo['main_character_id'] ?? $characterId;
-            $taxBill = MiningTax::where('character_id', $billCharacterId)
+            $taxBillData = MiningTax::where('character_id', $billCharacterId)
                 ->whereYear('month', $monthStart->year)
                 ->whereMonth('month', $monthStart->month)
-                ->first();
+                ->orderByRaw('COALESCE(period_start, month)')
+                ->get()
+                ->map(function (MiningTax $bill) {
+                    $taxCode = $bill->taxCodes()->latest()->first();
+                    $start = Carbon::parse($bill->period_start ?? $bill->month);
+                    $end = $bill->period_end ? Carbon::parse($bill->period_end) : $start->copy()->endOfMonth();
 
-            $taxBillData = null;
-            if ($taxBill) {
-                $taxCode = $taxBill->taxCodes()->latest()->first();
-                $taxBillData = [
-                    'id' => $taxBill->id,
-                    'character_id' => $taxBill->character_id,
-                    'amount_owed' => (float) $taxBill->amount_owed,
-                    'amount_paid' => (float) $taxBill->amount_paid,
-                    'status' => $taxBill->status,
-                    'due_date' => $taxBill->due_date ? $taxBill->due_date->format('Y-m-d') : null,
-                    'paid_at' => $taxBill->paid_at ? $taxBill->paid_at->format('Y-m-d H:i') : null,
-                    'tax_code' => $taxCode ? $taxCode->code : null,
-                    'period_type' => $taxBill->period_type ?? 'monthly',
-                ];
-            }
+                    return [
+                        'id' => $bill->id,
+                        'character_id' => $bill->character_id,
+                        'amount_owed' => (float) $bill->amount_owed,
+                        'amount_paid' => (float) $bill->amount_paid,
+                        'status' => $bill->status,
+                        'due_date' => $bill->due_date ? $bill->due_date->format('Y-m-d') : null,
+                        'paid_at' => $bill->paid_at ? $bill->paid_at->format('Y-m-d H:i') : null,
+                        'tax_code' => $taxCode ? $taxCode->code : null,
+                        'period_type' => $bill->period_type ?? 'monthly',
+                        'period_start' => $start->toDateString(),
+                        'period_end' => $end->toDateString(),
+                    ];
+                })
+                ->values()
+                ->all();
 
             // ================================================================
             // SECTION 2: Daily Summaries (Stored Data)
@@ -2015,11 +1942,12 @@ class DiagnosticController extends Controller
             $storedTotalTax = 0;
             $storedTotalQuantity = 0;
             $storedWarnings = [];
-            $taxSelector = $this->settingsService->getTaxSelector();
+            $traceDays = app(TaxTraceDays::class);
 
             foreach ($dailySummaries as $summary) {
                 $oreEntries = $summary->ore_types ?? [];
                 $dayWarnings = [];
+                $taxedBy = $traceDays->taxedBy((int) $summary->character_id, $summary->date);
 
                 // Check for issues in ore entries
                 foreach ($oreEntries as &$ore) {
@@ -2033,7 +1961,7 @@ class DiagnosticController extends Controller
                     // nothing under that same rule, and mining that arrives after
                     // its period was invoiced is left untaxed on purpose. Warning
                     // on all of those buried the one case worth reading.
-                    if ($this->taxedCategoryCameOutAtZero($ore, $taxSelector)) {
+                    if ($this->taxedCategoryCameOutAtZero($ore, $taxedBy['selector'])) {
                         $warnings[] = 'This category is taxed and has a rate, but this ore came out at 0%. Expected on moon ore from another corporation\'s moon, or on mining that reached the ledger after its period was invoiced.';
                     }
                     $ore['warnings'] = $warnings;
@@ -2052,6 +1980,8 @@ class DiagnosticController extends Controller
 
                 $storedDays[] = [
                     'date' => $summary->date->format('Y-m-d'),
+                    'character_id' => (int) $summary->character_id,
+                    'taxed_by' => $taxedBy['label'],
                     'total_quantity' => (float) $summary->total_quantity,
                     'total_value' => $dayValue,
                     'total_tax' => $dayTax,
@@ -2074,141 +2004,73 @@ class DiagnosticController extends Controller
             }
 
             // ================================================================
-            // SECTION 3: Live Recalculation (current prices/rates)
-            // Include all alts in the group for accumulated tax comparison
+            // SECTION 3: The same days built again now, by the code that builds
+            // them for billing, without saving
             // ================================================================
-            $entries = DB::table('mining_ledger')
-                ->whereIn('character_id', $allCharIds)
-                ->whereBetween('date', [$monthStart->format('Y-m-d'), $monthEnd->format('Y-m-d')])
-                ->orderBy('date')
-                ->get();
-
-            $taxRates = $this->settingsService->getTaxRates();
-            $pricingSettings = $this->settingsService->getPricingSettings();
-            $generalSettings = $this->settingsService->getGeneralSettings();
-
-            $liveResults = [];
-            $liveTotalTax = 0;
-            $liveTotalValue = 0;
-
-            foreach ($entries as $entry) {
-                $typeId = $entry->type_id;
-                $quantity = $entry->quantity;
-
-                $isMoonOre = TypeIdRegistry::isMoonOre($typeId);
-                $isIce = TypeIdRegistry::isIce($typeId);
-                $isGas = TypeIdRegistry::isGas($typeId);
-                $isRegularOre = TypeIdRegistry::isRegularOre($typeId);
-                $rarity = $isMoonOre ? TypeIdRegistry::getMoonOreRarity($typeId) : null;
-
-                $category = 'unknown';
-                if ($isMoonOre) $category = 'moon_ore';
-                elseif ($isIce) $category = 'ice';
-                elseif ($isGas) $category = 'gas';
-                elseif ($isRegularOre) $category = 'ore';
-
-                $taxRate = 0;
-                if ($isMoonOre && $rarity) {
-                    $taxRate = $taxRates['moon_ore'][$rarity] ?? 0;
-                } elseif ($isIce) {
-                    $taxRate = $taxRates['ice'] ?? 0;
-                } elseif ($isGas) {
-                    $taxRate = $taxRates['gas'] ?? 0;
-                } elseif ($isRegularOre) {
-                    $taxRate = $taxRates['ore'] ?? 0;
-                }
-
-                $oreValue = 0;
-                $unitPrice = 0;
-                $pricingError = null;
-                try {
-                    $unitPrice = $this->priceService->getPrice($typeId) ?? 0;
-                    $oreValue = $unitPrice * $quantity;
-                } catch (\Exception $e) {
-                    $pricingError = $e->getMessage();
-                }
-
-                $taxAmount = round($oreValue * ($taxRate / 100), 2);
-                $liveTotalTax += $taxAmount;
-                $liveTotalValue += $oreValue;
-
-                $typeName = DB::table('invTypes')
-                    ->where('typeID', $typeId)
-                    ->value('typeName') ?? "Type {$typeId}";
-
-                $liveResults[] = [
-                    'date' => $entry->date,
-                    'type_id' => $typeId,
-                    'type_name' => $typeName,
-                    'quantity' => $quantity,
-                    'category' => $category,
-                    'rarity' => $rarity,
-                    'tax_rate' => $taxRate,
-                    'unit_price' => round($unitPrice, 2),
-                    'total_value' => round($oreValue, 2),
-                    'tax_amount' => $taxAmount,
-                    'pricing_error' => $pricingError,
-                ];
-            }
+            $rebuilt = $traceDays->rebuild($allCharIds, $monthStart, $monthEnd, $dailySummaries);
 
             // ================================================================
             // SECTION 4: Mismatch Detection
             // ================================================================
             $mismatches = [];
 
-            // Compare stored summary total vs live recalculation
-            $storedVsLiveDiff = abs($storedTotalTax - $liveTotalTax);
-            if ($storedVsLiveDiff > 1) {
+            $changed = array_values(array_filter($rebuilt['days'], fn (array $day) => $day['stored'] && abs($day['difference']) > 1));
+            if ($changed) {
+                $changedBy = array_sum(array_column($changed, 'difference'));
+                $raised = count(array_filter($changed, fn (array $day) => $day['difference'] > 0));
+                $verb = $raised === count($changed) ? 'raise' : ($raised === 0 ? 'lower' : 'change');
+                $dates = array_values(array_unique(array_column($changed, 'date')));
                 $mismatches[] = [
-                    'type' => 'stored_vs_live',
-                    'severity' => $storedVsLiveDiff > 1000000 ? 'high' : 'medium',
+                    'type' => 'stored_vs_rebuilt',
+                    'severity' => abs($changedBy) > 1000000 ? 'high' : 'medium',
                     'message' => sprintf(
-                        'Daily summary total tax (%.2f ISK) differs from live recalculation (%.2f ISK) by %.2f ISK — prices or rates may have changed since summaries were generated',
-                        $storedTotalTax, $liveTotalTax, $storedVsLiveDiff
+                        'Building the daily summaries again now would %s the tax on %d %s by %s ISK in total (%s). Something they are built from has changed since: settings, mining that arrived late, or the prices on the ledger.',
+                        $verb,
+                        count($changed),
+                        count($changed) === 1 ? 'day' : 'days',
+                        number_format($verb === 'change' ? $changedBy : abs($changedBy), 2),
+                        implode(', ', array_slice($dates, 0, 5)) . (count($dates) > 5 ? ' and ' . (count($dates) - 5) . ' more' : '')
                     ),
                 ];
             }
 
-            // Compare stored total vs tax bill amount
-            if ($taxBill) {
-                // For the bill comparison, we need to check ALL characters under this account
-                $allCharIds = $accountInfo['all_character_ids'] ?? [$characterId];
-                $accountStoredTax = 0;
+            // Each bill against the summaries of its own period, for every
+            // character of the account.
+            foreach ($taxBillData as $bill) {
+                $accountStoredTax = (float) MiningLedgerDailySummary::whereIn('character_id', $allCharIds)
+                    ->whereBetween('date', [$bill['period_start'], $bill['period_end']])
+                    ->sum('total_tax');
 
-                if (count($allCharIds) > 1) {
-                    // Sum daily summaries across all alts
-                    $accountStoredTax = (float) MiningLedgerDailySummary::whereIn('character_id', $allCharIds)
-                        ->whereBetween('date', [$monthStart->format('Y-m-d'), $monthEnd->format('Y-m-d')])
-                        ->sum('total_tax');
-                } else {
-                    $accountStoredTax = $storedTotalTax;
-                }
-
-                $billDiff = abs($accountStoredTax - (float) $taxBill->amount_owed);
+                $billDiff = abs($accountStoredTax - $bill['amount_owed']);
                 if ($billDiff > 1) {
                     $mismatches[] = [
                         'type' => 'summary_vs_bill',
                         'severity' => $billDiff > 1000000 ? 'high' : 'medium',
                         'message' => sprintf(
-                            'Account daily summaries total (%.2f ISK across %d characters) differs from tax bill amount (%.2f ISK) by %.2f ISK',
-                            $accountStoredTax, count($allCharIds), (float) $taxBill->amount_owed, $billDiff
+                            'The daily summaries for %s to %s add up to %s ISK across %d %s, and the bill for that period is %s ISK, %s ISK apart. The exemption threshold or the minimum bill can account for it.',
+                            $bill['period_start'],
+                            $bill['period_end'],
+                            number_format($accountStoredTax, 2),
+                            count($allCharIds),
+                            count($allCharIds) === 1 ? 'character' : 'characters',
+                            number_format($bill['amount_owed'], 2),
+                            number_format($billDiff, 2)
                         ),
                     ];
                 }
             }
 
-            // Check for days with mining ledger data but no daily summary
-            $ledgerDates = $entries->pluck('date')->unique()->values()->toArray();
-            $summaryDates = $dailySummaries->map(fn($s) => $s->date->format('Y-m-d'))->toArray();
-            $missingSummaryDates = array_diff($ledgerDates, $summaryDates);
+            $missingSummaryDates = array_values(array_unique(array_column(array_filter($rebuilt['days'], fn (array $day) => !$day['stored']), 'date')));
             if (!empty($missingSummaryDates)) {
                 $mismatches[] = [
                     'type' => 'missing_summaries',
                     'severity' => 'high',
                     'message' => sprintf(
-                        'Mining ledger has data for %d dates with no daily summary: %s — run calculate-taxes to regenerate',
+                        'The ledger has mining on %d %s with no daily summary: %s. mining-manager:update-daily-summaries --month=%s builds them.',
                         count($missingSummaryDates),
-                        implode(', ', array_slice($missingSummaryDates, 0, 5)) . (count($missingSummaryDates) > 5 ? '...' : '')
+                        count($missingSummaryDates) === 1 ? 'day' : 'days',
+                        implode(', ', array_slice($missingSummaryDates, 0, 5)) . (count($missingSummaryDates) > 5 ? ' and ' . (count($missingSummaryDates) - 5) . ' more' : ''),
+                        $month
                     ),
                 ];
             }
@@ -2241,10 +2103,10 @@ class DiagnosticController extends Controller
                     'id' => $characterId,
                     'name' => $characterName,
                     'corporation_id' => $corporationId,
-                    'corporation_name' => $corporationName ?? 'Unknown (guest miner)',
+                    'corporation_name' => $corporationName ?? 'Not known yet',
                 ],
                 'account' => $accountInfo,
-                'tax_bill' => $taxBillData,
+                'tax_bills' => $taxBillData,
 
                 // Section 2: Stored Daily Summaries
                 'period' => [
@@ -2264,22 +2126,8 @@ class DiagnosticController extends Controller
                     'warnings' => $storedWarnings,
                 ],
 
-                // Section 3: Live Recalculation
-                'live_recalculation' => [
-                    'settings_used' => [
-                        'price_provider' => $pricingSettings['price_provider'] ?? 'seat',
-                        'valuation_method' => $generalSettings['ore_valuation_method'] ?? 'mineral_price',
-                        'refining_efficiency' => $pricingSettings['refining_efficiency'] ?? 87.5,
-                    ],
-                    'tax_rates' => $taxRates,
-                    'totals' => [
-                        'total_entries' => count($entries),
-                        'total_value' => round($liveTotalValue, 2),
-                        'total_tax' => round($liveTotalTax, 2),
-                        'effective_rate' => $liveTotalValue > 0 ? round(($liveTotalTax / $liveTotalValue) * 100, 2) : 0,
-                    ],
-                    'entries' => $liveResults,
-                ],
+                // Section 3: The same days built again now
+                'rebuilt' => $rebuilt,
 
                 // Section 4: Mismatches
                 'mismatches' => $mismatches,
@@ -2690,13 +2538,16 @@ class DiagnosticController extends Controller
     }
 
     /**
-     * Theft detection diagnostic - test detection logic and statistics
+     * Theft detection diagnostic: the rules in force, who the next run would
+     * take off the list, and why one character would or would not be
+     * flagged. Records nothing; only the daily run opens and closes incidents.
      */
     public function theftDiagnostic(Request $request)
     {
         try {
             $characterId = (int) $request->input('character_id');
             $theftService = app(\MiningManager\Services\Theft\TheftDetectionService::class);
+            $rules = $theftService->rules();
 
             // Overall statistics
             $stats = $theftService->getStatistics();
@@ -2704,67 +2555,30 @@ class DiagnosticController extends Controller
             // Unresolved incidents summary
             $unresolved = $theftService->getUnresolvedIncidents();
 
-            // Characters who have paid
+            // Players the next run takes off the list
             $paidCharacters = [];
             try {
-                $paid = $theftService->checkForPaidTaxes();
-                $paidCharacters = $paid->map(fn($i) => [
-                    'character_id' => $i->character_id, 'character_name' => $i->character_name, 'status' => $i->status,
-                ])->take(10)->toArray();
+                $paidCharacters = $theftService->paidUpIncidents()->map(fn($i) => [
+                    'character_id' => $i->character_id, 'character_name' => $i->getCharacterName(), 'status' => $i->status,
+                ])->take(10)->values()->toArray();
             } catch (\Exception $e) {
                 $paidCharacters = ['error' => $e->getMessage()];
             }
 
-            // Character-specific analysis
-            $characterAnalysis = null;
-            if ($characterId) {
-                $moonOwnerCorpId = (int) $this->settingsService->getSetting('general.moon_owner_corporation_id', 0);
-
-                $isExternal = $theftService->isExternalMiner($characterId, $moonOwnerCorpId);
-
-                // Get their mining on moon structures
-                $moonMining = DB::table('corporation_industry_mining_observer_data as m')
-                    ->join('corporation_industry_mining_observers as o', 'm.observer_id', '=', 'o.observer_id')
-                    ->where('m.character_id', $characterId)
-                    ->where('m.last_updated', '>=', now()->subDays(30))
-                    ->select('m.type_id', DB::raw('SUM(m.quantity) as total_qty'), DB::raw('MAX(m.last_updated) as last_seen'))
-                    ->groupBy('m.type_id')
-                    ->get();
-
-                $totalValue = 0;
-                $moonOreEntries = [];
-                foreach ($moonMining as $entry) {
-                    $typeName = DB::table('invTypes')->where('typeID', $entry->type_id)->value('typeName') ?? "Type {$entry->type_id}";
-                    $isMoonOre = \MiningManager\Services\TypeIdRegistry::isMoonOre($entry->type_id);
-                    if ($isMoonOre) {
-                        $moonOreEntries[] = ['type_id' => $entry->type_id, 'name' => $typeName, 'quantity' => $entry->total_qty, 'last_seen' => $entry->last_seen];
-                    }
-                }
-
-                // Check existing incidents
-                $existingIncident = \MiningManager\Models\TheftIncident::where('character_id', $characterId)
-                    ->whereIn('status', ['detected', 'investigating', 'active'])
-                    ->first();
-
-                $characterAnalysis = [
-                    'character_id' => $characterId,
-                    'character_name' => DB::table('character_infos')->where('character_id', $characterId)->value('name') ?? "Unknown ({$characterId})",
-                    'is_external_miner' => $isExternal,
-                    'moon_ore_mined_30d' => $moonOreEntries,
-                    'existing_incident' => $existingIncident ? [
-                        'id' => $existingIncident->id, 'status' => $existingIncident->status, 'severity' => $existingIncident->severity,
-                        'ore_value' => $existingIncident->ore_value, 'tax_owed' => $existingIncident->tax_owed,
-                    ] : null,
-                ];
-            }
-
             return response()->json([
                 'success' => true,
+                'rules' => [
+                    'moon_owner_set' => (bool) $rules['moon_owner'],
+                    'home_corporations' => count($rules['home']),
+                    'overdue_days' => $rules['overdue_days'],
+                    'guests_allowed' => $rules['guests_allowed'],
+                    'guests_off_since' => $rules['guests_off_since']?->toDateString(),
+                ],
                 'statistics' => $stats,
                 'unresolved_count' => $unresolved->count(),
                 'unresolved_by_severity' => $unresolved->groupBy('severity')->map->count()->toArray(),
                 'paid_characters' => $paidCharacters,
-                'character_analysis' => $characterAnalysis,
+                'character_analysis' => $characterId ? $theftService->explainCharacter($characterId, $rules) : null,
             ]);
 
         } catch (\Exception $e) {
@@ -2806,6 +2620,7 @@ class DiagnosticController extends Controller
                 return response()->json([
                     'success' => true,
                     'mode' => 'single_event',
+                    'checks' => $this->eventSchemaChecks(),
                     'event' => [
                         'id' => $event->id, 'name' => $event->name, 'type' => $event->type, 'status' => $event->status,
                         'start_time' => $event->start_time?->toIso8601String(), 'end_time' => $event->end_time?->toIso8601String(),
@@ -2831,6 +2646,7 @@ class DiagnosticController extends Controller
                 return response()->json([
                     'success' => true,
                     'mode' => 'overview',
+                    'checks' => $this->eventSchemaChecks(),
                     'active_events' => $active->map(fn($e) => [
                         'id' => $e->id, 'name' => $e->name, 'status' => $e->status,
                         'participant_count' => $e->participant_count, 'total_mined' => $e->total_mined,
@@ -2851,6 +2667,44 @@ class DiagnosticController extends Controller
             Log::error('Event diagnostic failed', ['error' => $e->getMessage()]);
             return response()->json(['success' => false, 'error' => $e->getMessage()], 500);
         }
+    }
+
+    /**
+     * Whether the database has what events need for refineries, sign-ups and
+     * narrowed ore.
+     */
+    private function eventSchemaChecks(): array
+    {
+        $missing = array_values(array_filter([
+            \Schema::hasColumn('mining_events', 'participation') ? null : 'mining_events.participation',
+            \Schema::hasColumn('mining_events', 'members_only') ? null : 'mining_events.members_only',
+            \Schema::hasColumn('mining_events', 'ore_categories') ? null : 'mining_events.ore_categories',
+            \Schema::hasColumn('mining_events', 'results_sent_at') ? null : 'mining_events.results_sent_at',
+            \Schema::hasColumn('event_mining_records', 'qualifies') ? null : 'event_mining_records.qualifies',
+            \Schema::hasTable('mining_manager_event_moons') ? null : 'mining_manager_event_moons',
+            \Schema::hasTable('mining_manager_event_signups') ? null : 'mining_manager_event_signups',
+        ]));
+
+        $missingGovernance = array_values(array_filter([
+            \Schema::hasColumn('mining_events', 'applies_at') ? null : 'mining_events.applies_at',
+            \Schema::hasColumn('mining_events', 'locked_at') ? null : 'mining_events.locked_at',
+            \Schema::hasColumn('webhook_configurations', 'notify_event_review') ? null : 'webhook_configurations.notify_event_review',
+            \Schema::hasTable('mining_manager_event_history') ? null : 'mining_manager_event_history',
+        ]));
+
+        return [[
+            'label' => 'Migration 000041: event rules, refineries and sign-ups',
+            'status' => $missing ? 'fail' : 'ok',
+            'message' => $missing
+                ? 'Missing: ' . implode(', ', $missing) . '. Run migrations. Until then events count as they used to: no narrowing to refineries or ore, and signing up changes nobody\'s rate.'
+                : 'Present: events can be narrowed to refineries and ore, and can count only the people who signed up.',
+        ], [
+            'label' => 'Migration 000042: event history, held past events, approvals',
+            'status' => $missingGovernance ? 'fail' : 'ok',
+            'message' => $missingGovernance
+                ? 'Missing: ' . implode(', ', $missingGovernance) . '. Run migrations. Until then nothing done to an event is recorded, events for days that have passed cannot be set up, and moon managers cannot set up events.'
+                : 'Present: every event keeps its history, past events are held before they apply, events lock once final, and moon managers\' events can wait for approval.',
+        ]];
     }
 
     /**
@@ -3086,59 +2940,36 @@ class DiagnosticController extends Controller
 
             // 4. Mined ore that ends up valued short for want of a price
             //
-            // Which price matters depends on how ore is valued. By refined
-            // value, the default, an ore is worth what it reprocesses into, and
-            // its own raw price is never used: raw ore mostly has no market at
-            // all, since it is traded compressed or refined, so a raw ore with
-            // no price is the true state of the market rather than a fault.
-            // What undervalues a bill there is a refined material with no price.
-            // By ore price the raw price is what gets billed, so that is the one
-            // to watch.
+            // Ore is valued by what it reprocesses into, so its own raw price is
+            // never used: raw ore mostly has no market at all, since it is traded
+            // compressed or refined, so a raw ore with no price is the true state
+            // of the market rather than a fault. What undervalues a bill is a
+            // refined material with no price.
             //
-            // Either way only ore with reprocessing materials is considered.
-            // Something that reprocesses into nothing and has no market cannot
-            // be valued by any route, and saying so every day would be noise.
-            $valuationMethod = $this->settingsService->getGeneralSettings()['ore_valuation_method'] ?? 'mineral_price';
+            // Only ore with reprocessing materials is considered. Something that
+            // reprocesses into nothing and has no market cannot be valued by any
+            // route, and saying so every day would be noise.
             $since = Carbon::now()->subDays(30)->toDateString();
 
-            // Same test OreValuationService makes: minerals, or else the ore.
-            if ($valuationMethod !== 'mineral_price') {
-                $unpricedCount = DB::table('mining_price_cache as pc')
-                    ->join('mining_ledger as ml', 'ml.type_id', '=', 'pc.type_id')
-                    ->where('pc.sell_price', '<=', 0)
-                    ->where('pc.buy_price', '<=', 0)
-                    ->where('pc.average_price', '<=', 0)
-                    ->where('ml.date', '>=', $since)
-                    ->whereNull('ml.deleted_at')
-                    ->whereExists(function ($query) {
-                        $query->select(DB::raw(1))
-                            ->from('invTypeMaterials')
-                            ->whereColumn('invTypeMaterials.typeID', 'pc.type_id');
-                    })
-                    ->distinct()
-                    ->count('pc.type_id');
-                $unpricedMessage = 'Ore types mined in the last 30 days that the price provider has no price for, so they are valued at nothing';
-            } else {
-                $unpricedCount = DB::table('invTypeMaterials as m')
-                    ->whereIn('m.typeID', function ($query) use ($since) {
-                        $query->select('type_id')
-                            ->from('mining_ledger')
-                            ->where('date', '>=', $since)
-                            ->whereNull('deleted_at');
-                    })
-                    ->leftJoin('mining_price_cache as pc', 'pc.type_id', '=', 'm.materialTypeID')
-                    ->where(function ($query) {
-                        $query->whereNull('pc.type_id')
-                            ->orWhere(function ($zero) {
-                                $zero->where('pc.sell_price', '<=', 0)
-                                    ->where('pc.buy_price', '<=', 0)
-                                    ->where('pc.average_price', '<=', 0);
-                            });
-                    })
-                    ->distinct()
-                    ->count('m.materialTypeID');
-                $unpricedMessage = 'Refined materials that ore mined in the last 30 days breaks down into have no price, so that ore is valued short';
-            }
+            $unpricedCount = DB::table('invTypeMaterials as m')
+                ->whereIn('m.typeID', function ($query) use ($since) {
+                    $query->select('type_id')
+                        ->from('mining_ledger')
+                        ->where('date', '>=', $since)
+                        ->whereNull('deleted_at');
+                })
+                ->leftJoin('mining_price_cache as pc', 'pc.type_id', '=', 'm.materialTypeID')
+                ->where(function ($query) {
+                    $query->whereNull('pc.type_id')
+                        ->orWhere(function ($zero) {
+                            $zero->where('pc.sell_price', '<=', 0)
+                                ->where('pc.buy_price', '<=', 0)
+                                ->where('pc.average_price', '<=', 0);
+                        });
+                })
+                ->distinct()
+                ->count('m.materialTypeID');
+            $unpricedMessage = 'Refined materials that ore mined in the last 30 days breaks down into have no price, so that ore is valued short';
 
             if ($unpricedCount > 0) {
                 $issues[] = [
@@ -3408,8 +3239,6 @@ class DiagnosticController extends Controller
             // Load settings
             $pricingSettings = $this->settingsService->getPricingSettings();
             $generalSettings = $this->settingsService->getGeneralSettings();
-            $taxRates = $this->settingsService->getTaxRates();
-
             $steps = [];
 
             // Step 1: Ore identification
@@ -3433,36 +3262,50 @@ class DiagnosticController extends Controller
                 'result' => [
                     'price_provider' => $pricingSettings['price_provider'] ?? 'seat',
                     'price_type' => $pricingSettings['price_type'] ?? 'sell',
-                    'use_refined_value' => $pricingSettings['use_refined_value'] ?? false,
                     'refining_efficiency' => $pricingSettings['refining_efficiency'] ?? 87.5,
-                    'valuation_method' => $generalSettings['ore_valuation_method'] ?? 'mineral_price',
+                    'valuation_method' => $this->valuationService->valuationMethodFor(),
                 ],
             ];
 
-            // Step 3: Price fetch
-            $unitPrice = 0;
+            // Step 3: the price, asked for now, and who gave it. The ledger
+            // reads its prices from the price cache, so the cached one is
+            // listed beside it rather than passed off as the source.
+            $unitPrice = 0.0;
             $priceSource = 'none';
+            $standIn = null;
             try {
-                $unitPrice = $this->priceService->getPrice($typeId);
-                $priceSource = ($unitPrice && $unitPrice > 0) ? 'price_provider' : 'none';
-
-                // Check if from cache
-                $cacheEntry = MiningPriceCache::where('type_id', $typeId)->first();
-                if ($cacheEntry) {
-                    $priceSource = 'cache (age: ' . $cacheEntry->cached_at->diffForHumans() . ')';
+                $unitPrice = (float) ($this->priceService->getPrice($typeId) ?? 0);
+                $priceSource = $this->priceSourceFor($typeId, $unitPrice, $pricingSettings);
+                if ($this->priceService->lastFetchStoodIn()) {
+                    $standIn = $this->priceService->standInNotice();
                 }
             } catch (\Exception $e) {
                 $priceSource = 'error: ' . $e->getMessage();
             }
 
+            $cacheEntry = MiningPriceCache::where('type_id', $typeId)
+                ->where('region_id', (int) ($generalSettings['default_region_id'] ?? PriceProviderService::DEFAULT_REGION_ID))
+                ->latest('cached_at')
+                ->first();
+            $cachedPrice = $cacheEntry
+                ? (float) $cacheEntry->{PriceProviderService::cachedPriceColumn($pricingSettings['price_type'] ?? 'sell')}
+                : 0.0;
+
+            $priceResult = [
+                'unit_price' => round($unitPrice, 2),
+                'price_source' => $priceSource,
+            ];
+            if ($standIn !== null) {
+                $priceResult['provider_status'] = $standIn;
+            }
+            $priceResult['cached_price'] = $cachedPrice > 0
+                ? number_format($cachedPrice, 2) . ' ISK' . ($cacheEntry->cached_at ? ', saved ' . $cacheEntry->cached_at->diffForHumans() : '')
+                : 'none saved';
+
             $steps[] = [
                 'step' => 3,
                 'action' => 'Price Fetch',
-                'result' => [
-                    'unit_price' => round($unitPrice ?? 0, 2),
-                    'price_source' => $priceSource,
-                    'cache_hit' => MiningPriceCache::where('type_id', $typeId)->exists(),
-                ],
+                'result' => $priceResult,
             ];
 
             // Step 4: Value calculation
@@ -3478,34 +3321,47 @@ class DiagnosticController extends Controller
                 ],
             ];
 
-            // Step 5: Tax rate determination
-            $taxRate = 0;
-            $taxRateSource = '';
-            if ($isMoonOre && $rarity) {
-                $taxRate = $taxRates['moon_ore'][$rarity] ?? 0;
-                $taxRateSource = "moon_ore.{$rarity}";
-            } elseif ($isIce) {
-                $taxRate = $taxRates['ice'] ?? 0;
-                $taxRateSource = 'ice';
-            } elseif ($isGas) {
-                $taxRate = $taxRates['gas'] ?? 0;
-                $taxRateSource = 'gas';
-            } elseif ($isRegularOre) {
-                $taxRate = $taxRates['ore'] ?? 0;
-                $taxRateSource = 'ore';
-            }
+            // Step 5: what each tax profile charges on it. The figure up top is
+            // the Moon Owner's, which taxes its members at its refineries.
+            $rateKey = $isMoonOre && $rarity ? "moon_ore.{$rarity}" : ($isIce ? 'ice' : ($isGas ? 'gas' : ($isRegularOre ? 'ore' : null)));
+            $moonOwner = (int) $this->settingsService->getSettingForCorporation('general.moon_owner_corporation_id', null) ?: null;
+            $profiles = $this->settingsService->taxProfiles();
+            $configured = count($profiles) > 1;
+            $headline = in_array($moonOwner, $profiles, true) ? $moonOwner : null;
+            $tickers = DB::table('corporation_infos')->whereIn('corporation_id', array_filter($profiles))->pluck('ticker', 'corporation_id');
 
-            $taxAmount = round($totalValue * ($taxRate / 100), 2);
+            $taxRate = 0;
+            $taxAmount = 0;
+            $byProfile = ['rate' => $rateKey ?? 'none, as the ore is not in a taxed category'];
+            foreach ($profiles as $profile) {
+                $selector = $this->settingsService->taxSelectorFor($profile);
+                $rate = $rateKey === null ? 0.0 : (float) data_get($this->settingsService->taxRatesFor($profile), $rateKey, 0);
+
+                if ($rateKey === null) {
+                    $taxed = false;
+                } elseif ($isMoonOre) {
+                    $taxed = empty($selector['no_moon_ore']) && (!empty($selector['only_corp_moon_ore']) || ($selector['all_moon_ore'] ?? true));
+                } else {
+                    // Non-members' own mining is never taxed.
+                    $taxed = !($profile === null && $configured) && !empty($selector[$rateKey]);
+                }
+
+                $amount = $taxed ? round($totalValue * ($rate / 100), 2) : 0;
+                $name = $profile === null ? 'Global' : (isset($tickers[$profile]) ? "[{$tickers[$profile]}]" : "Corporation {$profile}");
+                $byProfile[$name . ($profile === $headline ? ' (shown above)' : '')] = $taxed
+                    ? "{$rate}% = " . number_format($amount, 2) . ' ISK'
+                    : 'not taxed';
+
+                if ($profile === $headline) {
+                    $taxRate = $taxed ? $rate : 0;
+                    $taxAmount = $amount;
+                }
+            }
 
             $steps[] = [
                 'step' => 5,
-                'action' => 'Tax Calculation',
-                'result' => [
-                    'tax_rate' => $taxRate,
-                    'tax_rate_source' => $taxRateSource,
-                    'tax_amount' => $taxAmount,
-                    'formula' => "total_value ({$totalValue}) x tax_rate ({$taxRate}%)",
-                ],
+                'action' => 'Tax by Profile',
+                'result' => $byProfile,
             ];
 
             // Step 6: Price modifier (if applicable)
@@ -3559,6 +3415,45 @@ class DiagnosticController extends Controller
                 ],
             ], 500);
         }
+    }
+
+    /**
+     * Who gave the price service's last fetch its price for this type: the
+     * provider, the provider at Jita, the fallback provider standing in, a
+     * cached price kept while the provider is down, or SeAT's own price.
+     */
+    protected function priceSourceFor(int $typeId, float $price, array $pricingSettings): string
+    {
+        $labels = PriceProviderService::PROVIDER_LABELS;
+        $provider = $labels[$pricingSettings['price_provider'] ?? ''] ?? $labels[PriceProviderService::PROVIDER_SEAT];
+        $among = fn (array $typeIds) => in_array($typeId, array_map('intval', $typeIds), true);
+
+        if ($this->priceService->lastFetchStoodIn()) {
+            if ($among($this->priceService->lastKeptTypeIds())) {
+                return "cached price, kept while {$provider} is not answering";
+            }
+            if ($among($this->priceService->lastSeatStandInTypeIds())) {
+                return "SeAT's market price, as {$provider} is not answering and nothing had priced it before";
+            }
+            $fallback = $this->priceService->lastFallbackProvider();
+            if ($price > 0 && $fallback !== null) {
+                return ($labels[$fallback] ?? $fallback) . ", standing in while {$provider} is not answering";
+            }
+
+            return "none: {$provider} is not answering and nothing could stand in";
+        }
+
+        if ($price <= 0) {
+            return "none: {$provider} has no price for it";
+        }
+
+        if ($among($this->priceService->getLastJitaFallbackTypeIds())) {
+            $market = $this->priceService->getLastFallbackSummary()['configured_market'] ?? null;
+
+            return "{$provider} at Jita, as " . ($market ? PriceProviderService::marketLabel($market) : 'its market') . ' had no price for it';
+        }
+
+        return "{$provider}, asked just now";
     }
 
     /**
@@ -3621,43 +3516,51 @@ class DiagnosticController extends Controller
 
     private function systemStatusMultiCorp(): array
     {
-        $corpStats = [];
-        $allCorps = $this->settingsService->getAllCorporations();
-        $corpStats['configured_corporations'] = $allCorps->count();
+        $moved = $this->settingsService->usesTaxProfiles();
+        $moonOwner = (int) $this->settingsService->getSettingForCorporation('general.moon_owner_corporation_id', null) ?: null;
+        $configured = $moved ? $this->settingsService->getHomeCorporationIds() : [];
+        $names = DB::table('corporation_infos')
+            ->whereIn('corporation_id', array_filter(array_merge($configured, [$moonOwner])))
+            ->get(['corporation_id', 'name', 'ticker'])
+            ->keyBy('corporation_id');
+        $label = fn (int $id) => isset($names[$id]) ? "[{$names[$id]->ticker}] {$names[$id]->name}" : "Corporation {$id}";
 
-        $moonOwner = $this->settingsService->getSetting('general.moon_owner_corporation_id');
-        $corpStats['moon_owner_corporation_id'] = $moonOwner;
+        // Global, the Moon Owner, then the rest by name, as on the Tax
+        // profiles page.
+        $ordered = $configured;
+        usort($ordered, fn (int $a, int $b) => ($a === $moonOwner ? 0 : 1) <=> ($b === $moonOwner ? 0 : 1)
+            ?: strcasecmp($names[$a]->name ?? '', $names[$b]->name ?? ''));
 
-        $corpDetails = [];
-        foreach ($allCorps as $corp) {
-            $corpId = $corp->corporation_id;
-            $this->settingsService->setActiveCorporation((int) $corpId);
-            $taxRates = $this->settingsService->getTaxRatesForCorporation($corpId);
-            $taxSelector = $this->settingsService->getTaxSelector();
+        $profiles = [];
+        foreach (array_merge([null], $ordered) as $profile) {
+            $taxRates = $this->settingsService->taxRatesFor($profile);
+            $taxSelector = $this->settingsService->taxSelectorFor($profile);
 
-            $corpDetails[] = [
-                'corporation_id' => $corpId,
-                'corporation_name' => $corp->name ?? 'Unknown',
-                'has_ore_rate' => isset($taxRates['ore']) && $taxRates['ore'] > 0,
-                'has_moon_rates' => isset($taxRates['moon_ore']) && !empty($taxRates['moon_ore']),
-                'all_moon_ore' => $taxSelector['all_moon_ore'] ?? false,
-                'only_corp_moon_ore' => $taxSelector['only_corp_moon_ore'] ?? false,
-                'no_moon_ore' => $taxSelector['no_moon_ore'] ?? false,
-                'ore_taxed' => $taxSelector['ore'] ?? true,
-                'ice_taxed' => $taxSelector['ice'] ?? true,
-                'gas_taxed' => $taxSelector['gas'] ?? false,
-                'abyssal_taxed' => $taxSelector['abyssal_ore'] ?? false,
-                'triglavian_taxed' => $taxSelector['triglavian_ore'] ?? false,
-                'ore_rate' => $taxRates['ore'] ?? 0,
+            $profiles[] = [
+                'name' => $profile === null ? 'Global' : $label($profile),
+                'taxes' => $profile === null ? ($configured ? 'Non-members' : 'Everyone') : ($profile === $moonOwner ? 'Moon Owner members' : 'Its members'),
+                // Non-members' own mining is never taxed, only their mining
+                // at our refineries.
+                'others_unused' => $profile === null && !empty($configured),
+                'moon_rates' => collect(['r4', 'r8', 'r16', 'r32', 'r64'])->map(fn (string $rarity) => (float) ($taxRates['moon_ore'][$rarity] ?? 0))->all(),
+                'moon_choice' => !empty($taxSelector['no_moon_ore']) ? 'none' : (!empty($taxSelector['only_corp_moon_ore']) ? 'ours' : (($taxSelector['all_moon_ore'] ?? true) ? 'all' : 'none')),
+                'ore' => ['taxed' => (bool) ($taxSelector['ore'] ?? true), 'rate' => (float) ($taxRates['ore'] ?? 0)],
+                'ice' => ['taxed' => (bool) ($taxSelector['ice'] ?? true), 'rate' => (float) ($taxRates['ice'] ?? 0)],
+                'gas' => ['taxed' => (bool) ($taxSelector['gas'] ?? false), 'rate' => (float) ($taxRates['gas'] ?? 0)],
+                'abyssal' => ['taxed' => (bool) ($taxSelector['abyssal_ore'] ?? false), 'rate' => (float) ($taxRates['abyssal_ore'] ?? 0)],
+                'triglavian' => ['taxed' => (bool) ($taxSelector['triglavian_ore'] ?? false), 'rate' => (float) ($taxRates['triglavian_ore'] ?? 0)],
             ];
         }
-        $this->settingsService->setActiveCorporation(null);
 
-        $corpStats['corporation_details'] = $corpDetails;
-        $corpStats['status'] = $allCorps->count() > 0 || $moonOwner ? 'healthy' : 'warning';
-        $corpStats['manager_core_installed'] = \MiningManager\Services\Pricing\PriceProviderService::isManagerCoreInstalled();
-
-        return $corpStats;
+        return [
+            'moved' => $moved,
+            'moved_at' => $moved ? $this->settingsService->getSettingForCorporation(\MiningManager\Services\Configuration\SettingsTransfer::DONE_KEY, null) : null,
+            'configured_corporations' => count($configured),
+            'moon_owner' => $moonOwner ? $label($moonOwner) : null,
+            'profiles' => $profiles,
+            'status' => $moved && $moonOwner ? 'healthy' : 'warning',
+            'manager_core_installed' => \MiningManager\Services\Pricing\PriceProviderService::isManagerCoreInstalled(),
+        ];
     }
 
     private function systemStatusPriceCache(): array
@@ -3934,6 +3837,7 @@ class DiagnosticController extends Controller
             'event_created' => $ns->sendEventCreated($this->buildFakeMiningEvent($data)),
             'event_started' => $ns->sendEventStarted($this->buildFakeMiningEvent($data), []),
             'event_completed' => $ns->sendEventCompleted($this->buildFakeMiningEvent($data), []),
+            'event_review' => $ns->sendEventReview($this->buildFakeMiningEvent($data), 'awaiting_approval', ['by' => 'Test Moon Manager']),
             'price_provider' => $ns->sendPriceProviderStatus(array_merge([
                 'provider' => 'Janice',
                 'failing' => true,
@@ -4092,6 +3996,7 @@ class DiagnosticController extends Controller
             'corporation_id' => (int) $this->settingsService->getSetting('general.moon_owner_corporation_id', 0),
             'status' => 'active',
             'total_mined' => (float) ($data['total_mined'] ?? 150000000),
+            'total_mined_value' => (float) ($data['total_mined'] ?? 150000000),
             'participant_count' => (int) ($data['participants'] ?? 12),
             'start_time' => \Carbon\Carbon::parse($data['start_date'] ?? now()),
             'end_time' => \Carbon\Carbon::parse($data['end_date'] ?? now()->addHours(4)),
@@ -4285,6 +4190,7 @@ class DiagnosticController extends Controller
             'event_created' => 'Mining Event Created',
             'event_started' => 'Mining Event Started',
             'event_completed' => 'Mining Event Completed',
+            'event_review' => 'Event Review',
             'price_provider' => 'Price Provider Trouble',
             'moon_scan_missing' => 'Moon Scan Missing (moons with no scan)',
             'moon_ready' => 'Moon Extraction Ready',
@@ -4464,6 +4370,7 @@ class DiagnosticController extends Controller
             'event_created' => NotificationService::TYPE_EVENT_CREATED,
             'event_started' => NotificationService::TYPE_EVENT_STARTED,
             'event_completed' => NotificationService::TYPE_EVENT_COMPLETED,
+            'event_review' => NotificationService::TYPE_EVENT_REVIEW,
             'moon_ready' => NotificationService::TYPE_MOON_READY,
             'extraction_started' => NotificationService::TYPE_EXTRACTION_STARTED,
             'next_extraction_planned' => NotificationService::TYPE_NEXT_EXTRACTION_PLANNED,
@@ -4678,6 +4585,7 @@ class DiagnosticController extends Controller
                 'event_created' => NotificationService::TYPE_EVENT_CREATED,
                 'event_started' => NotificationService::TYPE_EVENT_STARTED,
                 'event_completed' => NotificationService::TYPE_EVENT_COMPLETED,
+                'event_review' => NotificationService::TYPE_EVENT_REVIEW,
                 'moon_ready' => NotificationService::TYPE_MOON_READY,
                 'extraction_started' => NotificationService::TYPE_EXTRACTION_STARTED,
                 'next_extraction_planned' => NotificationService::TYPE_NEXT_EXTRACTION_PLANNED,
@@ -4711,7 +4619,7 @@ class DiagnosticController extends Controller
 
         // Check Discord pinging (tax types only — moon notifications don't ping individuals)
         $isTaxType = in_array($type, ['tax_reminder', 'tax_invoice', 'tax_overdue']);
-        $pingingEnabled = $settings['discord_pinging_enabled'] ?? false;
+        $pingingEnabled = (bool) ($settings['type_settings'][$type]['ping_user'] ?? false);
         $doPing = ($testPing || $pingingEnabled) && $isTaxType;
 
         if ($doPing) {
@@ -4745,7 +4653,7 @@ class DiagnosticController extends Controller
 
                     if ($discordId) {
                         $this->addLog($logs, 'ok', "Resolved Discord user ID: {$discordId}");
-                        $showAmount = $settings['discord_ping_show_amount'] ?? true;
+                        $showAmount = $settings['type_settings'][$type]['show_amount'] ?? true;
                         $mention = "<@{$discordId}>";
 
                         // Use production-matching action messages
@@ -4961,6 +4869,7 @@ class DiagnosticController extends Controller
                 'event_created' => NotificationService::TYPE_EVENT_CREATED,
                 'event_started' => NotificationService::TYPE_EVENT_STARTED,
                 'event_completed' => NotificationService::TYPE_EVENT_COMPLETED,
+                'event_review' => NotificationService::TYPE_EVENT_REVIEW,
                 'moon_ready' => NotificationService::TYPE_MOON_READY,
                 'extraction_started' => NotificationService::TYPE_EXTRACTION_STARTED,
                 'next_extraction_planned' => NotificationService::TYPE_NEXT_EXTRACTION_PLANNED,
@@ -5013,7 +4922,7 @@ class DiagnosticController extends Controller
         $daysOverdue = $request->input('test_days_overdue', 3);
 
         // Get show_amount setting and URLs to match production notifications
-        $showAmount = (bool) $this->settingsService->getSetting('notifications.discord_ping_show_amount', true);
+        $showAmount = (bool) ($this->settingsService->getNotificationSettings()['type_settings']['tax_reminder']['show_amount'] ?? true);
         $baseUrl = rtrim(config('app.url', ''), '/');
         $myTaxesUrl = $baseUrl . '/mining-manager/tax/my-taxes';
         $helpUrl = $baseUrl . '/mining-manager/help#how-to-pay';
@@ -5043,7 +4952,6 @@ class DiagnosticController extends Controller
                 'due_date' => $dueDate,
                 'corp_name' => $corpName,
                 'wallet_division' => $this->settingsService->getWalletDivisionName(),
-                'tax_code_prefix' => $this->settingsService->getSetting('tax_rates.tax_code_prefix', 'TAX-'),
                 'my_taxes_url' => $myTaxesUrl,
                 'help_url' => $helpUrl,
                 'collect_url' => $baseUrl . '/mining-manager/help#how-to-collect',
@@ -5086,6 +4994,19 @@ class DiagnosticController extends Controller
                 'tax_modifier' => 1.0,
                 'tax_modifier_label' => 'Normal (100%)',
                 'location' => $request->input('test_location', 'Jita'),
+            ],
+            'event_review' => [
+                'event_id' => 99999,
+                'event_name' => $request->input('test_event_name', 'Test Mining Event'),
+                'review' => 'awaiting_approval',
+                'by' => 'Test Moon Manager',
+                'when' => now()->addDay()->format('D j M') . ' to ' . now()->addDays(3)->format('D j M') . ', whole EVE days',
+                'location' => $request->input('test_location', 'Jita'),
+                'ore' => 'R4 Ubiquitous, R8 Common, R16 Uncommon, R32 Rare, R64 Exceptional',
+                'tax_modifier_label' => 'Tax Free',
+                'who' => 'Everyone',
+                'sign_up' => 'Everyone who mines within the rules gets the rate',
+                'description' => 'A moon manager set up this event. It is not announced and counts nothing until a director approves it on the event page. Not approved before it starts, it does not run.',
             ],
             'moon_ready' => [
                 'structure_id' => $request->input('test_structure_id', 1000000000001),

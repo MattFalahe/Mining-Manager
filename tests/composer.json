@@ -1,0 +1,12 @@
+{
+    "name": "mattfalahe/mining-manager-tests",
+    "description": "Runs Mining Manager's tests on their own, with no SeAT and no database",
+    "license": "GPL-2.0-or-later",
+    "require-dev": {
+        "nesbot/carbon": "^2.72",
+        "phpunit/phpunit": "^10.5"
+    },
+    "config": {
+        "sort-packages": true
+    }
+}

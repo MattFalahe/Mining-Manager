@@ -4,10 +4,13 @@ namespace MiningManager\Console\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Cache;
+use MiningManager\Models\EventHistory;
 use MiningManager\Models\MiningEvent;
 use MiningManager\Services\Events\EventManagementService;
 use MiningManager\Services\Events\EventMiningAggregator;
 use MiningManager\Services\Events\EventTrackingService;
+use MiningManager\Services\Ledger\PersonalMiningReconciler;
+use MiningManager\Services\Notification\NotificationService;
 use Carbon\Carbon;
 
 class UpdateMiningEventsCommand extends Command
@@ -76,11 +79,22 @@ class UpdateMiningEventsCommand extends Command
             $managementService = app(EventManagementService::class);
             $statusResult = $managementService->updateEventStatuses();
 
+            if (($statusResult['applied'] ?? 0) > 0) {
+                $this->info("Applied {$statusResult['applied']} event(s) set up for days that had passed");
+            }
+            if (($statusResult['lapsed'] ?? 0) > 0) {
+                $this->info("Declined {$statusResult['lapsed']} event(s) nobody approved before they started");
+            }
             if ($statusResult['started'] > 0) {
                 $this->info("Auto-started {$statusResult['started']} event(s)");
             }
             if ($statusResult['completed'] > 0) {
                 $this->info("Auto-completed {$statusResult['completed']} event(s)");
+            }
+
+            $posted = $this->postFinalResults();
+            if ($posted > 0) {
+                $this->info("Posted the final results of {$posted} event(s)");
             }
 
             // Build query for participant tracking
@@ -98,9 +112,16 @@ class UpdateMiningEventsCommand extends Command
                     });
                 $this->info("Updating active events");
             } else {
-                // Update events from last 30 days by default
-                $query->where('created_at', '>=', Carbon::now()->subDays(30));
-                $this->info("Updating events from last 30 days");
+                // Every event that can still change: active ones, whenever
+                // they were made, those that ended in the last few days, and
+                // anything made in the last 30 days.
+                $query->where(function ($q) {
+                    $q->where('status', 'active')
+                        ->orWhere(fn ($ended) => $ended->where('status', 'completed')
+                            ->where('end_time', '>=', Carbon::now()->subDays(PersonalMiningReconciler::DEFAULT_DAYS)))
+                        ->orWhere('created_at', '>=', Carbon::now()->subDays(30));
+                });
+                $this->info("Updating active, recently ended and recently made events");
             }
 
             $events = $query->get();
@@ -121,16 +142,19 @@ class UpdateMiningEventsCommand extends Command
                 try {
                     $this->line("Processing event: {$event->name}");
 
-                    // For active events, re-run the aggregator so any mining
-                    // activity that happened since the last tick gets materialised
-                    // into event_mining_records. Completed events are frozen —
-                    // their records don't change unless scope is edited (handled
-                    // by the MiningEvent saved() hook).
-                    if ($event->status === 'active') {
+                    // Gather what arrived since the last tick into
+                    // event_mining_records, while the event is active and for
+                    // a few days after it ends: a refinery reports a day's
+                    // mining only once the day is over, so the last day of an
+                    // event always arrives after it has ended. An event set
+                    // up after its days had passed is gathered while it is
+                    // held, so its page shows what it will count before it
+                    // applies. Older events only change when their scope is
+                    // edited (the MiningEvent saved() hook).
+                    if ($event->status === 'active' || $event->status === MiningEvent::STATUS_HELD || $this->stillReporting($event) || $this->neverGathered($event)) {
                         $agg = $aggregator->aggregate($event);
-                        if (($agg['created'] ?? 0) > 0) {
-                            $this->line("  → aggregated {$agg['created']} new record(s)"
-                                . (($agg['updated'] ?? 0) > 0 ? ", refreshed {$agg['updated']}" : ''));
+                        if (($agg['created'] ?? 0) > 0 || ($agg['updated'] ?? 0) > 0) {
+                            $this->line("  → aggregated {$agg['created']} new record(s), refreshed {$agg['updated']}, days built again {$agg['days']}");
                         }
                     }
 
@@ -158,5 +182,80 @@ class UpdateMiningEventsCommand extends Command
         } finally {
             $lock->release();
         }
+    }
+
+    /**
+     * Whether a finished event's mining can still be arriving: it ended in
+     * the last few days, the window the plugin gives late refinery reports
+     * everywhere else.
+     */
+    private function stillReporting(MiningEvent $event): bool
+    {
+        return $event->status === 'completed'
+            && $event->end_time !== null
+            && $event->end_time->gte(Carbon::now()->subDays(PersonalMiningReconciler::DEFAULT_DAYS));
+    }
+
+    /**
+     * Whether a finished event has never been gathered: one marked completed
+     * by hand before its first tick, or whose gathering failed as it
+     * completed. Every tick stamps last_updated on the events it looks at, so
+     * this holds once.
+     */
+    private function neverGathered(MiningEvent $event): bool
+    {
+        return $event->status === 'completed' && $event->last_updated === null;
+    }
+
+    /**
+     * Post each event's final results once refinery reports for its last day
+     * can no longer come in, to wherever Event Completed goes. Only an event
+     * whose reporting window closed in the last two days is posted, so the
+     * update that brings this in posts nothing for events long over.
+     *
+     * @return int events posted
+     */
+    private function postFinalResults(): int
+    {
+        if (!MiningEvent::hasRules()) {
+            return 0;
+        }
+
+        $closed = Carbon::now()->subDays(PersonalMiningReconciler::DEFAULT_DAYS);
+        $events = MiningEvent::where('status', 'completed')
+            ->whereNull('results_sent_at')
+            ->whereBetween('end_time', [$closed->copy()->subDays(2), $closed])
+            ->get();
+
+        $posted = 0;
+
+        foreach ($events as $event) {
+            // Claimed first, so a run that overlaps this one cannot post it
+            // too. The figures are final now, so the event locks with it.
+            $claim = ['results_sent_at' => Carbon::now()];
+            if (MiningEvent::hasGovernance() && $event->locked_at === null) {
+                $claim['locked_at'] = Carbon::now();
+            }
+
+            $claimed = MiningEvent::where('id', $event->id)
+                ->whereNull('results_sent_at')
+                ->update($claim);
+
+            if ($claimed === 0) {
+                continue;
+            }
+
+            EventHistory::record($event, EventHistory::RESULTS_POSTED);
+
+            try {
+                $this->eventService->updateEventTracking($event->fresh());
+                app(NotificationService::class)->sendEventResults($event->fresh());
+                $posted++;
+            } catch (\Throwable $e) {
+                $this->error("Could not post the results of event '{$event->name}': {$e->getMessage()}");
+            }
+        }
+
+        return $posted;
     }
 }

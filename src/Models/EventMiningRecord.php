@@ -13,8 +13,11 @@ use Seat\Eveapi\Models\Sde\MapDenormalize;
  *
  * A row is written here by EventMiningAggregator when mining activity
  * passes ALL of the event's filters: corporation, location (system /
- * constellation / region), ore category, and time window. The table
- * is the canonical answer to "does this mining count for this event?"
+ * constellation / region, or the refineries it is narrowed to), ore
+ * category, and time window. The table is the canonical answer to "does
+ * this mining count for this event?", and `qualifies` to "does it get the
+ * event's rate?": on an event only for those who signed up, anyone else's
+ * mining is kept for the event page but pays the normal rate.
  *
  * See Database/migrations/2026_01_01_000005_create_event_mining_records.php
  * for column semantics.
@@ -45,6 +48,7 @@ class EventMiningRecord extends Model
         'source',
         'observer_id',
         'recorded_at',
+        'qualifies',
     ];
 
     /**
@@ -63,6 +67,7 @@ class EventMiningRecord extends Model
         'value_isk' => 'decimal:2',
         'observer_id' => 'integer',
         'recorded_at' => 'datetime',
+        'qualifies' => 'boolean',
     ];
 
     /**

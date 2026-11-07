@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
 use MiningManager\Http\Controllers\Concerns\GuardsDataExport;
 use MiningManager\Services\Analytics\ChartFilter;
+use MiningManager\Services\Analytics\Players;
 use MiningManager\Services\Tax\Concerns\ResolvesCharacterOwnership;
 use MiningManager\Services\Tax\ClassificationEpoch;
 
@@ -147,7 +148,7 @@ class AnalyticsController extends Controller
         try {
             $features = app(\MiningManager\Services\Configuration\SettingsManagerService::class)->getFeatureFlags();
             if (!($features['enable_analytics'] ?? true)) {
-                return redirect()->route('mining-manager.dashboard.index')
+                return redirect()->route('mining-manager.dashboard')
                     ->with('warning', 'This feature is currently disabled. Enable it in Settings > Features.');
             }
 
@@ -178,7 +179,7 @@ class AnalyticsController extends Controller
             $analytics = [
                 'total_volume' => $this->analyticsService->getTotalVolume($startDate, $endDate, $corporationId),
                 'total_value' => $this->analyticsService->getTotalValue($startDate, $endDate, $corporationId),
-                'unique_miners' => $this->analyticsService->getUniqueMinerCount($startDate, $endDate, $corporationId),
+                'unique_miners' => $this->analyticsService->getUniquePlayerCount($startDate, $endDate, $corporationId),
                 'top_miners' => $topMiners,
                 'ore_breakdown' => $this->analyticsService->getOreBreakdown($startDate, $endDate, $oreCategory, $corporationId),
                 'system_breakdown' => $this->analyticsService->getSystemBreakdown($startDate, $endDate, $corporationId),
@@ -434,7 +435,7 @@ class AnalyticsController extends Controller
             'total_volume' => $this->analyticsService->getTotalVolume($startDate, $endDate, $corporationId),
             'total_volume_m3' => $this->analyticsService->getTotalVolumeM3($startDate, $endDate, $corporationId),
             'total_value' => $this->analyticsService->getTotalValue($startDate, $endDate, $corporationId),
-            'unique_miners' => $this->analyticsService->getUniqueMinerCount($startDate, $endDate, $corporationId),
+            'unique_miners' => $this->analyticsService->getUniquePlayerCount($startDate, $endDate, $corporationId),
             'ore_breakdown' => $this->analyticsService->getOreBreakdown($startDate, $endDate, null, $corporationId),
             'system_breakdown' => $this->analyticsService->getSystemBreakdown($startDate, $endDate, $corporationId),
         ];
@@ -654,15 +655,21 @@ class AnalyticsController extends Controller
 
         // Get mining activity by system
         $query = MiningLedger::whereBetween('date', [$startDate, $endDate])
-            ->whereNotNull('solar_system_id')
-            ->selectRaw('solar_system_id, SUM(quantity) as total_quantity, SUM(total_value) as total_value, COUNT(DISTINCT character_id) as unique_miners, COUNT(DISTINCT date) as days_active')
-            ->groupBy('solar_system_id')
-            ->orderByDesc('total_value')
-            ->limit($limit);
+            ->whereNotNull('solar_system_id');
         if ($corpCharIds !== null) {
             $query->whereIn('character_id', $corpCharIds);
         }
-        $systemStats = $query->get()
+        $players = Players::perGroup(
+            (clone $query)->toBase()->select('solar_system_id', 'character_id')->distinct()->get(),
+            fn ($row) => $row->solar_system_id
+        );
+        $systemStats = $query
+            ->selectRaw('solar_system_id, SUM(quantity) as total_quantity, SUM(total_value) as total_value, COUNT(DISTINCT date) as days_active')
+            ->groupBy('solar_system_id')
+            ->orderByDesc('total_value')
+            ->limit($limit)
+            ->get()
+            ->each(fn ($stat) => $stat->unique_miners = $players[(string) $stat->solar_system_id] ?? 0)
             ->map(function($stat) {
                 // Get system name from SeAT's database
                 $systemName = \DB::table('solar_systems')
@@ -712,15 +719,21 @@ class AnalyticsController extends Controller
             : null;
 
         // Get ore statistics by value
-        $queryByVal = MiningLedger::whereBetween('date', [$startDate, $endDate])
-            ->selectRaw('type_id, SUM(quantity) as total_quantity, SUM(total_value) as total_value, COUNT(DISTINCT character_id) as miners_count')
-            ->groupBy('type_id')
-            ->orderByDesc('total_value')
-            ->limit($limit);
+        $queryByVal = MiningLedger::whereBetween('date', [$startDate, $endDate]);
         if ($corpCharIds !== null) {
             $queryByVal->whereIn('character_id', $corpCharIds);
         }
-        $oreStats = $queryByVal->get()
+        $players = Players::perGroup(
+            (clone $queryByVal)->toBase()->select('type_id', 'character_id')->distinct()->get(),
+            fn ($row) => $row->type_id
+        );
+        $oreStats = $queryByVal
+            ->selectRaw('type_id, SUM(quantity) as total_quantity, SUM(total_value) as total_value')
+            ->groupBy('type_id')
+            ->orderByDesc('total_value')
+            ->limit($limit)
+            ->get()
+            ->each(fn ($stat) => $stat->miners_count = $players[(string) $stat->type_id] ?? 0)
             ->map(function($stat) {
                 $oreName = \DB::table('invTypes')
                     ->where('typeID', $stat->type_id)
@@ -934,7 +947,7 @@ class AnalyticsController extends Controller
                     return response()->json([
                         'total_volume' => $this->analyticsService->getTotalVolume($startDate, $endDate, $corporationId),
                         'total_value' => $this->analyticsService->getTotalValue($startDate, $endDate, $corporationId),
-                        'unique_miners' => $this->analyticsService->getUniqueMinerCount($startDate, $endDate, $corporationId),
+                        'unique_miners' => $this->analyticsService->getUniquePlayerCount($startDate, $endDate, $corporationId),
                     ]);
             }
         } catch (\Exception $e) {
@@ -1005,19 +1018,48 @@ class AnalyticsController extends Controller
     }
 
     /**
-     * Get detailed comparison between two periods
+     * Rows for the Detailed Comparison table: the top ores and systems by
+     * value, the two periods side by side.
      */
     private function getDetailedComparison($period1, $period2)
     {
-        return [
-            'ore_comparison' => [
-                'period1' => $period1['ore_breakdown']->take(10)->toArray(),
-                'period2' => $period2['ore_breakdown']->take(10)->toArray(),
-            ],
-            'system_comparison' => [
-                'period1' => $period1['system_breakdown']->take(5)->toArray(),
-                'period2' => $period2['system_breakdown']->take(5)->toArray(),
-            ],
-        ];
+        $rows = [];
+
+        foreach ([
+            ['ore_breakdown', 'type_id', 'ore_name', 'ore_type', 10],
+            ['system_breakdown', 'solar_system_id', 'system_name', 'system', 5],
+        ] as [$breakdown, $idKey, $nameKey, $kind, $limit]) {
+            $first = collect($period1[$breakdown])->keyBy($idKey);
+            $second = collect($period2[$breakdown])->keyBy($idKey);
+            $valueIn = fn ($rows, $id) => (float) ($rows[$id]->total_value ?? 0);
+
+            // Ranked by the bigger of the two values, so one mined in only
+            // one of the periods still makes the list.
+            $ids = $first->keys()->merge($second->keys())->unique()
+                ->sortByDesc(fn ($id) => max($valueIn($first, $id), $valueIn($second, $id)))
+                ->take($limit);
+
+            foreach ($ids as $id) {
+                $before = $valueIn($first, $id);
+                $after = $valueIn($second, $id);
+                $diff = $after - $before;
+                $change = $before > 0 ? $diff / $before * 100 : null;
+
+                $rows[] = [
+                    'metric' => trans('mining-manager::analytics.' . $kind) . ': ' . ($first[$id]->{$nameKey} ?? $second[$id]->{$nameKey} ?? 'Unknown'),
+                    'values' => [
+                        number_format($before / 1000000, 2) . 'M ISK',
+                        number_format($after / 1000000, 2) . 'M ISK',
+                    ],
+                    'difference' => ($diff > 0 ? '+' : ($diff < 0 ? '-' : '')) . number_format(abs($diff) / 1000000, 2) . 'M ISK',
+                    'diff_color' => $diff > 0 ? 'success' : ($diff < 0 ? 'danger' : 'muted'),
+                    // No percentage from nothing; the difference says how much.
+                    'change_percent' => $change === null ? '-' : ($change > 0 ? '+' : '') . number_format($change, 1) . '%',
+                    'change_color' => $change === null ? 'secondary' : ($change > 0 ? 'success' : ($change < 0 ? 'danger' : 'secondary')),
+                ];
+            }
+        }
+
+        return $rows;
     }
 }

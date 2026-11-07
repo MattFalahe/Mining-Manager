@@ -3,6 +3,7 @@
 namespace MiningManager\Http\Controllers;
 
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 use Seat\Web\Http\Controllers\Controller;
 use MiningManager\Services\Analytics\ReportGenerationService;
 use MiningManager\Models\MiningReport;
@@ -43,7 +44,7 @@ class ReportController extends Controller
     {
         $features = app(\MiningManager\Services\Configuration\SettingsManagerService::class)->getFeatureFlags();
         if (!($features['enable_reports'] ?? true)) {
-            return redirect()->route('mining-manager.dashboard.index')
+            return redirect()->route('mining-manager.dashboard')
                 ->with('warning', 'This feature is currently disabled. Enable it in Settings > Features.');
         }
 
@@ -55,7 +56,17 @@ class ReportController extends Controller
             $query->where('report_type', $type);
         }
 
-        $reports = $query->orderBy('generated_at', 'desc')->paginate(20);
+        // The search box looks for a date or a type, as it says.
+        $search = trim((string) $request->input('search', ''));
+        if ($search !== '') {
+            $query->where(function ($reports) use ($search) {
+                foreach (['report_type', 'format', 'start_date', 'end_date', 'generated_at'] as $column) {
+                    $reports->orWhere($column, 'like', '%' . $search . '%');
+                }
+            });
+        }
+
+        $reports = $query->orderBy('generated_at', 'desc')->paginate(20)->withQueryString();
 
         return view('mining-manager::reports.index', compact('reports', 'type'));
     }
@@ -433,23 +444,27 @@ class ReportController extends Controller
      */
     public function storeSchedule(Request $request)
     {
-        try {
-            $validated = $request->validate([
-                'name' => 'required|string|max:255',
-                'description' => 'nullable|string|max:1000',
-                'report_type' => 'required|in:daily,weekly,monthly',
-                'format' => 'required|in:json,csv,pdf',
-                'frequency' => 'required|in:daily,weekly,monthly',
-                'run_time' => 'required|date_format:H:i',
-                'is_active' => 'nullable',
-                'send_to_discord' => 'nullable',
-                'webhook_id' => 'nullable|exists:webhook_configurations,id',
-            ]);
+        // A failed check goes back to the page with the reasons, or comes back
+        // as JSON when that is what was asked for.
+        $validated = $request->validate([
+            'name' => 'required|string|max:255',
+            'description' => 'nullable|string|max:1000',
+            // What each run covers: yesterday, the last 7 days or last month.
+            // The form only asks how often it runs, and a run covers that much.
+            'report_type' => 'nullable|in:daily,weekly,monthly',
+            'format' => 'required|in:json,csv,pdf',
+            'frequency' => 'required|in:daily,weekly,monthly',
+            'run_time' => 'required|date_format:H:i',
+            'is_active' => 'nullable',
+            'send_to_discord' => 'nullable',
+            'webhook_id' => 'nullable|exists:webhook_configurations,id',
+        ]);
 
+        try {
             $schedule = ReportSchedule::create([
                 'name' => $validated['name'],
                 'description' => $validated['description'] ?? null,
-                'report_type' => $validated['report_type'],
+                'report_type' => $validated['report_type'] ?? $validated['frequency'],
                 'format' => $validated['format'],
                 'frequency' => $validated['frequency'],
                 'run_time' => $validated['run_time'],
@@ -462,19 +477,28 @@ class ReportController extends Controller
             // Calculate initial next_run
             $schedule->calculateNextRun();
             $schedule->save();
+        } catch (\Exception $e) {
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Error creating schedule: ' . $e->getMessage(),
+                ], 500);
+            }
 
+            return redirect()->back()->withInput()->with('error', 'Error creating schedule: ' . $e->getMessage());
+        }
+
+        // The page's form posts as a browser form, so it gets a page back.
+        if ($request->expectsJson()) {
             return response()->json([
                 'status' => 'success',
                 'message' => 'Report schedule created successfully',
                 'schedule' => $schedule,
             ]);
-
-        } catch (\Exception $e) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Error creating schedule: ' . $e->getMessage(),
-            ], 500);
         }
+
+        return redirect()->route('mining-manager.reports.scheduled')
+            ->with('success', 'Report schedule created successfully');
     }
 
     /**
@@ -620,13 +644,18 @@ class ReportController extends Controller
      * Process export request
      *
      * @param Request $request
-     * @return \Illuminate\Http\JsonResponse
+     * @return \Illuminate\Http\JsonResponse|\Illuminate\Http\RedirectResponse
      */
     public function processExport(Request $request)
     {
         if (!$this->dataExportIsAllowed()) {
             return $this->refuseDataExport($request);
         }
+
+        // Back to the Export page by name, never "back": after a download the
+        // session's previous page is that download, so going back would hand
+        // over the last file again and the message would never be seen.
+        $exportPage = route('mining-manager.reports.export');
 
         try {
             $validated = $request->validate([
@@ -635,7 +664,11 @@ class ReportController extends Controller
                 'start_date' => 'required|date',
                 'end_date' => 'required|date|after:start_date',
             ]);
+        } catch (ValidationException $e) {
+            throw $e->redirectTo($exportPage);
+        }
 
+        try {
             $startDate = Carbon::parse($validated['start_date']);
             $endDate = Carbon::parse($validated['end_date']);
             $exportType = $validated['export_type'];
@@ -644,19 +677,31 @@ class ReportController extends Controller
             // Generate export file
             $exportData = $this->reportService->generateExport($exportType, $startDate, $endDate, $format);
 
-            return response()->json([
-                'status' => 'success',
-                'message' => 'Export generated successfully',
-                'export_id' => $exportData['id'] ?? null,
-                'download_url' => $exportData['url'] ?? null,
-            ]);
-
         } catch (\Exception $e) {
+            $message = 'Error processing export: ' . $e->getMessage();
+
+            if (!$request->expectsJson()) {
+                return redirect()->to($exportPage)->withInput()->with('error', $message);
+            }
+
             return response()->json([
                 'status' => 'error',
-                'message' => 'Error processing export: ' . $e->getMessage(),
+                'message' => $message,
             ], 500);
         }
+
+        // The Export page posts a plain form, so it gets the file itself. A
+        // script asking for JSON gets the link to it.
+        if (!$request->expectsJson()) {
+            return redirect()->to($exportData['url']);
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Export generated successfully',
+            'export_id' => $exportData['id'] ?? null,
+            'download_url' => $exportData['url'] ?? null,
+        ]);
     }
 
     /**

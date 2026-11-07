@@ -4,7 +4,7 @@
 @section('page_header', trans('mining-manager::menu.moon_planner'))
 
 @push('head')
-<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=8">
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=10">
 <link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/vendor/fullcalendar.min.css') }}">
 <style>
     /* Event backgrounds must be set (not just a left border) or FullCalendar's
@@ -89,7 +89,7 @@
             <i class="fas fa-exclamation-triangle mm-note-icon"></i>
             <span style="color:#f3f4f6;">
                 No <strong>Moon Owner Corporation</strong> is configured yet. Set one in
-                <a href="{{ route('mining-manager.settings.index') }}">Settings &rsaquo; General</a>
+                <a href="{{ route('mining-manager.settings.index') }}#setup">Settings &rsaquo; Setup</a>
                 so the planner knows which refineries to schedule.
             </span>
         </div>

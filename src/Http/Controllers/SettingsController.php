@@ -4,8 +4,11 @@ namespace MiningManager\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Seat\Web\Http\Controllers\Controller;
+use MiningManager\Services\Configuration\SettingsCredentials;
 use MiningManager\Services\Configuration\SettingsManagerService;
+use MiningManager\Services\Configuration\SettingsTransfer;
 use MiningManager\Services\DiscordRoleResolver;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -13,6 +16,7 @@ use Illuminate\Support\Facades\Schema;
 use Seat\Eveapi\Models\Corporation\CorporationInfo;
 use MiningManager\Services\Character\AffiliationResolutionService;
 use MiningManager\Services\Character\CharacterNames;
+use MiningManager\Services\Tax\TaxPeriodHelper;
 use Carbon\Carbon;
 
 class SettingsController extends Controller
@@ -105,25 +109,9 @@ class SettingsController extends Controller
      */
     public function index(Request $request)
     {
-        // Get corporation ID from request (if switching corporations)
-        $corporationId = $request->input('corporation_id');
-
-        // If corporation_id provided, set it as active context
-        if ($corporationId) {
-            $this->settingsService->setActiveCorporation((int)$corporationId);
-        }
-
-        // Check if corporation has custom settings
-        $hasCustomSettings = false;
-        $isFirstTimeSetup = false;
-        if ($corporationId) {
-            $hasCustomSettings = $this->settingsService->corporationHasCustomSettings((int)$corporationId);
-            $isFirstTimeSetup = !$hasCustomSettings;
-        }
-
-        // Get all current settings (will use corporation context if set)
         $settings = [
             'general' => $this->settingsService->getGeneralSettings(),
+            'payments' => $this->settingsService->getPaymentSettings(),
             'tax_rates' => $this->settingsService->getTaxRates(),
             'tax_selector' => $this->settingsService->getTaxSelector(),
             'exemptions' => $this->settingsService->getExemptions(),
@@ -139,10 +127,29 @@ class SettingsController extends Controller
         // Get available corporations from SeAT
         $corporations = $this->getAvailableCorporations();
 
+        $usesTaxProfiles = $this->settingsService->usesTaxProfiles();
+        $profiles = $this->taxProfiles();
+        $periodChangeDate = app(TaxPeriodHelper::class)->nextSafeEffectiveDate();
+        $addableCorporations = $corporations
+            ->reject(fn ($corporation) => $this->settingsService->isConfiguredCorporation((int) $corporation->corporation_id))
+            ->values();
+        $overdueDays = (int) ($this->settingsService->getFeatureFlags()['theft_overdue_days'] ?? 15);
+
+        $transferReport = app(SettingsTransfer::class)->storedReport();
+        $reportCorporations = $transferReport
+            ? CorporationInfo::whereIn('corporation_id', array_merge(
+                $transferReport['configured'] ?? [],
+                array_column($transferReport['writes'] ?? [], 'corporation_id'),
+                array_column($transferReport['superseded'] ?? [], 'corporation_id')
+            ))->get(['corporation_id', 'name', 'ticker'])->keyBy('corporation_id')
+            : collect();
+        // The rows migration 000039 cleared once settings were in profiles.
+        $retiredRows = $transferReport && Schema::hasTable('mining_manager_settings_archive')
+            ? DB::table('mining_manager_settings_archive')->where('reason', 'retired_settings')->count()
+            : 0;
+
         // Get webhooks for the settings page
-        $webhooks = \MiningManager\Models\WebhookConfiguration::when($corporationId, function ($query) use ($corporationId) {
-            return $query->forCorporation($corporationId);
-        })->get();
+        $webhooks = \MiningManager\Models\WebhookConfiguration::all();
 
         // Corps available for per-webhook routing — tax program corp + any
         // corp with plugin settings. Used by the webhook create/edit modal's
@@ -180,9 +187,6 @@ class SettingsController extends Controller
         return view('mining-manager::settings.index', compact(
             'settings',
             'corporations',
-            'corporationId',
-            'hasCustomSettings',
-            'isFirstTimeSetup',
             'webhooks',
             'webhookCorporations',
             'walletDivisions',
@@ -192,8 +196,388 @@ class SettingsController extends Controller
             'roleProviderAvailable',
             'roleProviderLabel',
             'taxedCorporations',
-            'leaderboardCorporations'
+            'leaderboardCorporations',
+            'profiles',
+            'periodChangeDate',
+            'addableCorporations',
+            'usesTaxProfiles',
+            'overdueDays',
+            'transferReport',
+            'reportCorporations',
+            'retiredRows'
         ));
+    }
+
+    /**
+     * Every tax profile and what it holds, for the Tax profiles page: Global
+     * first, then the Moon Owner, then the rest by name.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function taxProfiles(): array
+    {
+        $moonOwner = (int) $this->settingsService->getSettingForCorporation('general.moon_owner_corporation_id', null) ?: null;
+        $ids = $this->settingsService->usesTaxProfiles() ? $this->settingsService->getHomeCorporationIds() : [];
+        $names = CorporationInfo::whereIn('corporation_id', $ids)->get(['corporation_id', 'name', 'ticker'])->keyBy('corporation_id');
+
+        usort($ids, fn (int $a, int $b) => [$a !== $moonOwner, strcasecmp($names[$a]->name ?? '', $names[$b]->name ?? '')]
+            <=> [$b !== $moonOwner, strcasecmp($names[$b]->name ?? '', $names[$a]->name ?? '')]);
+
+        $periods = app(TaxPeriodHelper::class);
+        $profiles = [];
+        foreach (array_merge([null], $ids) as $id) {
+            $read = fn (string $key, $default = null) => $this->settingsService->getSettingForCorporation($key, $id, $default);
+            $selector = $this->settingsService->taxSelectorFor($id);
+
+            $profiles[] = [
+                'key' => $id ?? 'global',
+                'corporation_id' => $id,
+                'name' => $id === null ? 'Global' : ($names[$id]->name ?? "Corporation {$id}"),
+                'ticker' => $id === null ? null : ($names[$id]->ticker ?? null),
+                'moon_owner' => $id !== null && $id === $moonOwner,
+                'period' => $read('tax_rates.tax_calculation_period', 'monthly'),
+                'pending' => $read('tax_rates.tax_calculation_period_pending'),
+                'pending_from' => $read('tax_rates.tax_calculation_period_effective_from'),
+                'change_today' => $periods->canChangePeriodToday($id),
+                'prefix' => $read('tax_rates.tax_code_prefix', 'TAX-'),
+                'rates' => $this->settingsService->taxRatesFor($id),
+                'selector' => $selector,
+                'moon' => !empty($selector['no_moon_ore']) ? 'none' : (!empty($selector['only_corp_moon_ore']) ? 'ours' : (($selector['all_moon_ore'] ?? true) ? 'all' : 'none')),
+            ];
+        }
+
+        return $profiles;
+    }
+
+    /**
+     * Save the Billing page.
+     */
+    public function updateBilling(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'exemption_enabled' => 'nullable|boolean',
+            'exemption_threshold' => 'required|numeric|min:0',
+            'minimum_tax_amount' => 'required|numeric|min:0',
+            'minimum_tax_behavior' => 'required|in:exempt,enforce',
+            'tax_payment_deadline_days' => 'required|integer|min:1|max:90',
+            'payment_grace_period_hours' => 'required|integer|min:1|max:168',
+            'payment_overdue_paid_threshold_pct' => 'required|numeric|min:0|max:100',
+            'send_tax_reminders' => 'nullable|boolean',
+            'tax_reminder_days' => 'required|integer|min:1|max:30',
+            'tax_code_length' => 'required|integer|in:6,8,10,12',
+            'grace_period_days' => 'required|integer|min:0|max:365',
+            'tax_code_expiration_buffer' => 'required|integer|min:0|max:365',
+            'auto_generate_tax_codes' => 'nullable|boolean',
+        ]);
+
+        if ($validator->fails()) {
+            return redirect(route('mining-manager.settings.index') . '#billing')
+                ->withErrors($validator)
+                ->withInput();
+        }
+
+        $data = $validator->validated();
+        $save = fn (string $key, $value, string $type) => $this->settingsService->updateGlobalSetting($key, $value, $type);
+
+        DB::transaction(function () use ($data, $request, $save) {
+            $save('exemptions.enabled', $request->boolean('exemption_enabled'), 'boolean');
+            $save('exemptions.threshold', (float) $data['exemption_threshold'], 'float');
+            $save('payment.minimum_tax_amount', (float) $data['minimum_tax_amount'], 'float');
+            $save('payment.minimum_tax_behavior', $data['minimum_tax_behavior'], 'string');
+            $save('tax_rates.tax_payment_deadline_days', (int) $data['tax_payment_deadline_days'], 'integer');
+            $save('payment.grace_period_hours', (int) $data['payment_grace_period_hours'], 'integer');
+            $save('payment.overdue_paid_threshold_pct', (float) $data['payment_overdue_paid_threshold_pct'], 'float');
+            $save('tax_rates.send_tax_reminders', $request->boolean('send_tax_reminders'), 'boolean');
+            $save('tax_rates.tax_reminder_days', (int) $data['tax_reminder_days'], 'integer');
+            $save('tax_rates.tax_code_length', (int) $data['tax_code_length'], 'integer');
+            $save('exemptions.grace_period_days', (int) $data['grace_period_days'], 'integer');
+            $save('tax_rates.tax_code_expiration_buffer', (int) $data['tax_code_expiration_buffer'], 'integer');
+            $save('tax_rates.auto_generate_tax_codes', $request->boolean('auto_generate_tax_codes'), 'boolean');
+        });
+
+        $this->clearSettingsCache();
+
+        return redirect(route('mining-manager.settings.index') . '#billing')
+            ->with('success', 'Billing saved.');
+    }
+
+    /**
+     * Save the Payments page.
+     */
+    public function updatePayments(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'tax_wallet_division' => 'required|integer|min:1|max:7',
+            'payment_match_tolerance' => 'required|integer|min:0|max:100000000',
+            'payment_auto_match_payments' => 'nullable|boolean',
+            'payment_accept_alt_characters' => 'nullable|boolean',
+            'payment_cascade_remainder' => 'nullable|boolean',
+            'payment_hold_surplus_as_credit' => 'nullable|boolean',
+            'enable_upfront_payments' => 'nullable|boolean',
+            'payment_upfront_keyword' => 'nullable|string|max:32',
+            'payment_refund_keyword' => 'nullable|string|max:32',
+        ]);
+
+        if ($validator->fails()) {
+            return redirect(route('mining-manager.settings.index') . '#payments')
+                ->withErrors($validator)
+                ->withInput();
+        }
+
+        $data = $validator->validated();
+        $upfront = trim((string) ($data['payment_upfront_keyword'] ?? ''));
+        $refund = trim((string) ($data['payment_refund_keyword'] ?? ''));
+
+        // Codes and both keywords are read from the same transfer reason. If
+        // one contains another, a payment could read as either, and which one
+        // won would depend on matching order: nothing anyone could diagnose.
+        $taken = $this->settingsService->taxCodePrefixes();
+        foreach (array_filter(['upfront payment' => $upfront, 'refund' => $refund]) as $which => $keyword) {
+            $others = $which === 'refund' ? array_merge($taken, array_filter([$upfront])) : $taken;
+
+            foreach ($others as $other) {
+                if (stripos($keyword, $other) !== false || stripos($other, $keyword) !== false) {
+                    return redirect(route('mining-manager.settings.index') . '#payments')
+                        ->withInput()
+                        ->with('error', "The {$which} keyword {$keyword} overlaps {$other}. Both are read from the transfer reason, so pick something clearly different.");
+                }
+            }
+        }
+
+        $save = fn (string $key, $value, string $type) => $this->settingsService->updateGlobalSetting($key, $value, $type);
+
+        DB::transaction(function () use ($data, $request, $save, $upfront, $refund) {
+            $save('tax_rates.tax_wallet_division', (int) $data['tax_wallet_division'], 'integer');
+            $save('payment.match_tolerance', (int) $data['payment_match_tolerance'], 'integer');
+            $save('payment.auto_match_payments', $request->boolean('payment_auto_match_payments'), 'boolean');
+            $save('payment.accept_alt_characters', $request->boolean('payment_accept_alt_characters'), 'boolean');
+            $save('payment.cascade_remainder', $request->boolean('payment_cascade_remainder'), 'boolean');
+            $save('payment.hold_surplus_as_credit', $request->boolean('payment_hold_surplus_as_credit'), 'boolean');
+            $save('features.enable_upfront_payments', $request->boolean('enable_upfront_payments'), 'boolean');
+            $save('payment.upfront_keyword', $upfront, 'string');
+            $save('payment.refund_keyword', $refund, 'string');
+        });
+
+        $this->clearSettingsCache();
+
+        return redirect(route('mining-manager.settings.index') . '#payments')
+            ->with('success', 'Payments saved.');
+    }
+
+    /**
+     * Save the Setup page's Moon Owner Corporation.
+     */
+    public function updateSetup(Request $request)
+    {
+        $validated = $request->validate([
+            'moon_owner_corporation_id' => 'required|integer|exists:corporation_infos,corporation_id',
+        ]);
+
+        $new = (int) $validated['moon_owner_corporation_id'];
+        $old = (int) $this->settingsService->getSettingForCorporation('general.moon_owner_corporation_id', null) ?: null;
+        $note = '';
+
+        if ($new !== $old) {
+            // A Moon Owner is always configured. One that was not yet starts
+            // with the outgoing Moon Owner's profile, not the defaults, so
+            // its members' tax does not change with the switch.
+            $stored = array_map('intval', (array) $this->settingsService->getSettingForCorporation(SettingsTransfer::CONFIGURED_KEY, null, []));
+            if ($this->settingsService->usesTaxProfiles() && !in_array($new, $stored, true)) {
+                $this->settingsService->configureCorporation($new, $old);
+                $note = $this->heldPeriodNote($new);
+            }
+
+            $this->settingsService->updateGlobalSetting('general.moon_owner_corporation_id', $new, 'integer');
+            $this->clearSettingsCache();
+        }
+
+        return redirect(route('mining-manager.settings.index') . '#setup')
+            ->with('success', 'Moon Owner Corporation saved.' . $note);
+    }
+
+    /**
+     * Configure a corporation, starting from a copy of the Moon Owner's
+     * profile.
+     */
+    public function addCorporation(Request $request)
+    {
+        $validated = $request->validate([
+            'corporation_id' => 'required|integer|exists:corporation_infos,corporation_id',
+        ]);
+        $id = (int) $validated['corporation_id'];
+        $name = CorporationInfo::find($id)->name ?? "Corporation {$id}";
+
+        if (!$this->settingsService->usesTaxProfiles()) {
+            return redirect(route('mining-manager.settings.index') . '#setup')
+                ->with('error', 'Settings have not moved into tax profiles yet. The plugin\'s migrations do that when it updates.');
+        }
+
+        if ($this->settingsService->isConfiguredCorporation($id)) {
+            return redirect(route('mining-manager.settings.index') . '#setup')
+                ->with('success', "{$name} is already configured.");
+        }
+
+        $moonOwner = (int) $this->settingsService->getSettingForCorporation('general.moon_owner_corporation_id', null) ?: null;
+        $this->settingsService->configureCorporation($id, $moonOwner);
+        $this->clearSettingsCache();
+
+        return redirect(route('mining-manager.settings.index') . '#profiles')
+            ->with('success', "{$name} is configured. Its members are taxed by its own profile, a copy of the Moon Owner's, from now on." . $this->heldPeriodNote($id) . ' Change it under Tax profiles.');
+    }
+
+    /**
+     * Stop treating a corporation's members as members.
+     */
+    public function removeCorporation(Request $request)
+    {
+        $validated = $request->validate([
+            'corporation_id' => 'required|integer',
+        ]);
+        $id = (int) $validated['corporation_id'];
+        $name = CorporationInfo::find($id)->name ?? "Corporation {$id}";
+
+        if ($id === ((int) $this->settingsService->getSettingForCorporation('general.moon_owner_corporation_id', null))) {
+            return redirect(route('mining-manager.settings.index') . '#setup')
+                ->with('error', 'The Moon Owner Corporation is always configured. Choose another Moon Owner first.');
+        }
+
+        $this->settingsService->removeConfiguredCorporation($id);
+        $this->clearSettingsCache();
+
+        return redirect(route('mining-manager.settings.index') . '#setup')
+            ->with('success', "{$name} is no longer configured. Its members are non-members from tomorrow, taxed by the Global profile. Their bills for " . Carbon::today()->format('F') . " still follow its profile, on its billing period and code prefix, so the month is billed on one period.");
+    }
+
+    /**
+     * Save the Tax profiles page: every profile at once.
+     */
+    public function updateProfiles(Request $request)
+    {
+        if (!$this->settingsService->usesTaxProfiles()) {
+            return redirect(route('mining-manager.settings.index') . '#profiles')
+                ->with('error', 'Settings have not moved into tax profiles yet. The plugin\'s migrations do that when it updates.');
+        }
+
+        $keys = array_merge(['global'], array_map('strval', $this->settingsService->getHomeCorporationIds()));
+        $others = ['ore', 'ice', 'gas', 'abyssal_ore', 'triglavian_ore'];
+
+        $rules = ['apply_period_now' => 'nullable|boolean'];
+        foreach ($keys as $key) {
+            $rules["profiles.{$key}.period"] = 'required|in:monthly,biweekly';
+            $rules["profiles.{$key}.prefix"] = 'required|string|max:10';
+            $rules["profiles.{$key}.moon"] = 'required|in:all,ours,none';
+            foreach (['r4', 'r8', 'r16', 'r32', 'r64'] as $rarity) {
+                $rules["profiles.{$key}.rates.moon_ore.{$rarity}"] = 'required|numeric|min:0|max:100';
+            }
+            foreach ($others as $other) {
+                $rules["profiles.{$key}.rates.{$other}"] = 'nullable|numeric|min:0|max:100';
+            }
+        }
+
+        $validator = Validator::make($request->all(), $rules);
+        if ($validator->fails()) {
+            return redirect(route('mining-manager.settings.index') . '#profiles')
+                ->withErrors($validator)
+                ->withInput();
+        }
+        $validated = $validator->validated();
+
+        // The keywords are read from the same transfer reason as the codes.
+        $payments = $this->settingsService->getPaymentSettings();
+        $keywords = array_filter([trim((string) ($payments['upfront_keyword'] ?? '')), trim((string) ($payments['refund_keyword'] ?? ''))]);
+        foreach ($validated['profiles'] ?? [] as $values) {
+            $prefix = trim((string) $values['prefix']);
+            foreach ($keywords as $keyword) {
+                if (stripos($prefix, $keyword) !== false || stripos($keyword, $prefix) !== false) {
+                    return redirect(route('mining-manager.settings.index') . '#profiles')
+                        ->withInput()
+                        ->with('error', "The tax code prefix {$prefix} overlaps the payment keyword {$keyword}. Both are read from the transfer reason, so pick a prefix clearly different from it.");
+                }
+            }
+        }
+
+        $waiting = [];
+        DB::transaction(function () use ($validated, $request, $others, &$waiting) {
+            foreach ($validated['profiles'] ?? [] as $key => $values) {
+                $rates = Arr::dot($values['rates'] ?? []);
+
+                // An ore whose rate was not on the form, as Global's are not
+                // while corporations are configured, keeps what it had.
+                $taxed = [];
+                foreach ($others as $other) {
+                    if (array_key_exists($other, $rates)) {
+                        $taxed[$other] = $request->boolean("profiles.{$key}.taxed.{$other}");
+                    }
+                }
+
+                $profile = $key === 'global' ? null : (int) $key;
+                $period = $this->settingsService->saveProfile($profile, [
+                    'prefix' => trim((string) $values['prefix']),
+                    'moon' => $values['moon'],
+                    'rates' => array_filter($rates, fn ($rate) => $rate !== null && $rate !== ''),
+                    'taxed' => $taxed,
+                    'period' => $values['period'],
+                ], $request->boolean('apply_period_now'));
+
+                if ($period === 'queued' && $request->boolean('apply_period_now')) {
+                    $waiting[] = $profile;
+                }
+            }
+        });
+
+        $this->clearSettingsCache();
+
+        $message = 'Tax profiles saved.';
+        if ($waiting) {
+            $from = app(TaxPeriodHelper::class)->nextSafeEffectiveDate()->format('F j');
+            $message .= count($waiting) === 1
+                ? " {$this->profileNames($waiting)}'s new billing period starts on {$from}, not today."
+                : " The new billing periods of {$this->profileNames($waiting)} start on {$from}, not today.";
+            $message .= ' A period can only change on the day from the 3rd to the 15th of a month, while the profile has billed none of it.';
+        }
+
+        return redirect(route('mining-manager.settings.index') . '#profiles')
+            ->with('success', $message);
+    }
+
+    /**
+     * Tax profiles by name, as the Tax profiles page heads them: Global, or a
+     * corporation's ticker.
+     *
+     * @param array<int, int|null> $profiles
+     */
+    private function profileNames(array $profiles): string
+    {
+        $tickers = CorporationInfo::whereIn('corporation_id', array_filter($profiles))->pluck('ticker', 'corporation_id');
+        $names = array_map(
+            fn (?int $profile) => $profile === null ? 'Global' : (isset($tickers[$profile]) ? "[{$tickers[$profile]}]" : "Corporation {$profile}"),
+            array_values($profiles)
+        );
+
+        return count($names) > 1 ? implode(', ', array_slice($names, 0, -1)) . ' and ' . end($names) : (string) reset($names);
+    }
+
+    /**
+     * For a corporation just configured: when its bills keep the period its
+     * members were billed on this month for now, and when they change.
+     */
+    private function heldPeriodNote(int $corporationId): string
+    {
+        $change = app(TaxPeriodHelper::class)->pendingPeriodChangeFor($corporationId);
+
+        if ($change === null) {
+            return '';
+        }
+
+        $label = fn (string $period) => $period === 'biweekly' ? 'twice a month' : 'monthly';
+
+        return sprintf(
+            ' Its bills go out %s until %s, as its members\' have this month, and %s from %s.',
+            $label($change['current']),
+            $change['effective_from']->copy()->subDay()->format('F j'),
+            $label($change['pending']),
+            $change['effective_from']->format('F j')
+        );
     }
 
     /**
@@ -264,67 +648,9 @@ class SettingsController extends Controller
     }
 
     /**
-     * Display configured corporations page
-     *
-     * @return \Illuminate\View\View
-     */
-    public function configuredCorporations()
-    {
-        // Get all corporation IDs that have custom settings
-        $configuredCorpIds = DB::table('mining_manager_settings')
-            ->whereNotNull('corporation_id')
-            ->distinct()
-            ->pluck('corporation_id');
-
-        // Get corporation details
-        $corporations = CorporationInfo::whereIn('corporation_id', $configuredCorpIds)
-            ->get()
-            ->map(function ($corp) {
-                // Get key settings for this corporation
-                $this->settingsService->setActiveCorporation($corp->corporation_id);
-
-                $taxRates = $this->settingsService->getTaxRates();
-                $taxSelector = $this->settingsService->getTaxSelector();
-
-                return [
-                    'corporation_id' => $corp->corporation_id,
-                    'name' => $corp->name,
-                    'ticker' => $corp->ticker,
-                    'member_count' => $corp->member_count,
-                    'settings_count' => DB::table('mining_manager_settings')
-                        ->where('corporation_id', $corp->corporation_id)
-                        ->count(),
-                    // Moon ore tax rates by rarity
-                    'moon_ore_r64_tax' => $taxRates['moon_ore']['r64'] ?? 0,
-                    'moon_ore_r32_tax' => $taxRates['moon_ore']['r32'] ?? 0,
-                    'moon_ore_r16_tax' => $taxRates['moon_ore']['r16'] ?? 0,
-                    'moon_ore_r8_tax' => $taxRates['moon_ore']['r8'] ?? 0,
-                    'moon_ore_r4_tax' => $taxRates['moon_ore']['r4'] ?? 0,
-                    // Regular ore type tax rates
-                    'ore_tax' => $taxRates['ore'] ?? 0,
-                    'ice_tax' => $taxRates['ice'] ?? 0,
-                    'gas_tax' => $taxRates['gas'] ?? 0,
-                    'abyssal_ore_tax' => $taxRates['abyssal_ore'] ?? 0,
-                    'triglavian_ore_tax' => $taxRates['triglavian_ore'] ?? 0,
-                    // Tax selectors
-                    'all_moon_ore' => $taxSelector['all_moon_ore'] ?? false,
-                    'only_corp_moon_ore' => $taxSelector['only_corp_moon_ore'] ?? false,
-                    'tax_regular_ore' => $taxSelector['ore'] ?? false,
-                    'tax_ice' => $taxSelector['ice'] ?? false,
-                    'tax_gas' => $taxSelector['gas'] ?? false,
-                    'tax_abyssal_ore' => $taxSelector['abyssal_ore'] ?? false,
-                    'tax_triglavian_ore' => $taxSelector['triglavian_ore'] ?? false,
-                ];
-            });
-
-        return view('mining-manager::settings.configured_corporations', compact('corporations'));
-    }
-
-    /**
-     * Corporations the General tab offers for the moon owner and the
-     * corporation context: every player corporation a registered character is
-     * in, plus any corporation that already has its own settings or owns the
-     * moons, so a saved choice is always on the list.
+     * Corporations the Setup page offers for the Moon Owner and for adding:
+     * every player corporation a registered character is in, plus every
+     * configured corporation, so a saved choice is always on the list.
      *
      * SeAT 5 keeps a character's corporation in character_affiliations and
      * who owns a character in refresh_tokens. Beware the older columns: a
@@ -497,180 +823,6 @@ class SettingsController extends Controller
     }
 
     /**
-     * Update general settings
-     * UPDATED: Now handles corporation_id from dropdown selection
-     *
-     * @param Request $request
-     * @return \Illuminate\Http\RedirectResponse
-     */
-    public function updateGeneral(Request $request)
-    {
-        $validator = Validator::make($request->all(), [
-            // Corporation Settings
-            'corporation_id' => 'nullable|integer|exists:corporation_infos,corporation_id',
-            'corporation_name' => 'nullable|string|max:255',
-            'corporation_ticker' => 'nullable|string|max:5',
-            'moon_owner_corporation_id' => 'required|integer|exists:corporation_infos,corporation_id',
-
-            // Note: timezone, date_format, time_format removed - always uses UTC for consistency
-
-            // Display Settings
-            'currency_decimals' => 'required|integer|min:0|max:8',
-            'items_per_page' => 'required|integer|min:10|max:100',
-            'compact_mode' => 'nullable|boolean',
-            'show_character_portraits' => 'nullable|boolean',
-
-            // Payment Settings
-            'payment_match_tolerance' => 'nullable|integer|min:0|max:100000000',
-            'payment_grace_period_hours' => 'nullable|integer|min:1|max:168',
-            'payment_auto_match_payments' => 'nullable|boolean',
-            'payment_accept_alt_characters' => 'nullable|boolean',
-            'payment_cascade_remainder' => 'nullable|boolean',
-            'payment_hold_surplus_as_credit' => 'nullable|boolean',
-            'payment_upfront_keyword' => 'nullable|string|max:32',
-            'payment_refund_keyword' => 'nullable|string|max:32',
-            'payment_overdue_paid_threshold_pct' => 'nullable|numeric|min:0|max:100',
-
-            // Guest Miner Tax Rates (global, tied to Moon Owner Corporation)
-            'guest_moon_ore_r64' => 'nullable|numeric|min:0|max:100',
-            'guest_moon_ore_r32' => 'nullable|numeric|min:0|max:100',
-            'guest_moon_ore_r16' => 'nullable|numeric|min:0|max:100',
-            'guest_moon_ore_r8' => 'nullable|numeric|min:0|max:100',
-            'guest_moon_ore_r4' => 'nullable|numeric|min:0|max:100',
-            'guest_ore_tax' => 'nullable|numeric|min:0|max:100',
-            'guest_ice_tax' => 'nullable|numeric|min:0|max:100',
-            'guest_gas_tax' => 'nullable|numeric|min:0|max:100',
-            'guest_abyssal_ore_tax' => 'nullable|numeric|min:0|max:100',
-            'guest_triglavian_ore_tax' => 'nullable|numeric|min:0|max:100',
-        ]);
-
-        if ($validator->fails()) {
-            return redirect()->back()
-                ->withErrors($validator)
-                ->withInput()
-                ->with('error', 'Validation failed. Please check your inputs.');
-        }
-
-        try {
-            $data = $validator->validated();
-
-            // Set corporation context if provided
-            $corporationId = $request->input('selected_corporation_id');
-            if ($corporationId) {
-                $this->settingsService->setActiveCorporation((int)$corporationId);
-            }
-
-            // If corporation_id is provided, fetch the name and ticker from SeAT
-            if (isset($data['corporation_id']) && $data['corporation_id']) {
-                $corporation = CorporationInfo::find($data['corporation_id']);
-                if ($corporation) {
-                    $data['corporation_name'] = $corporation->name;
-                    $data['corporation_ticker'] = $corporation->ticker;
-                }
-            }
-
-            // Convert boolean checkboxes (unchecked = not sent)
-            $data['compact_mode'] = $request->has('compact_mode');
-            $data['show_character_portraits'] = $request->has('show_character_portraits');
-            // payment_auto_match_payments uses the payment_* → payment.*
-            // mapping in updateGeneralSettings(). A checkbox is unchecked
-            // when the form omits the field; we must persist false in
-            // that case (otherwise the operator can never turn auto-match
-            // off — the listener default is true).
-            $data['payment_auto_match_payments'] = $request->has('payment_auto_match_payments');
-            // Same checkbox-unchecked-must-persist-false logic as above:
-            // the WalletTransferService default is true, so the only way
-            // to switch to strict per-character matching is to actually
-            // persist the false value.
-            $data['payment_accept_alt_characters'] = $request->has('payment_accept_alt_characters');
-            // Both default to true in getPaymentSettings(), so an unchecked box
-            // has to be persisted as false or it can never be turned off.
-            $data['payment_cascade_remainder'] = $request->has('payment_cascade_remainder');
-            $data['payment_hold_surplus_as_credit'] = $request->has('payment_hold_surplus_as_credit');
-
-            // The upfront keyword and the tax code prefix are both matched
-            // against the same reason field. If one contains the other, a
-            // payment could read as either and the behaviour would depend on
-            // matching order, which is not something an operator could ever
-            // diagnose from the outside. Refuse the ambiguity instead.
-            //
-            // Only touch the stored keyword when the field was actually on the
-            // form. It is rendered disabled while the feature is off, and a
-            // disabled input is not submitted, so an absent key means "not
-            // offered" rather than "cleared". Writing an empty string here would
-            // wipe a configured keyword every time somebody saved the General
-            // tab with upfront payments switched off, and they would find it
-            // gone when they switched the feature back on. has() rather than
-            // filled(), so deliberately emptying the box still turns it off.
-            // Null when the field was not on the form, which happens whenever
-            // upfront payments are off. The refund guard below reads it and
-            // falls back to what is stored.
-            $upfrontKeyword = null;
-
-            if ($request->has('payment_upfront_keyword')) {
-                $upfrontKeyword = trim((string) $data['payment_upfront_keyword']);
-
-                if ($upfrontKeyword !== '') {
-                    $taxPrefix = trim((string) \MiningManager\Models\TaxCode::getPrefix());
-
-                    if ($taxPrefix !== ''
-                        && (stripos($upfrontKeyword, $taxPrefix) !== false
-                            || stripos($taxPrefix, $upfrontKeyword) !== false)) {
-                        return redirect()->back()
-                            ->withInput()
-                            ->with('error', "The upfront payment keyword cannot overlap the tax code prefix ({$taxPrefix}). Pick something clearly different, for example MM-UPFRONT.");
-                    }
-                }
-
-                $data['payment_upfront_keyword'] = $upfrontKeyword;
-            } else {
-                unset($data['payment_upfront_keyword']);
-            }
-
-            // The refund keyword is read from the same field as the other two,
-            // so it has to be distinguishable from both. An overlap would make
-            // a transfer readable as more than one thing and the behaviour
-            // would depend on matching order, which nobody could diagnose from
-            // the outside.
-            if ($request->has('payment_refund_keyword')) {
-                $refundKeyword = trim((string) $data['payment_refund_keyword']);
-
-                if ($refundKeyword !== '') {
-                    $taxPrefix = trim((string) \MiningManager\Models\TaxCode::getPrefix());
-                    $upfront = trim((string) ($upfrontKeyword ?? ($this->settingsService->getPaymentSettings()['upfront_keyword'] ?? '')));
-
-                    foreach (array_filter([$taxPrefix, $upfront]) as $other) {
-                        if (stripos($refundKeyword, $other) !== false || stripos($other, $refundKeyword) !== false) {
-                            return redirect()->back()
-                                ->withInput()
-                                ->with('error', "The refund keyword cannot overlap {$other}. Both are read from the transfer reason, so an overlap would make a payment readable as either. Pick something clearly different, for example MM-REFUND.");
-                        }
-                    }
-                }
-
-                $data['payment_refund_keyword'] = $refundKeyword;
-            } else {
-                unset($data['payment_refund_keyword']);
-            }
-            $this->settingsService->updateGeneralSettings($data);
-            $this->clearSettingsCache();
-
-            // Redirect back with corporation_id to maintain context
-            $redirectUrl = route('mining-manager.settings.index');
-            if ($corporationId) {
-                $redirectUrl .= '?corporation_id=' . $corporationId;
-            }
-
-            return redirect($redirectUrl)
-                ->with('success', 'General settings updated successfully');
-        } catch (\Exception $e) {
-            return redirect()->back()
-                ->withInput()
-                ->with('error', 'Error updating settings: ' . $e->getMessage());
-        }
-    }
-
-    /**
      * Update notification settings
      *
      * @param Request $request
@@ -716,51 +868,6 @@ class SettingsController extends Controller
                 'numeric',
                 'min:50',
                 'max:99',
-            ],
-            // Moon Extraction Planner minimum gap (hours). Bounded [1, 168]
-            // (1 week) — clusters tighter than an hour are nonsensical and a
-            // gap wider than a week defeats staggering on weekly cadences.
-            'min_extraction_gap_hours' => [
-                'nullable',
-                'integer',
-                'min:1',
-                'max:168',
-            ],
-            // How close two pulls on one refinery may be, entered in days and
-            // kept in hours. 6 is the shortest extraction EVE allows, 56 the
-            // longest.
-            'min_refinery_spacing_days' => [
-                'nullable',
-                'numeric',
-                'min:6',
-                'max:56',
-            ],
-            // Moon Not Rescheduled: hours a drill sits idle after its chunk
-            // arrives before the reminder goes, and between repeats. Up to two
-            // weeks; past that the reminder has stopped being one.
-            'moon_not_rescheduled_hours' => [
-                'nullable',
-                'integer',
-                'min:1',
-                'max:336',
-            ],
-            'moon_not_rescheduled_repeat' => [
-                'nullable',
-                'boolean',
-            ],
-            // Moons Need Planning: how many pulls each refinery should have
-            // planned ahead, and how often the list goes out.
-            'planned_ahead_target' => [
-                'nullable',
-                'integer',
-                'min:1',
-                'max:10',
-            ],
-            'schedule_needs_filling_hours' => [
-                'nullable',
-                'integer',
-                'min:1',
-                'max:336',
             ],
             'moon_scan_missing_daily' => [
                 'nullable',
@@ -833,50 +940,12 @@ class SettingsController extends Controller
             }
             $data['slack_types'] = $slackTypes;
 
-            // Legacy discord pinging — derive from per-type settings
-            // If any tax type has ping_user enabled, consider pinging enabled
-            $data['discord_pinging_enabled'] = collect(['tax_reminder', 'tax_invoice', 'tax_overdue'])
-                ->contains(fn ($t) => $typeSettings[$t]['ping_user'] ?? false);
-            $data['discord_ping_show_amount'] = $typeSettings['tax_reminder']['show_amount'] ?? true;
-
             // Metenox cargo full threshold (default 85). Operator-configurable
             // via the input below the metenox_cargo_full type card.
             $thresholdInput = $request->input('metenox_cargo_full_threshold_pct');
             $data['metenox_cargo_full_threshold_pct'] = ($thresholdInput !== null && $thresholdInput !== '')
                 ? (float) $thresholdInput
                 : 85;
-
-            // Moon Extraction Planner — minimum gap (hours) between arrivals.
-            $gapInput = $request->input('min_extraction_gap_hours');
-            $data['min_extraction_gap_hours'] = ($gapInput !== null && $gapInput !== '')
-                ? (int) $gapInput
-                : 24;
-
-            // Time between pulls on one refinery: days on the form, hours kept,
-            // so 7 days means a pull on the 1st at 17:00 is clear on the 8th
-            // at 17:00.
-            $spacingInput = $request->input('min_refinery_spacing_days');
-            $data['min_refinery_spacing_hours'] = ($spacingInput !== null && $spacingInput !== '')
-                ? (int) round((float) $spacingInput * 24)
-                : \MiningManager\Services\Moon\MoonPlannerService::DEFAULT_REFINERY_SPACING_HOURS;
-
-            // Moon Not Rescheduled reminder. The whole tab is one form, so an
-            // unticked repeat box is simply absent and reads as off.
-            $idleInput = $request->input('moon_not_rescheduled_hours');
-            $data['moon_not_rescheduled_hours'] = ($idleInput !== null && $idleInput !== '')
-                ? (int) $idleInput
-                : 48;
-            $data['moon_not_rescheduled_repeat'] = $request->boolean('moon_not_rescheduled_repeat');
-
-            // Moons Need Planning.
-            $targetInput = $request->input('planned_ahead_target');
-            $data['planned_ahead_target'] = ($targetInput !== null && $targetInput !== '')
-                ? (int) $targetInput
-                : 1;
-            $everyInput = $request->input('schedule_needs_filling_hours');
-            $data['schedule_needs_filling_hours'] = ($everyInput !== null && $everyInput !== '')
-                ? (int) $everyInput
-                : 24;
 
             // Moon Scan Missing goes once per new reason; the daily list on top
             // of that is opt-in.
@@ -903,88 +972,18 @@ class SettingsController extends Controller
     }
 
     /**
-     * A per-type notification map as it is stored now, for a save to update.
-     *
-     * @param string $key e.g. 'enabled_types'
-     * @return array
+     * Save who may set up events and how they wait. All of it applies to the
+     * whole install.
      */
-    private function storedNotificationMap(string $key): array
-    {
-        $stored = $this->settingsService->getSetting('notifications.' . $key, []);
-
-        return is_array($stored) ? $stored : [];
-    }
-
-    /**
-     * Update tax rates
-     * COMPLETELY REWRITTEN: Now handles moon ore rarity rates and all new field names
-     *
-     * @param Request $request
-     * @return \Illuminate\Http\RedirectResponse
-     */
-    public function updateTaxRates(Request $request)
+    public function updateEvents(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            // Moon Ore Rarity Tax Rates
-            'moon_ore_r64' => 'required|numeric|min:0|max:100',
-            'moon_ore_r32' => 'required|numeric|min:0|max:100',
-            'moon_ore_r16' => 'required|numeric|min:0|max:100',
-            'moon_ore_r8' => 'required|numeric|min:0|max:100',
-            'moon_ore_r4' => 'required|numeric|min:0|max:100',
-
-            // Regular Ore Type Tax Rates
-            'ore_tax' => 'required|numeric|min:0|max:100',
-            'ice_tax' => 'required|numeric|min:0|max:100',
-            'gas_tax' => 'required|numeric|min:0|max:100',
-            'abyssal_ore_tax' => 'required|numeric|min:0|max:100',
-            'triglavian_ore_tax' => 'required|numeric|min:0|max:100',
-
-            // Guest Miner Tax Settings — moved to General Settings tab.
-            // Kept as nullable for backward compatibility if submitted from legacy forms.
-            'guest_moon_ore_r64' => 'nullable|numeric|min:0|max:100',
-            'guest_moon_ore_r32' => 'nullable|numeric|min:0|max:100',
-            'guest_moon_ore_r16' => 'nullable|numeric|min:0|max:100',
-            'guest_moon_ore_r8' => 'nullable|numeric|min:0|max:100',
-            'guest_moon_ore_r4' => 'nullable|numeric|min:0|max:100',
-            'guest_ore_tax' => 'nullable|numeric|min:0|max:100',
-            'guest_ice_tax' => 'nullable|numeric|min:0|max:100',
-            'guest_gas_tax' => 'nullable|numeric|min:0|max:100',
-            'guest_abyssal_ore_tax' => 'nullable|numeric|min:0|max:100',
-            'guest_triglavian_ore_tax' => 'nullable|numeric|min:0|max:100',
-
-            // Tax Exemption Settings
-            'exemption_enabled' => 'nullable|boolean',
-            'exemption_threshold' => 'required|numeric|min:0',
-            'minimum_tax_amount' => 'required|numeric|min:0',
-            'minimum_tax_behavior' => 'required|in:exempt,enforce',
-            'grace_period_days' => 'required|integer|min:0|max:365',
-
-            // Tax Selector - Moon Ore (radio button group)
-            'moon_ore_taxing' => 'required|in:all,corp,none',
-
-            // Tax Selector - Other Ore Types (checkboxes)
-            'tax_regular_ore' => 'nullable|boolean',
-            'tax_ice' => 'nullable|boolean',
-            'tax_gas' => 'nullable|boolean',
-            'tax_abyssal_ore' => 'nullable|boolean',
-            'tax_triglavian_ore' => 'nullable|boolean',
-
-            // Tax Payment Method
-            'tax_payment_method' => 'required|in:wallet',
-            'tax_wallet_division' => 'required|integer|min:1|max:7',
-
-            // Tax Code Settings
-            'tax_code_prefix' => 'required|string|max:10',
-            'tax_code_length' => 'required|integer|min:4|max:20',
-            'auto_generate_tax_codes' => 'nullable|boolean',
-
-            // Tax Period Settings — weekly removed in v1.0.3+ (historical rows
-            // still render via MiningTax::formatted_period, but no new weekly
-            // rows can be created).
-            'tax_calculation_period' => 'required|in:monthly,biweekly',
-            'tax_payment_deadline_days' => 'required|integer|min:1|max:90',
-            'send_tax_reminders' => 'nullable|boolean',
-            'tax_reminder_days' => 'required|integer|min:1|max:30',
+            // Up to two days: longer and the hold outlasts the point of it.
+            'past_hold_minutes' => 'required|integer|min:0|max:2880',
+            'managers_can_create' => 'nullable|boolean',
+            // At least an hour: an event starting sooner is a director's call.
+            'manager_lead_hours' => 'required|integer|min:1|max:720',
+            'approval_rule' => 'required|in:never,25,50,75,100,always',
         ]);
 
         if ($validator->fails()) {
@@ -995,57 +994,143 @@ class SettingsController extends Controller
         }
 
         try {
-            $data = $validator->validated();
-
-            // Set corporation context if provided
-            $corporationId = $request->input('selected_corporation_id');
-            if ($corporationId) {
-                $this->settingsService->setActiveCorporation((int)$corporationId);
-            }
-
-            // Convert moon_ore_taxing radio button to boolean flags
-            $moonOreSelector = $data['moon_ore_taxing'];
-            $data['all_moon_ore'] = ($moonOreSelector === 'all');
-            $data['only_corp_moon_ore'] = ($moonOreSelector === 'corp');
-            $data['no_moon_ore'] = ($moonOreSelector === 'none');
-
-            // Convert ore type checkboxes to booleans (unchecked = not sent)
-            $data['tax_regular_ore'] = $request->has('tax_regular_ore');
-            $data['tax_ice'] = $request->has('tax_ice');
-            $data['tax_gas'] = $request->has('tax_gas');
-            $data['tax_abyssal_ore'] = $request->has('tax_abyssal_ore');
-            $data['tax_triglavian_ore'] = $request->has('tax_triglavian_ore');
-
-            // Convert exemption_enabled checkbox
-            $data['exemption_enabled'] = $request->has('exemption_enabled');
-
-            // Convert other checkboxes
-            $data['auto_generate_tax_codes'] = $request->has('auto_generate_tax_codes');
-            $data['send_tax_reminders'] = $request->has('send_tax_reminders');
-
-            // Pass through the "apply period change immediately" override flag.
-            // When unchecked (default), the settings service queues any
-            // tax_calculation_period change to the first of next month
-            // to avoid mid-period collisions on mining_taxes rows.
-            $data['tax_calculation_period_apply_now'] = $request->has('tax_calculation_period_apply_now');
-
-            // Update all settings via service
-            $this->settingsService->updateTaxRates($data);
+            $this->settingsService->updateGlobalSetting('events.past_hold_minutes', (int) $request->input('past_hold_minutes'), 'integer');
+            $this->settingsService->updateGlobalSetting('events.managers_can_create', $request->boolean('managers_can_create'), 'boolean');
+            $this->settingsService->updateGlobalSetting('events.manager_lead_hours', (int) $request->input('manager_lead_hours'), 'integer');
+            $this->settingsService->updateGlobalSetting('events.approval_rule', (string) $request->input('approval_rule'), 'string');
             $this->clearSettingsCache();
 
-            // Redirect back with corporation_id to maintain context
-            $redirectUrl = route('mining-manager.settings.index');
-            if ($corporationId) {
-                $redirectUrl .= '?corporation_id=' . $corporationId;
-            }
-
-            return redirect($redirectUrl)
-                ->with('success', 'Tax rates updated successfully');
+            return redirect()->route('mining-manager.settings.index')
+                ->with('success', 'Event settings updated successfully')
+                ->withFragment('events');
         } catch (\Exception $e) {
             return redirect()->back()
                 ->withInput()
-                ->with('error', 'Error updating tax rates: ' . $e->getMessage());
+                ->with('error', 'Error updating event settings: ' . $e->getMessage());
         }
+    }
+
+    /**
+     * Save the Moon Planner page: how the planner spaces pulls, and when its
+     * reminders go out. The values keep their notifications.* keys from when
+     * they were part of the Notifications page.
+     */
+    public function updatePlanner(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            // Moon Extraction Planner minimum gap (hours). Bounded [1, 168]
+            // (1 week) — clusters tighter than an hour are nonsensical and a
+            // gap wider than a week defeats staggering on weekly cadences.
+            'min_extraction_gap_hours' => [
+                'nullable',
+                'integer',
+                'min:1',
+                'max:168',
+            ],
+            // How close two pulls on one refinery may be, entered in days and
+            // kept in hours. 6 is the shortest extraction EVE allows, 56 the
+            // longest.
+            'min_refinery_spacing_days' => [
+                'nullable',
+                'numeric',
+                'min:6',
+                'max:56',
+            ],
+            // Moon Not Rescheduled: hours a drill sits idle after its chunk
+            // arrives before the reminder goes, and between repeats. Up to two
+            // weeks; past that the reminder has stopped being one.
+            'moon_not_rescheduled_hours' => [
+                'nullable',
+                'integer',
+                'min:1',
+                'max:336',
+            ],
+            'moon_not_rescheduled_repeat' => [
+                'nullable',
+                'boolean',
+            ],
+            // Moons Need Planning: how many pulls each refinery should have
+            // planned ahead, and how often the list goes out.
+            'planned_ahead_target' => [
+                'nullable',
+                'integer',
+                'min:1',
+                'max:10',
+            ],
+            'schedule_needs_filling_hours' => [
+                'nullable',
+                'integer',
+                'min:1',
+                'max:336',
+            ],
+        ]);
+
+        if ($validator->fails()) {
+            return redirect()->back()
+                ->withErrors($validator)
+                ->withInput()
+                ->with('error', 'Validation failed. Please check your inputs.');
+        }
+
+        try {
+            $data = [];
+
+            // Minimum gap (hours) between two moons' arrivals.
+            $gapInput = $request->input('min_extraction_gap_hours');
+            $data['min_extraction_gap_hours'] = ($gapInput !== null && $gapInput !== '')
+                ? (int) $gapInput
+                : 24;
+
+            // Time between pulls on one refinery: days on the form, hours kept,
+            // so 7 days means a pull on the 1st at 17:00 is clear on the 8th
+            // at 17:00.
+            $spacingInput = $request->input('min_refinery_spacing_days');
+            $data['min_refinery_spacing_hours'] = ($spacingInput !== null && $spacingInput !== '')
+                ? (int) round((float) $spacingInput * 24)
+                : \MiningManager\Services\Moon\MoonPlannerService::DEFAULT_REFINERY_SPACING_HOURS;
+
+            // Moon Not Rescheduled reminder. The whole page is one form, so an
+            // unticked repeat box is simply absent and reads as off.
+            $idleInput = $request->input('moon_not_rescheduled_hours');
+            $data['moon_not_rescheduled_hours'] = ($idleInput !== null && $idleInput !== '')
+                ? (int) $idleInput
+                : 48;
+            $data['moon_not_rescheduled_repeat'] = $request->boolean('moon_not_rescheduled_repeat');
+
+            // Moons Need Planning.
+            $targetInput = $request->input('planned_ahead_target');
+            $data['planned_ahead_target'] = ($targetInput !== null && $targetInput !== '')
+                ? (int) $targetInput
+                : 1;
+            $everyInput = $request->input('schedule_needs_filling_hours');
+            $data['schedule_needs_filling_hours'] = ($everyInput !== null && $everyInput !== '')
+                ? (int) $everyInput
+                : 24;
+
+            $this->settingsService->updateNotificationSettings($data);
+            $this->clearSettingsCache();
+
+            return redirect()->route('mining-manager.settings.index')
+                ->with('success', 'Moon Planner settings updated successfully')
+                ->withFragment('planner');
+        } catch (\Exception $e) {
+            return redirect()->back()
+                ->withInput()
+                ->with('error', 'Error updating Moon Planner settings: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * A per-type notification map as it is stored now, for a save to update.
+     *
+     * @param string $key e.g. 'enabled_types'
+     * @return array
+     */
+    private function storedNotificationMap(string $key): array
+    {
+        $stored = $this->settingsService->getSetting('notifications.' . $key, []);
+
+        return is_array($stored) ? $stored : [];
     }
 
     /**
@@ -1080,7 +1165,6 @@ class SettingsController extends Controller
             // makes sense for tax + payout (lowest sell = real buy price).
 
             // Refining settings
-            'use_refined_value' => 'nullable|boolean',
             'refining_efficiency' => 'required|numeric|min:0|max:100',
         ]);
 
@@ -1182,7 +1266,6 @@ class SettingsController extends Controller
                 'cache_duration' => $data['cache_duration'],
                 'fallback_to_jita' => $request->has('fallback_to_jita'),
                 // Refining settings
-                'use_refined_value' => $request->has('use_refined_value'),
                 'refining_efficiency' => $data['refining_efficiency'],
             ];
             if (isset($data['fallback_provider'])) {
@@ -1235,15 +1318,7 @@ class SettingsController extends Controller
         try {
             $data = $validator->validated();
 
-            // Set corporation context if provided
-            $corporationId = $request->input('selected_corporation_id');
-            if ($corporationId) {
-                $this->settingsService->setActiveCorporation((int)$corporationId);
-            }
-
-            // The dashboard reads one install-wide filter, so it is saved as one
-            // whichever corporation the page is set to. A copy saved under a
-            // corporation is never read once a global one exists.
+            // The dashboard reads one install-wide filter, so it is saved as one.
             $this->settingsService->updateGlobalSetting(
                 'dashboard_leaderboard_corporation_filter',
                 $data['dashboard_leaderboard_corporation_filter']
@@ -1266,13 +1341,7 @@ class SettingsController extends Controller
             // dashboard keeps showing the old filter until they run out.
             DashboardController::clearDashboardCache();
 
-            // Redirect back with corporation_id to maintain context
-            $redirectUrl = route('mining-manager.settings.index');
-            if ($corporationId) {
-                $redirectUrl .= '?corporation_id=' . $corporationId;
-            }
-
-            return redirect($redirectUrl)
+            return redirect(route('mining-manager.settings.index') . '#dashboard')
                 ->with('success', 'Dashboard settings updated successfully');
         } catch (\Exception $e) {
             return redirect()->back()
@@ -1292,7 +1361,7 @@ class SettingsController extends Controller
         $validator = Validator::make($request->all(), [
             // Number inputs
             'ledger_retention_days' => 'required|integer|min:30|max:3650',
-            'tax_record_retention_days' => 'required|integer|min:90|max:3650',
+            'theft_overdue_days' => 'required|integer|min:0|max:365',
 
             // Checkboxes (nullable because unchecked = not sent)
             'enable_tax_tracking' => 'nullable|boolean',
@@ -1302,7 +1371,6 @@ class SettingsController extends Controller
             'enable_events' => 'nullable|boolean',
             'allow_event_creation' => 'nullable|boolean',
             'enable_moon_tracking' => 'nullable|boolean',
-            'allow_public_stats' => 'nullable|boolean',
             'allow_member_leaderboard' => 'nullable|boolean',
             'show_character_names' => 'nullable|boolean',
             'allow_export_data' => 'nullable|boolean',
@@ -1310,7 +1378,6 @@ class SettingsController extends Controller
             'auto_calculate_taxes' => 'nullable|boolean',
             'auto_generate_invoices' => 'nullable|boolean',
             'verify_wallet_transactions' => 'nullable|boolean',
-            'enable_upfront_payments' => 'nullable|boolean',
             'auto_cleanup_old_data' => 'nullable|boolean',
         ]);
 
@@ -1338,9 +1405,9 @@ class SettingsController extends Controller
 
                 // Moon mining
                 'enable_moon_tracking' => $request->has('enable_moon_tracking'),
+                'theft_overdue_days' => (int) $data['theft_overdue_days'],
 
                 // Permissions & access
-                'allow_public_stats' => $request->has('allow_public_stats'),
                 'allow_member_leaderboard' => $request->has('allow_member_leaderboard'),
                 'show_character_names' => $request->has('show_character_names'),
                 'allow_export_data' => $request->has('allow_export_data'),
@@ -1350,11 +1417,9 @@ class SettingsController extends Controller
                 'auto_calculate_taxes' => $request->has('auto_calculate_taxes'),
                 'auto_generate_invoices' => $request->has('auto_generate_invoices'),
                 'verify_wallet_transactions' => $request->has('verify_wallet_transactions'),
-                'enable_upfront_payments' => $request->has('enable_upfront_payments'),
 
                 // Data retention
                 'ledger_retention_days' => $data['ledger_retention_days'],
-                'tax_record_retention_days' => $data['tax_record_retention_days'],
                 'auto_cleanup_old_data' => $request->has('auto_cleanup_old_data'),
             ];
 
@@ -1389,27 +1454,44 @@ class SettingsController extends Controller
     }
 
     /**
-     * Export settings as JSON
+     * Download the settings as a JSON file.
      *
-     * @return \Illuminate\Http\JsonResponse
+     * A form post rather than a link, since the passphrase that locks the
+     * webhooks and API keys into the file must not travel in a URL.
+     *
+     * @param Request $request
+     * @return \Symfony\Component\HttpFoundation\Response
      */
     public function export(Request $request)
     {
+        $passphrase = null;
+
+        // Checked by hand: a failed validate() flashes the input, passphrase
+        // and all, into the session.
+        if ($request->boolean('include_credentials')) {
+            $passphrase = (string) $request->input('passphrase', '');
+
+            if (mb_strlen($passphrase) < SettingsCredentials::MIN_PASSPHRASE) {
+                return redirect()->back()
+                    ->with('error', trans('mining-manager::settings.export_passphrase_too_short', ['min' => SettingsCredentials::MIN_PASSPHRASE]));
+            }
+
+            if ($passphrase !== (string) $request->input('passphrase_confirmation', '')) {
+                return redirect()->back()
+                    ->with('error', trans('mining-manager::settings.export_passphrase_mismatch'));
+            }
+        }
+
         try {
-            // Webhook URLs are credentials, so they travel only when asked for.
-            $settings = $this->settingsService->exportSettings(
-                $request->boolean('include_webhooks')
-            );
+            $settings = $this->settingsService->exportSettings($passphrase);
 
             return response()->json($settings, 200, [
                 'Content-Type' => 'application/json',
                 'Content-Disposition' => 'attachment; filename="mining-manager-settings-' . date('Y-m-d') . '.json"',
             ]);
         } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Error exporting settings: ' . $e->getMessage(),
-            ], 500);
+            return redirect()->back()
+                ->with('error', 'Error exporting settings: ' . $e->getMessage());
         }
     }
 
@@ -1421,9 +1503,17 @@ class SettingsController extends Controller
      */
     public function import(Request $request)
     {
-        $request->validate([
+        // By hand rather than validate(), which would flash the passphrase
+        // into the session along with the rest of the form.
+        $validator = Validator::make($request->only('settings_file'), [
             'settings_file' => 'required|file|mimes:json,txt',
         ]);
+
+        if ($validator->fails()) {
+            return redirect()->back()->withErrors($validator);
+        }
+
+        $passphrase = (string) $request->input('passphrase', '');
 
         try {
             $file = $request->file('settings_file');
@@ -1434,7 +1524,11 @@ class SettingsController extends Controller
                 throw new \Exception('Invalid JSON file: ' . json_last_error_msg());
             }
 
-            $result = $this->settingsService->importSettings($settings);
+            if (!is_array($settings)) {
+                throw new \Exception('This file holds no Mining Manager settings.');
+            }
+
+            $result = $this->settingsService->importSettings($settings, $passphrase !== '' ? $passphrase : null);
             $this->clearSettingsCache();
 
             $message = "Imported {$result['settings']} setting(s)";
@@ -1444,13 +1538,40 @@ class SettingsController extends Controller
             }
 
             if ($result['skipped'] > 0) {
-                $message .= ", skipped {$result['skipped']} unreadable row(s)";
+                $message .= ", and left out {$result['skipped']} row(s): records only the install it came from keeps, copies nothing reads, or rows it could not read";
+            }
+
+            if ($result['credentials'] === 'locked') {
+                $message .= '. The webhook URLs and API keys in the file are locked with a passphrase, so they were left out'
+                    . ($result['webhooks_without_url'] > 0 ? ", and so were {$result['webhooks_without_url']} webhook(s) this install does not have yet" : '')
+                    . '. Import the file again with its passphrase to bring them in';
+            } elseif ($result['webhooks_without_url'] > 0) {
+                $message .= ". Left out {$result['webhooks_without_url']} webhook(s) the file has no URL for, as files exported before this update carry none. Set those up again under Webhooks";
+            } elseif ($result['credentials'] === 'opened') {
+                $message .= '. The passphrase opened the webhook URLs and API keys, and they came in with the rest';
+            } elseif ($passphrase !== '') {
+                $message .= '. The file has no locked webhook URLs or API keys, so the passphrase was not needed';
             }
 
             if ($result['legacy']) {
                 $message .= '. This file predates per-corporation export, so everything'
                     . ' was applied globally. Re-export from the source install to keep'
                     . ' corporation settings separate.';
+            }
+
+            if (!empty($result['periods'])) {
+                $byDate = [];
+                foreach ($result['periods'] as $change) {
+                    $byDate[$change['from']->format('F j')][] = $change['profile'];
+                }
+
+                $message .= '. Billing periods from the file start later, so that no part of a month is billed twice or not at all: '
+                    . implode('; ', array_map(fn (string $date, array $profiles) => "{$this->profileNames($profiles)} on {$date}", array_keys($byDate), $byDate))
+                    . '.';
+            }
+
+            if (!str_ends_with($message, '.')) {
+                $message .= '.';
             }
 
             return redirect()->route('mining-manager.settings.index')
@@ -1627,6 +1748,10 @@ class SettingsController extends Controller
             $data['notify_event_created'] = $request->boolean('notify_event_created');
             $data['notify_event_started'] = $request->boolean('notify_event_started');
             $data['notify_event_completed'] = $request->boolean('notify_event_completed');
+            // Its column comes with migration 000042.
+            if (\MiningManager\Models\MiningEvent::hasGovernance()) {
+                $data['notify_event_review'] = $request->boolean('notify_event_review');
+            }
             $data['notify_tax_generated'] = $request->boolean('notify_tax_generated');
             $data['notify_tax_announcement'] = $request->boolean('notify_tax_announcement');
             $data['notify_tax_reminder'] = $request->boolean('notify_tax_reminder');
@@ -1706,6 +1831,10 @@ class SettingsController extends Controller
             $data['notify_event_created'] = $request->boolean('notify_event_created');
             $data['notify_event_started'] = $request->boolean('notify_event_started');
             $data['notify_event_completed'] = $request->boolean('notify_event_completed');
+            // Its column comes with migration 000042.
+            if (\MiningManager\Models\MiningEvent::hasGovernance()) {
+                $data['notify_event_review'] = $request->boolean('notify_event_review');
+            }
             $data['notify_tax_generated'] = $request->boolean('notify_tax_generated');
             $data['notify_tax_announcement'] = $request->boolean('notify_tax_announcement');
             $data['notify_tax_reminder'] = $request->boolean('notify_tax_reminder');
@@ -1890,6 +2019,7 @@ class SettingsController extends Controller
             'notify_event_created' => 'nullable|boolean',
             'notify_event_started' => 'nullable|boolean',
             'notify_event_completed' => 'nullable|boolean',
+            'notify_event_review' => 'nullable|boolean',
             'notify_tax_generated' => 'nullable|boolean',
             'notify_tax_announcement' => 'nullable|boolean',
             'notify_tax_reminder' => 'nullable|boolean',

@@ -4,7 +4,7 @@
 @section('page_header', 'Mining Manager - Diagnostic Tools')
 
 @push('head')
-<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=8">
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=10">
 <style>
 /* Diagnostic Page Specific Styles - Inline to override caching issues */
 
@@ -271,7 +271,7 @@
                 </a>
             </li>
             <li class="nav-item">
-                <a class="nav-link" href="#settings-health" data-toggle="tab">
+                <a class="nav-link" href="#settings-health" data-toggle="tab" onclick="openSettingsHealth()">
                     <i class="fas fa-cogs"></i> Settings Health
                 </a>
             </li>
@@ -467,6 +467,25 @@
 
         <!-- Test Data Generation Tab -->
         <div class="tab-pane" id="test-data">
+            <div class="diag-tab-intro">
+                <p>
+                    <strong>What this tab does:</strong> Makes fake corporations (IDs from 98000001),
+                    miners for each of them and mining ledger entries with random ore, moon ore included,
+                    so tax settings can be tried on a setup with several corporations and no real members.
+                    Cleanup deletes the corporations, characters, mining, tax records and settings it made,
+                    and the summaries, event rows and name lookups the plugin made for those characters.
+                </p>
+                <p>
+                    <strong>When to use:</strong> On a test install, to try out tax settings or a new
+                    feature before it reaches real members.
+                </p>
+                <p>
+                    <strong>Heads up:</strong> It writes to SeAT's own tables (corporations, characters
+                    and their affiliations) as well as the plugin's, so never use it on an install with
+                    real members. The test characters' IDs, from 90000001, belong to real EVE characters,
+                    so name lookups can show their real names.
+                </p>
+            </div>
             <div class="row">
                 <div class="col-md-12">
                     <div class="warning-box">
@@ -611,7 +630,7 @@
                         <div class="card-body">
                             <div class="danger-box">
                                 <strong><i class="fas fa-exclamation-triangle"></i> Warning</strong>
-                                <p class="mb-0">This will permanently delete all test corporations, characters, mining data, tax records, and settings created by this tool.</p>
+                                <p class="mb-0">This will permanently delete all test corporations, characters, mining data, tax records and settings created by this tool, and the summaries, event rows and name lookups the plugin made for those characters.</p>
                             </div>
 
                             <form action="{{ route('mining-manager.diagnostic.cleanup') }}" method="POST" onsubmit="return confirm('Are you sure you want to delete ALL test data? This cannot be undone!');">
@@ -653,6 +672,22 @@
 
         <!-- Price Provider Testing Tab -->
         <div class="tab-pane" id="price-provider" >
+            <div class="diag-tab-intro">
+                <p>
+                    <strong>What this tab does:</strong> Asks a price provider for a few ore prices and
+                    shows what came back, so you can see it works before switching to it. Batch Pricing
+                    Test asks for many ore types at once and times the answer. Nothing changes: the
+                    provider in use, the price cache and the provider status stay as they are.
+                </p>
+                <p>
+                    <strong>When to use:</strong> Before changing price provider, after adding or
+                    changing a Janice API key, or when prices look wrong.
+                </p>
+                <p>
+                    <strong>Heads up:</strong> These are real requests to the provider, so they count
+                    towards any rate limit it has.
+                </p>
+            </div>
             <div class="row">
                 <div class="col-md-12">
                     <div class="card card-dark">
@@ -662,8 +697,6 @@
                             </h3>
                         </div>
                         <div class="card-body">
-                            <p>Test different price providers to ensure they are configured correctly and returning prices.</p>
-
                             <!-- Provider Selection -->
                             <div class="form-group">
                                 <label>Select Price Provider to Test</label>
@@ -765,6 +798,23 @@
 
         <!-- Price Cache Health Tab -->
         <div class="tab-pane" id="cache-health" >
+            <div class="diag-tab-intro">
+                <p>
+                    <strong>What this tab does:</strong> Check Health shows how fresh the cached prices
+                    are, judged the way Health Checks judges them: how many ore types are cached, how many
+                    are fresh, how many are kept past their time or have no market, and any common type
+                    with no price. Warm Cache asks your configured provider for one group of types and
+                    stores the prices, as the scheduled price update does.
+                </p>
+                <p>
+                    <strong>When to use:</strong> When ore values show as zero or look out of date, or
+                    right after changing price provider.
+                </p>
+                <p>
+                    <strong>Heads up:</strong> Check Health only reads. Warm Cache writes the price cache
+                    and asks for the whole group at once, so All Types can take several minutes.
+                </p>
+            </div>
             <div class="row">
                 <div class="col-md-12">
                     <div class="card card-dark">
@@ -774,8 +824,6 @@
                             </h3>
                         </div>
                         <div class="card-body">
-                            <p>Monitor the health of your price cache. The cache stores prices locally for fast tax calculations.</p>
-
                             <button type="button" class="btn btn btn-mm-primary" onclick="loadCacheHealth()">
                                 <i class="fas fa-sync"></i> <span id="healthBtnText">Check Health</span>
                                 <span id="healthSpinner" class="spinner-border spinner-border-sm ml-2" style="display: none;"></span>
@@ -1076,22 +1124,23 @@
         <div class="tab-pane" id="settings-health">
             <div class="diag-tab-intro">
                 <p>
-                    <strong>What this tab does:</strong> Lists every plugin setting group
-                    (General, Features, Tax Rates, Pricing, Payment, Notifications) with each
-                    value, its type, and where it comes from: saved in the database, set in
-                    config, or the built-in default. Also counts per-corporation overrides and
-                    settings left behind for corporations that no longer exist.
+                    <strong>What this tab does:</strong> Checks the settings the way the plugin reads
+                    them now that they live in tax profiles: which corporations are configured and
+                    which profile taxes whom, each profile's rates, moon ore choice, billing period and
+                    payment code prefix, and every row of the settings table against the place it
+                    belongs. Below the checks are every profile side by side, every install-wide
+                    setting, and the records the plugin keeps for itself.
                 </p>
                 <p>
-                    <strong>When to use:</strong> When a setting toggle "doesn't seem to do
-                    anything", when investigating why a notification didn't fire, or before
-                    upgrading to a new plugin version where setting keys may have changed.
+                    <strong>When to use:</strong> When someone is billed at a rate you did not expect,
+                    after adding or removing a corporation, after importing settings, or after an
+                    update that moves settings.
                 </p>
                 <p>
-                    <strong>Heads up:</strong> A value showing <code>default</code> has never been
-                    saved, so it follows the shipped default and moves if that default does.
-                    Settings changes you make in the Settings UI are reflected here on the next
-                    tab click.
+                    <strong>Heads up:</strong> Read-only. Values show as stored, so a queued change of
+                    billing period stays queued here until billing applies it. A value marked
+                    <code>default</code> was never saved and reads the plugin's built-in default.
+                    Secrets only show whether they are set.
                 </p>
             </div>
             <div class="row">
@@ -1099,20 +1148,20 @@
                     <div class="card card-dark">
                         <div class="card-header">
                             <h3 class="card-title">
-                                <i class="fas fa-cogs"></i> Settings Health Check
+                                <i class="fas fa-cogs"></i> Settings Health
                             </h3>
                         </div>
                         <div class="card-body">
-                            <p>View all plugin settings, their sources (database, config, or default), and detect any issues like orphaned corporation settings.</p>
+                            <p>Runs when you open this tab. Run it again after changing a setting.</p>
 
                             <button type="button" class="btn btn-mm-primary" onclick="loadSettingsHealth()">
-                                <i class="fas fa-stethoscope"></i> <span id="settingsHealthBtnText">Run Health Check</span>
+                                <i class="fas fa-stethoscope"></i> <span id="settingsHealthBtnText">Run again</span>
                                 <span id="settingsHealthSpinner" class="spinner-border spinner-border-sm ml-2" style="display: none;"></span>
                             </button>
-
-                            <div id="settingsHealthResults" style="margin-top: 20px;"></div>
                         </div>
                     </div>
+
+                    <div id="settingsHealthResults"></div>
                 </div>
             </div>
         </div>
@@ -1121,12 +1170,11 @@
         <div class="tab-pane" id="tax-trace">
             <div class="diag-tab-intro">
                 <p>
-                    <strong>What this tab does:</strong> The most powerful debugging surface.
-                    Takes a single character ID + month, walks the entire tax-calculation
-                    pipeline for that miner, and shows what each step does: raw
-                    <code>mining_ledger</code> rows in scope, daily summary aggregation, ore
-                    composition, applied tax rate(s), event participation and discount math,
-                    final invoice computation, payment matching.
+                    <strong>What this tab does:</strong> Takes one character and a month and shows
+                    how that account's tax was worked out: every stored daily summary with the tax
+                    profile that taxed the day, its ores, rates and event discounts, the same days
+                    built again now by the code billing uses, the month's bills, and anything that
+                    does not add up.
                 </p>
                 <p>
                     <strong>When to use:</strong> When a specific miner says "my tax is wrong",
@@ -1134,10 +1182,10 @@
                     Picks one row and explains every cent.
                 </p>
                 <p>
-                    <strong>Heads up:</strong> Read-only &mdash; the trace does not mutate any
-                    rows. It compares "what the system would calculate now" against "what's
-                    currently stored", so the explanation reflects current settings + tax rates,
-                    not historical ones. For pipeline-level debugging see Tax Pipeline.
+                    <strong>Heads up:</strong> Read-only. Days are built again without saving, with
+                    today's settings, so a difference shows exactly what a rebuild would change. Days
+                    from before settings moved into tax profiles are built by the rules from before.
+                    For pipeline-level debugging see Tax Pipeline.
                 </p>
             </div>
             <div class="row">
@@ -1149,7 +1197,7 @@
                             </h3>
                         </div>
                         <div class="card-body">
-                            <p>Full diagnostic: stored daily summaries, live recalculation with current prices, account/bill info, and mismatch detection.</p>
+                            <p>Stored daily summaries and who taxed each day, the same days built again now, the month's bills, and anything that does not add up.</p>
 
                             <div class="row">
                                 <div class="col-md-6">
@@ -1224,6 +1272,22 @@
 
         <!-- Valuation Test Tab -->
         <div class="tab-pane" id="valuation-test">
+            <div class="diag-tab-intro">
+                <p>
+                    <strong>What this tab does:</strong> Give an ore type ID and a quantity to see, step
+                    by step, how the plugin values it: the settings it reads, the price it gets, the value
+                    that makes, and what each tax profile would charge on it.
+                </p>
+                <p>
+                    <strong>When to use:</strong> When one ore's value or tax looks wrong and you want to
+                    see which step it comes from.
+                </p>
+                <p>
+                    <strong>Heads up:</strong> The price is asked for from your configured provider when
+                    you run it, so it can differ from the price a ledger row was valued at. The trace says
+                    who gave it, and lists the cached price beside it. It saves no prices, values or taxes.
+                </p>
+            </div>
             <div class="row">
                 <div class="col-md-12">
                     <div class="card card-dark">
@@ -1233,8 +1297,6 @@
                             </h3>
                         </div>
                         <div class="card-body">
-                            <p>Enter an ore type ID and quantity to see step-by-step how the plugin values it: settings loaded, price fetched, tax rate applied, and final value.</p>
-
                             <div class="row">
                                 <div class="col-md-6">
                                     <div class="form-group">
@@ -1268,7 +1330,7 @@
             <div class="diag-tab-intro">
                 <p>
                     <strong>What this tab does:</strong> At-a-glance dashboard of the plugin's runtime
-                    state. Loads daily-summary freshness, multi-corp settings sanity, price-cache
+                    state. Loads daily-summary freshness, the tax profiles, price-cache
                     freshness, scheduled-job last activity, and row counts, including payment
                     allocations, held balances, pending refunds and planned moon pulls. All read-only.
                     Data is fetched fresh each time you click the tab (no caching).
@@ -1298,7 +1360,7 @@
 
                 {{-- Multi-Corp Settings --}}
                 <div class="card card-dark mb-3">
-                    <div class="card-header"><h3 class="card-title"><i class="fas fa-building"></i> Multi-Corporation Settings</h3></div>
+                    <div class="card-header"><h3 class="card-title"><i class="fas fa-building"></i> Tax Profiles</h3></div>
                     <div class="card-body" id="ss-multi-corp"></div>
                 </div>
 
@@ -1324,6 +1386,22 @@
 
         <!-- Notification Testing Tab -->
         <div class="tab-pane" id="notification-testing">
+            <div class="diag-tab-intro">
+                <p>
+                    <strong>What this tab does:</strong> Sends notifications on demand. Preview Test sends
+                    the chosen type to one webhook. Fire Live Notification sends it through the real
+                    pipeline to every webhook subscribed to that type. Fire ALL (Chain) does that for every
+                    type in turn.
+                </p>
+                <p>
+                    <strong>When to use:</strong> After adding or changing a webhook, a role ping or a
+                    notification setting, to see what actually lands in Discord or Slack.
+                </p>
+                <p>
+                    <strong>Heads up:</strong> Discord and Slack get real messages, so everyone in those
+                    channels sees them. EVE Mail runs as a dry run and makes no ESI call.
+                </p>
+            </div>
             <div class="row">
                 <div class="col-md-12">
                     <div class="card card-dark">
@@ -1333,8 +1411,6 @@
                             </h3>
                         </div>
                         <div class="card-body">
-                            <p>Test all notification types across all channels. EVE Mail runs as a dry-run (no ESI call), Discord and Slack send real messages.</p>
-
                             <div class="row">
                                 <!-- Left Column: Configuration -->
                                 <div class="col-md-6">
@@ -1354,6 +1430,7 @@
                                                 <option value="event_created">📅 Mining Event Created</option>
                                                 <option value="event_started">🚀 Mining Event Started</option>
                                                 <option value="event_completed">🏁 Mining Event Completed</option>
+                                                <option value="event_review">📝 Event Review</option>
                                             </optgroup>
                                             <optgroup label="Moon Notifications">
                                                 <option value="moon_ready">🌙 Moon Chunk Ready</option>
@@ -1505,13 +1582,13 @@
                                     <div class="form-group" id="ntPingSection">
                                         <div class="custom-control custom-checkbox">
                                             <input type="checkbox" class="custom-control-input" id="ntTestPing"
-                                                   {{ ($notificationSettings['discord_pinging_enabled'] ?? false) ? 'checked' : '' }}>
+                                                   {{ $taxPingsOn ? 'checked' : '' }}>
                                             <label class="custom-control-label" for="ntTestPing">
                                                 <i class="fas fa-at text-info"></i> Test Discord Ping
                                             </label>
                                             <small class="form-text text-muted">
                                                 Mention target character in Discord (requires seat-connector).
-                                                {{ ($notificationSettings['discord_pinging_enabled'] ?? false) ? '(Currently enabled in settings)' : '(Currently disabled in settings — check to test anyway)' }}
+                                                {{ $taxPingsOn ? '(Currently enabled in settings)' : '(Currently disabled in settings — check to test anyway)' }}
                                             </small>
                                         </div>
                                     </div>
@@ -1682,11 +1759,26 @@
 
         {{-- Moon Extraction Diagnostic Tab --}}
         <div class="tab-pane" id="moon-diagnostic">
+            <div class="diag-tab-intro">
+                <p>
+                    <strong>What this tab does:</strong> Checks one extraction, or the last five at a
+                    structure: its stored status against the status its times give, fracture detection,
+                    jackpot detection from the mining recorded there, and the chunk's value.
+                </p>
+                <p>
+                    <strong>When to use:</strong> When an extraction shows the wrong status, a jackpot
+                    was missed, or a chunk's value looks wrong.
+                </p>
+                <p>
+                    <strong>Heads up:</strong> If a chunk has arrived and SeAT holds a fracture
+                    notification the extraction has not picked up yet, running this records the fracture,
+                    the same as opening the extraction's page does.
+                </p>
+            </div>
             <div class="row"><div class="col-md-12">
                 <div class="card card-dark">
                     <div class="card-header"><h3 class="card-title"><i class="fas fa-moon"></i> Moon Extraction Diagnostic</h3></div>
                     <div class="card-body">
-                        <p>Test fracture detection, status transitions, jackpot detection, and value calculations for moon extractions.</p>
                         <div class="row">
                             <div class="col-md-6">
                                 <div class="form-group">
@@ -1714,11 +1806,22 @@
 
         {{-- Tax Pipeline Diagnostic Tab --}}
         <div class="tab-pane" id="tax-pipeline">
+            <div class="diag-tab-intro">
+                <p>
+                    <strong>What this tab does:</strong> Follows a month through the tax pipeline: the
+                    daily summaries, the tax records, payment codes, payments and how they were matched,
+                    overdue bills, and exemptions and the minimum tax. Give a Character ID as well to see
+                    that account's tax worked out, its alts included. It only reads.
+                </p>
+                <p>
+                    <strong>When to use:</strong> When a month's bills or payments look wrong across the
+                    board. For one member's bill, Tax Trace goes deeper.
+                </p>
+            </div>
             <div class="row"><div class="col-md-12">
                 <div class="card card-dark">
                     <div class="card-header"><h3 class="card-title"><i class="fas fa-file-invoice-dollar"></i> Tax Pipeline Diagnostic</h3></div>
                     <div class="card-body">
-                        <p>Test the full tax pipeline: daily summaries → tax calculation → codes → payment matching → overdue detection.</p>
                         <div class="row">
                             <div class="col-md-4">
                                 <div class="form-group">
@@ -1745,11 +1848,22 @@
 
         {{-- Theft Detection Diagnostic Tab --}}
         <div class="tab-pane" id="theft-diagnostic">
+            <div class="diag-tab-intro">
+                <p>
+                    <strong>What this tab does:</strong> Shows the theft rules in force and who the
+                    next daily run would take off the list. Give a Character ID to see whether their
+                    mining would open an incident, and why. Nothing is recorded here: only the daily
+                    run opens and closes incidents.
+                </p>
+                <p>
+                    <strong>When to use:</strong> When someone was flagged, or was not, and you want to
+                    know why.
+                </p>
+            </div>
             <div class="row"><div class="col-md-12">
                 <div class="card card-dark">
                     <div class="card-header"><h3 class="card-title"><i class="fas fa-user-secret"></i> Theft Detection Diagnostic</h3></div>
                     <div class="card-body">
-                        <p>Test theft detection logic, external miner identification, and severity calculations. Leave Character ID empty for overall statistics.</p>
                         <div class="row">
                             <div class="col-md-6">
                                 <div class="form-group">
@@ -1770,11 +1884,22 @@
 
         {{-- Event Lifecycle Diagnostic Tab --}}
         <div class="tab-pane" id="event-diagnostic">
+            <div class="diag-tab-intro">
+                <p>
+                    <strong>What this tab does:</strong> With an Event ID, shows that event's status,
+                    progress, statistics, the top ten on its leaderboard and participants who have not
+                    mined for a while. Left empty, it lists active, upcoming and recently finished events.
+                    Both start with checks on the event tables. It only reads.
+                </p>
+                <p>
+                    <strong>When to use:</strong> When an event's figures, participants or status look
+                    wrong.
+                </p>
+            </div>
             <div class="row"><div class="col-md-12">
                 <div class="card card-dark">
                     <div class="card-header"><h3 class="card-title"><i class="fas fa-calendar-alt"></i> Event Lifecycle Diagnostic</h3></div>
                     <div class="card-body">
-                        <p>Test event management, participant tracking, and progress calculations. Leave Event ID empty for an overview of all events.</p>
                         <div class="row">
                             <div class="col-md-6">
                                 <div class="form-group">
@@ -1795,11 +1920,21 @@
 
         {{-- Analytics & Reports Diagnostic Tab --}}
         <div class="tab-pane" id="analytics-diagnostic">
+            <div class="diag-tab-intro">
+                <p>
+                    <strong>What this tab does:</strong> Works out the dashboard and tax figures, and the
+                    mining analytics for the dates you pick (total value and volume, unique miners, top
+                    miners, ore breakdown), with the same code the pages use. It only reads.
+                </p>
+                <p>
+                    <strong>When to use:</strong> When the dashboard, a chart or a report disagrees with
+                    the ledger.
+                </p>
+            </div>
             <div class="row"><div class="col-md-12">
                 <div class="card card-dark">
                     <div class="card-header"><h3 class="card-title"><i class="fas fa-chart-bar"></i> Analytics & Reports Diagnostic</h3></div>
                     <div class="card-body">
-                        <p>Test dashboard metrics, mining analytics, and report generation.</p>
                         <div class="row">
                             <div class="col-md-4">
                                 <div class="form-group">
@@ -2067,7 +2202,7 @@ function checkProviderRequirements() {
     const warningText = document.getElementById('providerWarningText');
 
     if (provider === 'janice') {
-        warningText.innerHTML = 'Janice API requires an API key. Make sure you have configured <code>janice_api_key</code> in Settings or set <code>MINING_MANAGER_JANICE_API_KEY</code> in your .env file. You can get a free API key from <a href="https://janice.e-351.com/" target="_blank">janice.e-351.com</a>.';
+        warningText.innerHTML = 'Janice API requires an API key. Make sure you have configured <code>janice_api_key</code> in Settings or set <code>MINING_MANAGER_JANICE_API_KEY</code> in your .env file. You can get a free API key from <a href="https://janice.e-351.com/" target="_blank" rel="noopener">janice.e-351.com</a>.';
         warningBox.style.display = 'block';
     } else if (provider === 'manager-core') {
         @if(\MiningManager\Services\Pricing\PriceProviderService::isManagerCoreInstalled())
@@ -2154,7 +2289,7 @@ function testProvider() {
                     <hr>
                     <p><strong>How to fix:</strong></p>
                     <ul>
-                        <li>Get a free API key from <a href="https://janice.e-351.com/" target="_blank">janice.e-351.com</a></li>
+                        <li>Get a free API key from <a href="https://janice.e-351.com/" target="_blank" rel="noopener">janice.e-351.com</a></li>
                         <li>Go to <strong>Settings</strong> and add your Janice API key</li>
                         <li>Or add <code>MINING_MANAGER_JANICE_API_KEY=your_key_here</code> to your .env file</li>
                     </ul>
@@ -2210,7 +2345,7 @@ function loadProviderConfig() {
             html += `
                 <div class="danger-box" style="margin: 10px 0;">
                     <strong><i class="fas fa-exclamation-triangle"></i> Janice API Key Not Configured</strong>
-                    <p class="mb-0">Get a free API key from <a href="https://janice.e-351.com/" target="_blank">janice.e-351.com</a> and configure it in Settings.</p>
+                    <p class="mb-0">Get a free API key from <a href="https://janice.e-351.com/" target="_blank" rel="noopener">janice.e-351.com</a> and configure it in Settings.</p>
                 </div>
             `;
         }
@@ -2331,7 +2466,7 @@ function testBatchPricing() {
                     <hr>
                     <p><strong>How to fix:</strong></p>
                     <ul>
-                        <li>Get a free API key from <a href="https://janice.e-351.com/" target="_blank">janice.e-351.com</a></li>
+                        <li>Get a free API key from <a href="https://janice.e-351.com/" target="_blank" rel="noopener">janice.e-351.com</a></li>
                         <li>Go to <strong>Settings</strong> and add your Janice API key</li>
                         <li>Or add <code>MINING_MANAGER_JANICE_API_KEY=your_key_here</code> to your .env file</li>
                     </ul>
@@ -2538,8 +2673,41 @@ function warmCache() {
 }
 
 // ============================================================================
-// SETTINGS HEALTH CHECK
+// SETTINGS HEALTH
 // ============================================================================
+
+// The tab's link runs its onclick twice, once from the browser and once from
+// the tab switcher, so opening it loads the report only the first time.
+let settingsHealthOpened = false;
+
+function openSettingsHealth() {
+    if (settingsHealthOpened) {
+        return;
+    }
+    settingsHealthOpened = true;
+    loadSettingsHealth();
+}
+
+function diagEscape(value) {
+    if (value === null || value === undefined) return '';
+    return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+function settingsHealthBadge(status) {
+    const badges = {
+        ok: ['badge-success', 'check', 'OK'],
+        warn: ['badge-warning', 'exclamation-triangle', 'WARN'],
+        fail: ['badge-danger', 'times', 'FAIL'],
+        info: ['badge-info', 'info-circle', 'INFO'],
+    };
+    const [cls, icon, label] = badges[status] || badges.info;
+    return `<span class="badge ${cls}"><i class="fas fa-${icon}"></i> ${label}</span>`;
+}
 
 function loadSettingsHealth() {
     const resultsDiv = document.getElementById('settingsHealthResults');
@@ -2548,7 +2716,6 @@ function loadSettingsHealth() {
 
     btnText.textContent = 'Checking...';
     spinner.style.display = 'inline-block';
-    resultsDiv.innerHTML = '';
 
     const url = '{{ route("mining-manager.diagnostic.settings-health") }}';
     const relativeUrl = new URL(url, window.location.origin).pathname;
@@ -2556,56 +2723,201 @@ function loadSettingsHealth() {
     fetch(relativeUrl, { headers: { 'Accept': 'application/json' } })
     .then(response => response.json())
     .then(data => {
-        btnText.textContent = 'Run Health Check';
+        btnText.textContent = 'Run again';
         spinner.style.display = 'none';
-
-        if (data.success) {
-            let html = `<div class="provider-test-result success">
-                <h5><i class="fas fa-check-circle text-success"></i> Settings Health Report</h5>
-                <div class="row mb-3">
-                    <div class="col-md-3"><strong>DB Settings:</strong> ${data.summary.total_db_settings}</div>
-                    <div class="col-md-3"><strong>Global:</strong> ${data.summary.global_settings}</div>
-                    <div class="col-md-3"><strong>Corp Overrides:</strong> ${data.summary.corporation_overrides.length}</div>
-                    <div class="col-md-3"><strong>Orphaned:</strong> <span class="${data.summary.orphaned_settings > 0 ? 'text-danger' : ''}">${data.summary.orphaned_settings}</span></div>
-                </div>`;
-
-            if (data.issues.length > 0) {
-                html += '<div class="alert alert-warning">';
-                data.issues.forEach(issue => { html += `<p class="mb-0"><i class="fas fa-exclamation-triangle"></i> ${issue}</p>`; });
-                html += '</div>';
-            }
-
-            // Show each settings group
-            for (const [group, settings] of Object.entries(data.settings)) {
-                html += `<hr><h6><i class="fas fa-folder"></i> ${group}</h6><div style="max-height: 300px; overflow-y: auto;">`;
-                settings.forEach(s => {
-                    const sourceColor = s.source === 'database' ? 'text-success' : (s.source === 'config' ? 'text-info' : 'text-muted');
-                    const sourceIcon = s.source === 'database' ? 'fa-database' : (s.source === 'config' ? 'fa-file-code' : 'fa-cog');
-                    html += `<div class="price-item"><span><i class="fas ${sourceIcon} ${sourceColor}"></i> ${s.key}</span>
-                        <span><strong>${s.value !== null && s.value !== '' ? s.value : '<em>empty</em>'}</strong> <small class="${sourceColor}">[${s.source}]</small></span></div>`;
-                });
-                html += '</div>';
-            }
-
-            // Corporation overrides
-            if (data.summary.corporation_overrides.length > 0) {
-                html += '<hr><h6><i class="fas fa-building"></i> Corporation Overrides</h6>';
-                data.summary.corporation_overrides.forEach(corp => {
-                    html += `<div class="price-item"><span>${corp.corporation_name} (${corp.corporation_id})</span><span><strong>${corp.setting_count} settings</strong></span></div>`;
-                });
-            }
-
-            html += '</div>';
-            resultsDiv.innerHTML = html;
-        } else {
-            resultsDiv.innerHTML = `<div class="provider-test-result error"><h5><i class="fas fa-times-circle text-danger"></i> Failed</h5><p>${data.error}</p></div>`;
-        }
+        resultsDiv.innerHTML = data.success
+            ? renderSettingsHealth(data.report)
+            : `<div class="provider-test-result error"><h5><i class="fas fa-times-circle text-danger"></i> Failed</h5><p>${diagEscape(data.error)}</p></div>`;
     })
     .catch(error => {
-        btnText.textContent = 'Run Health Check';
+        btnText.textContent = 'Run again';
         spinner.style.display = 'none';
-        resultsDiv.innerHTML = `<div class="provider-test-result error"><h5><i class="fas fa-times-circle text-danger"></i> Request Failed</h5><p>${error.message}</p></div>`;
+        resultsDiv.innerHTML = `<div class="provider-test-result error"><h5><i class="fas fa-times-circle text-danger"></i> Request Failed</h5><p>${diagEscape(error.message)}</p></div>`;
     });
+}
+
+function renderSettingsHealth(report) {
+    const esc = diagEscape;
+    const overall = {
+        ok: ['badge-success', 'check', 'ALL CLEAR'],
+        warn: ['badge-warning', 'exclamation-triangle', 'WARNINGS'],
+        fail: ['badge-danger', 'times', 'FAILURES'],
+    }[report.overall];
+    const counts = report.counts;
+
+    let html = `
+        <div class="card card-dark mt-3">
+            <div class="card-header">
+                <h3 class="card-title"><i class="fas fa-chart-pie"></i> Summary</h3>
+                <div class="card-tools">
+                    <span class="badge ${overall[0]}"><i class="fas fa-${overall[1]}"></i> ${overall[2]}</span>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="row text-center">
+                    <div class="col-6 col-md-3"><h4 class="text-success">${counts.ok}</h4><small>OK</small></div>
+                    <div class="col-6 col-md-3"><h4 class="text-warning">${counts.warn}</h4><small>Warn</small></div>
+                    <div class="col-6 col-md-3"><h4 class="text-danger">${counts.fail}</h4><small>Fail</small></div>
+                    <div class="col-6 col-md-3"><h4 class="text-info">${counts.info}</h4><small>Info</small></div>
+                </div>
+            </div>
+        </div>`;
+
+    report.groups.forEach(group => {
+        html += `
+        <div class="card card-dark">
+            <div class="card-header">
+                <h3 class="card-title"><i class="fas ${esc(group.icon)}"></i> ${esc(group.title)}</h3>
+            </div>
+            <div class="card-body">
+                <p class="text-muted">${esc(group.description)}</p>
+                <div class="table-responsive">
+                    <table class="table table-sm table-dark mb-0">
+                        <thead>
+                            <tr>
+                                <th style="width: 80px;">Status</th>
+                                <th style="width: 26%;">Check</th>
+                                <th>Detail</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${group.checks.map(check => `
+                            <tr>
+                                <td>${settingsHealthBadge(check.status)}</td>
+                                <td><strong>${esc(check.label)}</strong></td>
+                                <td style="font-size: 0.88em;">${esc(check.message)}</td>
+                            </tr>`).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>`;
+    });
+
+    if (report.profiles) {
+        html += renderSettingsHealthProfiles(report.profiles);
+    }
+    html += renderSettingsHealthInstall(report.install);
+    html += renderSettingsHealthRecords(report.records, report.report_url);
+
+    return html;
+}
+
+function renderSettingsHealthProfiles(profiles) {
+    const esc = diagEscape;
+    const span = profiles.columns.length + 1;
+    let anyUnused = false;
+
+    let rows = '';
+    profiles.sections.forEach(section => {
+        rows += `<tr><th colspan="${span}" class="text-uppercase small" style="background: rgba(102, 126, 234, 0.12);">${esc(section.title)}</th></tr>`;
+        section.rows.forEach(row => {
+            rows += `<tr><td>${esc(row.label)}<br><small class="text-muted">${row.keys.map(esc).join(', ')}</small></td>`;
+            row.cells.forEach(cell => {
+                if (cell.unused) {
+                    anyUnused = true;
+                    rows += `<td title="${esc(profiles.unused_note)}"><span style="opacity: 0.5;">${esc(cell.text)}</span> <small class="text-muted">not used</small></td>`;
+                } else {
+                    rows += `<td>${esc(cell.text)}${cell.saved === false ? ' <span class="badge badge-secondary">default</span>' : ''}</td>`;
+                }
+            });
+            rows += '</tr>';
+        });
+    });
+
+    return `
+        <div class="card card-dark">
+            <div class="card-header">
+                <h3 class="card-title"><i class="fas fa-columns"></i> Tax profiles side by side</h3>
+            </div>
+            <div class="card-body">
+                <p class="text-muted">What each profile holds, as billing reads it. A profile never falls back to Global: a value marked <span class="badge badge-secondary">default</span> was never saved for that profile and reads the built-in default.</p>
+                <div class="table-responsive">
+                    <table class="table table-sm table-dark mb-0" style="font-size: 0.85em;">
+                        <thead>
+                            <tr>
+                                <th>Setting</th>
+                                ${profiles.columns.map(column => `<th>${esc(column.label)}<br><small class="text-muted">${esc(column.note)}</small></th>`).join('')}
+                            </tr>
+                        </thead>
+                        <tbody>${rows}</tbody>
+                    </table>
+                </div>
+                ${anyUnused ? `<small class="text-muted d-block mt-2">${esc(profiles.unused_note)}</small>` : ''}
+            </div>
+        </div>`;
+}
+
+function renderSettingsHealthInstall(install) {
+    const esc = diagEscape;
+    const value = setting => {
+        if (setting.value === null) {
+            return '<em class="text-muted">not saved, and the page that uses it keeps its own default</em>';
+        }
+        return setting.value === '' ? '<em class="text-muted">empty</em>' : esc(setting.value);
+    };
+
+    return `
+        <div class="card card-dark">
+            <div class="card-header">
+                <h3 class="card-title"><i class="fas fa-sliders-h"></i> Install-wide settings</h3>
+            </div>
+            <div class="card-body">
+                <p class="text-muted">One value for the whole install, kept with no corporation, whoever reads it.</p>
+                <div class="table-responsive" style="max-height: 420px; overflow-y: auto;">
+                    <table class="table table-sm table-dark mb-0" style="font-size: 0.85em;">
+                        <thead>
+                            <tr>
+                                <th>Setting</th>
+                                <th>Value</th>
+                                <th style="width: 90px;">Stored</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${install.map(setting => `
+                            <tr>
+                                <td><code>${esc(setting.key)}</code></td>
+                                <td style="word-break: break-word;">${value(setting)}</td>
+                                <td>${setting.saved ? 'saved' : '<span class="badge badge-secondary">default</span>'}</td>
+                            </tr>`).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>`;
+}
+
+function renderSettingsHealthRecords(records, reportUrl) {
+    const esc = diagEscape;
+
+    return `
+        <div class="card card-dark">
+            <div class="card-header">
+                <h3 class="card-title"><i class="fas fa-history"></i> Plugin records</h3>
+            </div>
+            <div class="card-body">
+                <p class="text-muted">Dates and markers the plugin keeps for itself, never shown on the settings pages and never exported. The full report of the move into tax profiles is under <a href="${esc(reportUrl)}">Settings, Maintenance</a>.</p>
+                <div class="table-responsive">
+                    <table class="table table-sm table-dark mb-0" style="font-size: 0.85em;">
+                        <thead>
+                            <tr>
+                                <th>Record</th>
+                                <th>Value</th>
+                                <th style="width: 170px;">Last written</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${records.map(record => `
+                            <tr>
+                                <td><code>${esc(record.key)}</code></td>
+                                <td style="word-break: break-word;">${record.value === null ? '<em class="text-muted">not set</em>' : esc(record.value)}</td>
+                                <td>${record.updated_at ? esc(record.updated_at) : '<em class="text-muted">never</em>'}</td>
+                            </tr>`).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>`;
 }
 
 // ============================================================================
@@ -2654,7 +2966,12 @@ function runTaxTrace() {
         // SECTION 1: Character & Account Info
         // ================================================================
         const acc = data.account || {};
-        const bill = data.tax_bill;
+        const bills = data.tax_bills || [];
+        const names = {};
+        (acc.all_characters || []).forEach(c => { names[c.character_id] = c.name; });
+        names[data.character.id] = names[data.character.id] || data.character.name;
+        const charName = id => names[id] || ('Character ' + id);
+        const multiChar = (acc.all_character_ids || []).length > 1;
         const statusColors = { paid: 'success', unpaid: 'warning', overdue: 'danger', partial: 'info', waived: 'secondary' };
 
         html += `<div class="provider-test-result ${data.stored_summaries.totals.days_with_data > 0 ? 'success' : 'warning'}">
@@ -2688,27 +3005,30 @@ function runTaxTrace() {
             }
             html += `</div></div>`;
         } else {
-            html += `<div class="row mb-2"><div class="col-md-12"><span class="text-warning"><i class="fas fa-exclamation-triangle"></i> Character not registered in SeAT (guest miner)</span></div></div>`;
+            html += `<div class="row mb-2"><div class="col-md-12"><span class="text-warning"><i class="fas fa-exclamation-triangle"></i> Character not registered in SeAT</span></div></div>`;
         }
 
-        // Tax bill
-        if (bill) {
-            const statusColor = statusColors[bill.status] || 'secondary';
-            html += `<div class="row mb-2" style="background: rgba(0,0,0,0.1); padding: 8px; border-radius: 4px; margin-top: 5px;">
-                <div class="col-md-3">
-                    <strong>Tax Bill:</strong> <span class="badge badge-${statusColor}">${bill.status.toUpperCase()}</span>
-                </div>
-                <div class="col-md-3">
-                    <strong>Owed:</strong> ${fmtISK(bill.amount_owed)} ISK
-                </div>
-                <div class="col-md-3">
-                    <strong>Paid:</strong> ${fmtISK(bill.amount_paid)} ISK
-                </div>
-                <div class="col-md-3">
-                    <strong>Due:</strong> ${bill.due_date || 'N/A'}
-                    ${bill.tax_code ? ' | <strong>Code:</strong> ' + bill.tax_code : ''}
-                </div>
-            </div>`;
+        // Tax bills: two for the month on a twice-monthly period
+        if (bills.length > 0) {
+            bills.forEach(bill => {
+                const statusColor = statusColors[bill.status] || 'secondary';
+                html += `<div class="row mb-2" style="background: rgba(0,0,0,0.1); padding: 8px; border-radius: 4px; margin-top: 5px;">
+                    <div class="col-md-3">
+                        <strong>Tax Bill:</strong> <span class="badge badge-${statusColor}">${bill.status.toUpperCase()}</span>
+                        <br><small class="text-muted">${bill.period_start} to ${bill.period_end}</small>
+                    </div>
+                    <div class="col-md-3">
+                        <strong>Owed:</strong> ${fmtISK(bill.amount_owed)} ISK
+                    </div>
+                    <div class="col-md-3">
+                        <strong>Paid:</strong> ${fmtISK(bill.amount_paid)} ISK
+                    </div>
+                    <div class="col-md-3">
+                        <strong>Due:</strong> ${bill.due_date || 'N/A'}
+                        ${bill.tax_code ? ' | <strong>Code:</strong> ' + diagEscape(bill.tax_code) : ''}
+                    </div>
+                </div>`;
+            });
         } else {
             html += `<div class="row mb-2"><div class="col-md-12"><span class="text-muted"><i class="fas fa-info-circle"></i> No tax bill found for this period (taxes may not have been calculated yet)</span></div></div>`;
         }
@@ -2756,6 +3076,8 @@ function runTaxTrace() {
                     <div style="background: rgba(0,0,0,0.2); padding: 8px 12px; cursor: pointer; display: flex; justify-content: space-between; align-items: center;" onclick="document.getElementById('${dayId}').style.display = document.getElementById('${dayId}').style.display === 'none' ? 'block' : 'none'">
                         <span>
                             <i class="fas fa-calendar-day"></i> <strong>${day.date}</strong>
+                            ${multiChar ? '<span class="ml-2">' + diagEscape(charName(day.character_id)) + '</span>' : ''}
+                            <span class="badge badge-info ml-2" title="Who taxed this day">${diagEscape(day.taxed_by)}</span>
                             <span class="text-muted ml-2">${day.ore_count} ore types</span>
                             ${day.is_finalized ? '<span class="badge badge-success ml-2">FINALIZED</span>' : '<span class="badge badge-warning ml-2">PENDING</span>'}
                             ${hasWarnings ? '<span class="badge badge-danger ml-2"><i class="fas fa-exclamation-triangle"></i> ' + day.warnings.length + ' issues</span>' : ''}
@@ -2827,71 +3149,88 @@ function runTaxTrace() {
         html += `</div>`;
 
         // ================================================================
-        // SECTION 4: Live Recalculation
+        // SECTION 4: The same days built again now
         // ================================================================
-        const live = data.live_recalculation;
+        const rebuilt = data.rebuilt;
+        const changedDays = rebuilt.days.filter(day => Math.abs(day.difference) > 1);
+        const totalDiff = rebuilt.totals.rebuilt_tax - rebuilt.totals.stored_tax;
+        const diffColor = changedDays.length === 0 ? 'success' : (Math.abs(totalDiff) < 1000000 ? 'warning' : 'danger');
+        const sources = { ours: 'Our refinery', other: "Another corporation's refinery", personal: 'Personal ledger' };
+
         html += `<div class="provider-test-result" style="margin-top: 10px; border-left: 3px solid #17a2b8;">
-            <h5><i class="fas fa-sync-alt"></i> Live Recalculation <small class="text-muted">(current prices & rates)</small></h5>
+            <h5><i class="fas fa-sync-alt"></i> Built Again Now <small class="text-muted">(by the code billing uses, nothing saved)</small></h5>
+            <p>Each day built from the ledger again with today's settings. Values are the ledger's own, priced when each row was processed, so a difference here is exactly what rebuilding the day would change.</p>
             <div class="row mb-2">
-                <div class="col-md-3"><strong>Provider:</strong> ${live.settings_used.price_provider}</div>
-                <div class="col-md-3"><strong>Method:</strong> ${live.settings_used.valuation_method}</div>
-                <div class="col-md-3"><strong>Refining:</strong> ${live.settings_used.refining_efficiency}%</div>
-                <div class="col-md-3"><strong>Ledger Entries:</strong> ${live.totals.total_entries}</div>
-            </div>
-            <div class="row mb-2">
-                <div class="col-md-4"><strong>Total Value:</strong> ${fmtISK(live.totals.total_value)} ISK</div>
-                <div class="col-md-4"><strong>Total Tax:</strong> ${fmtISK(live.totals.total_tax)} ISK</div>
-                <div class="col-md-4"><strong>Effective Rate:</strong> ${live.totals.effective_rate}%</div>
+                <div class="col-md-3"><strong>Days:</strong> ${rebuilt.days.length}</div>
+                <div class="col-md-3"><strong>Stored Tax:</strong> ${fmtISK(rebuilt.totals.stored_tax)} ISK</div>
+                <div class="col-md-3"><strong>Rebuilt Tax:</strong> ${fmtISK(rebuilt.totals.rebuilt_tax)} ISK</div>
+                <div class="col-md-3"><strong>Difference:</strong>
+                    <span class="badge badge-${diffColor}" style="font-size: 0.9em;">${changedDays.length === 0 ? 'MATCH' : fmtISK(totalDiff) + ' ISK'}</span>
+                </div>
             </div>`;
 
-        // Comparison bar
-        if (stored.totals.days_with_data > 0) {
-            const diff = Math.abs(stored.totals.total_tax - live.totals.total_tax);
-            const diffPct = stored.totals.total_tax > 0 ? ((diff / stored.totals.total_tax) * 100).toFixed(1) : 0;
-            const diffColor = diff < 1 ? 'success' : (diff < 1000000 ? 'warning' : 'danger');
-            html += `<div style="background: rgba(0,0,0,0.15); padding: 8px; border-radius: 4px; margin-bottom: 10px;">
-                <strong>Stored vs Live Difference:</strong>
-                <span class="badge badge-${diffColor}" style="font-size: 0.9em;">
-                    ${diff < 1 ? 'MATCH' : fmtISK(diff) + ' ISK (' + diffPct + '%)'}
-                </span>
-                ${diff >= 1 ? ' <small class="text-muted">Prices or rates may have changed since summaries were generated</small>' : ''}
-            </div>`;
-        }
+        if (changedDays.length > 0) {
+            html += `<table class="table table-sm table-dark table-striped" style="font-size: 0.85em; margin-bottom: 0;">
+                <thead><tr>
+                    <th>Date</th>
+                    ${multiChar ? '<th>Character</th>' : ''}
+                    <th>Taxed By</th>
+                    <th class="text-right">Stored Tax</th>
+                    <th class="text-right">Rebuilt Tax</th>
+                    <th class="text-right">Difference</th>
+                    <th></th>
+                </tr></thead><tbody>`;
 
-        // Collapsible live entries
-        if (live.entries && live.entries.length > 0) {
-            html += `<div style="margin-top: 5px;">
-                <a href="#" onclick="event.preventDefault(); document.getElementById('liveEntriesTable').style.display = document.getElementById('liveEntriesTable').style.display === 'none' ? 'block' : 'none'">
-                    <i class="fas fa-chevron-down"></i> Show ${live.entries.length} ledger entries
-                </a>
-                <div id="liveEntriesTable" style="display: none; max-height: 400px; overflow-y: auto; margin-top: 8px;">
-                    <table class="table table-sm table-dark table-striped" style="font-size: 0.85em; margin-bottom: 0;">
-                        <thead><tr>
-                            <th>Date</th>
-                            <th>Ore</th>
-                            <th class="text-right">Qty</th>
-                            <th class="text-right">Unit Price</th>
-                            <th class="text-right">Value</th>
-                            <th class="text-center">Rate</th>
-                            <th class="text-right">Tax</th>
-                        </tr></thead><tbody>`;
-
-            live.entries.forEach(e => {
-                const hasErr = e.pricing_error || e.unit_price == 0;
-                html += `<tr ${hasErr ? 'style="background: rgba(255,0,0,0.1);"' : ''}>
-                    <td>${e.date}</td>
-                    <td><i class="fas ${oreIcon(e.category)}"></i> ${e.type_name} <small class="text-muted">[${e.category}${e.rarity ? '/' + e.rarity : ''}]</small>
-                        ${e.pricing_error ? '<br><small class="text-danger"><i class="fas fa-times-circle"></i> ' + e.pricing_error + '</small>' : ''}
+            changedDays.forEach((day, idx) => {
+                const rowId = 'rebuiltDay_' + idx;
+                html += `<tr>
+                    <td>${day.date}</td>
+                    ${multiChar ? '<td>' + diagEscape(charName(day.character_id)) + '</td>' : ''}
+                    <td>${diagEscape(day.taxed_by)}</td>
+                    <td class="text-right">${day.stored ? fmtISK(day.stored_tax) : '<em class="text-muted">none stored</em>'}</td>
+                    <td class="text-right">${fmtISK(day.rebuilt_tax)}</td>
+                    <td class="text-right"><strong>${fmtISK(day.difference)}</strong></td>
+                    <td class="text-right">
+                        <a href="#" onclick="event.preventDefault(); const row = document.getElementById('${rowId}'); row.style.display = row.style.display === 'none' ? '' : 'none';">Ores</a>
                     </td>
-                    <td class="text-right">${fmtNum(e.quantity)}</td>
-                    <td class="text-right">${e.unit_price > 0 ? fmtISK(e.unit_price) : '<span class="text-danger">0.00</span>'}</td>
-                    <td class="text-right">${fmtISK(e.total_value)}</td>
-                    <td class="text-center">${e.tax_rate}%</td>
-                    <td class="text-right"><strong>${fmtISK(e.tax_amount)}</strong></td>
-                </tr>`;
+                </tr>
+                <tr id="${rowId}" style="display: none;"><td colspan="${multiChar ? 7 : 6}">`;
+
+                if (day.ores.length > 0) {
+                    html += `<table class="table table-sm table-dark mb-0" style="font-size: 0.95em;">
+                        <thead><tr>
+                            <th>Ore</th>
+                            <th>Mined At</th>
+                            <th class="text-right">Qty</th>
+                            <th class="text-right">Value</th>
+                            <th class="text-center">Tax Rate</th>
+                            <th class="text-center">Eff. Rate</th>
+                            <th class="text-right">Est. Tax</th>
+                        </tr></thead><tbody>`;
+                    day.ores.forEach(ore => {
+                        html += `<tr>
+                            <td><i class="fas ${oreIcon(ore.category)}"></i> ${diagEscape(ore.ore_name || 'Type ' + ore.type_id)}
+                                <small class="text-muted">[${diagEscape(ore.category)}${ore.moon_rarity ? '/' + diagEscape(ore.moon_rarity) : ''}]</small>
+                            </td>
+                            <td>${diagEscape(sources[ore.source] || ore.source || '')}</td>
+                            <td class="text-right">${fmtNum(ore.quantity)}</td>
+                            <td class="text-right">${fmtISK(ore.total_value)}</td>
+                            <td class="text-center">${ore.is_taxable ? (ore.tax_rate || 0) + '%' : '<span class="badge badge-secondary">Exempt</span>'}</td>
+                            <td class="text-center">${ore.effective_rate || 0}%</td>
+                            <td class="text-right"><strong>${fmtISK(ore.estimated_tax)}</strong></td>
+                        </tr>`;
+                    });
+                    html += `</tbody></table>`;
+                } else {
+                    html += `<em class="text-muted">Nothing on this day counts towards tax when built again now.</em>`;
+                }
+
+                html += `</td></tr>`;
             });
 
-            html += `</tbody></table></div></div>`;
+            html += `</tbody></table>`;
+        } else if (rebuilt.days.length > 0) {
+            html += `<p class="mb-0"><i class="fas fa-check-circle text-success"></i> Every day builds again to the tax that is stored.</p>`;
         }
 
         html += `</div>`;
@@ -3161,7 +3500,7 @@ function loadSystemStatus() {
     // Load each section independently — progressive loading
     var sections = [
         { key: 'daily_summaries', target: '#ss-daily-summaries', render: renderDailySummaries },
-        { key: 'multi_corp', target: '#ss-multi-corp', render: renderMultiCorp },
+        { key: 'multi_corp', target: '#ss-multi-corp', render: renderTaxProfiles },
         { key: 'price_cache', target: '#ss-price-cache', render: renderPriceCache },
         { key: 'scheduled_jobs', target: '#ss-jobs', render: renderJobs },
         { key: 'data_counts', target: '#ss-data-counts', render: renderDataCounts },
@@ -3192,32 +3531,37 @@ function renderDailySummaries(target, ds) {
     );
 }
 
-function renderMultiCorp(target, mc) {
+function renderTaxProfiles(target, mc) {
     var mcBadge = mc.status === 'healthy' ? 'success' : 'warning';
     var html = '<span class="badge badge-' + mcBadge + ' mb-2">' + (mc.status || 'unknown').toUpperCase() + '</span>' +
         '<table class="table table-sm table-dark">' +
+        '<tr><td>Settings in tax profiles</td><td>' + (mc.moved ? 'Since ' + diagEscape(mc.moved_at) + ' UTC' : '<span class="text-danger">Not yet: migration 000038 has not run</span>') + '</td></tr>' +
+        '<tr><td>Moon Owner</td><td>' + (mc.moon_owner ? diagEscape(mc.moon_owner) : '<span class="text-warning">Not set</span>') + '</td></tr>' +
         '<tr><td>Configured corporations</td><td><strong>' + (mc.configured_corporations || 0) + '</strong></td></tr>' +
-        '<tr><td>Moon owner corp ID</td><td>' + (mc.moon_owner_corporation_id || '<span class="text-warning">Not set</span>') + '</td></tr>' +
         '<tr><td>Manager Core</td><td>' + (mc.manager_core_installed ? '<span class="text-success">Installed</span>' : '<span class="text-muted">Not installed</span>') + '</td></tr>' +
         '</table>';
-    if (mc.corporation_details && mc.corporation_details.length > 0) {
-        var ck = '<i class="fas fa-check text-success"></i>';
-        var no = '<i class="fas fa-times text-muted"></i>';
-        html += '<h6 class="mt-3">Per-Corporation Tax Config</h6><table class="table table-sm table-dark" style="font-size:0.85em;">' +
-            '<thead><tr><th>Corporation</th><th>Ore Rate</th><th>Moon Rates</th><th>Moon Mode</th><th>Ore</th><th>Ice</th><th>Gas</th><th>Abyssal</th><th>Triglavian</th></tr></thead><tbody>';
-        mc.corporation_details.forEach(function(c) {
-            var moonMode = c.all_moon_ore ? 'All Moon' : (c.only_corp_moon_ore ? 'Corp Only' : (c.no_moon_ore ? 'None' : 'Default'));
-            html += '<tr><td>' + (c.corporation_name || c.corporation_id) + '</td>' +
-                '<td>' + (c.ore_rate || 0) + '%</td>' +
-                '<td>' + (c.has_moon_rates ? ck : no) + '</td>' +
-                '<td><span class="badge badge-' + (c.no_moon_ore ? 'danger' : 'info') + '">' + moonMode + '</span></td>' +
-                '<td>' + (c.ore_taxed ? ck : no) + '</td>' +
-                '<td>' + (c.ice_taxed ? ck : no) + '</td>' +
-                '<td>' + (c.gas_taxed ? ck : no) + '</td>' +
-                '<td>' + (c.abyssal_taxed ? ck : no) + '</td>' +
-                '<td>' + (c.triglavian_taxed ? ck : no) + '</td></tr>';
+    if (mc.profiles && mc.profiles.length > 0) {
+        var moonChoices = { all: 'All moon ore', ours: 'Only at your refineries', none: 'Not taxed' };
+        var other = function (p, slot) {
+            if (p.others_unused) {
+                return '<span class="text-muted" title="Non-members\' own mining is never taxed">not used</span>';
+            }
+            return p[slot].taxed ? p[slot].rate + '%' : '<span class="text-muted">not taxed</span>';
+        };
+        html += '<h6 class="mt-3">Tax Profiles</h6><table class="table table-sm table-dark" style="font-size:0.85em;">' +
+            '<thead><tr><th>Profile</th><th>Taxes</th><th>Moon R4/R8/R16/R32/R64</th><th>Moon Ore</th><th>Ore</th><th>Ice</th><th>Gas</th><th>Abyssal</th><th>Triglavian</th></tr></thead><tbody>';
+        mc.profiles.forEach(function (p) {
+            html += '<tr><td>' + diagEscape(p.name) + '</td>' +
+                '<td>' + diagEscape(p.taxes) + '</td>' +
+                '<td>' + p.moon_rates.map(function (rate) { return rate + '%'; }).join(' / ') + '</td>' +
+                '<td><span class="badge badge-' + (p.moon_choice === 'none' ? 'danger' : 'info') + '">' + moonChoices[p.moon_choice] + '</span></td>' +
+                '<td>' + other(p, 'ore') + '</td>' +
+                '<td>' + other(p, 'ice') + '</td>' +
+                '<td>' + other(p, 'gas') + '</td>' +
+                '<td>' + other(p, 'abyssal') + '</td>' +
+                '<td>' + other(p, 'triglavian') + '</td></tr>';
         });
-        html += '</tbody></table>';
+        html += '</tbody></table><small class="text-muted">The Settings Health tab checks every profile in full.</small>';
     }
     $(target).html(html);
 }
@@ -3546,6 +3890,7 @@ function runFireAllNotifications() {
         { type: 'event_created',    label: '📅 Event Created' },
         { type: 'event_started',    label: '🚀 Event Started' },
         { type: 'event_completed',  label: '🏁 Event Completed' },
+        { type: 'event_review',     label: '📝 Event Review' },
         { type: 'moon_ready',          label: '🌙 Moon Chunk Ready' },
         { type: 'jackpot_detected',    label: '🎰 Jackpot Detected' },
         { type: 'moon_chunk_unstable', label: '⚠️ Moon Chunk Unstable' },
@@ -3746,7 +4091,7 @@ function updateNotifTestFields() {
         } else if (type === 'tax_overdue') {
             document.getElementById('ntDaysOverdueGroup').style.display = 'block';
         }
-    } else if (type === 'event_created' || type === 'event_started' || type === 'event_completed') {
+    } else if (type === 'event_created' || type === 'event_started' || type === 'event_completed' || type === 'event_review') {
         document.getElementById('ntEventFields').style.display = 'block';
     } else if (type === 'moon_ready' || type === 'jackpot_detected' || type === 'moon_chunk_unstable' || type === 'extraction_at_risk' || type === 'extraction_lost') {
         // All five moon-category types reuse Structure Name / Moon Name / ID.
@@ -4198,8 +4543,17 @@ function runTheftDiagnostic() {
         const unresolvedCount = data.unresolved_count || 0;
         const unresolvedBySev = data.unresolved_by_severity || {};
         const severityColors = { low: 'info', medium: 'warning', high: 'danger', critical: 'danger' };
+        const rules = data.rules || {};
+        const guestRule = rules.guests_allowed
+            ? 'may mine, and are flagged once a bill is overdue'
+            : `kept out since ${rules.guests_off_since}, flagged as soon as their mining arrives`;
         html += `<div class="provider-test-result ${unresolvedCount > 0 ? 'warning' : 'success'}">
             <h5><i class="fas fa-user-secret"></i> Theft Detection Overview</h5>
+            <div class="row mb-2">
+                <div class="col-md-4"><strong>Days overdue before theft:</strong> ${fmtNum(rules.overdue_days)}</div>
+                <div class="col-md-4"><strong>Non-members:</strong> ${guestRule}</div>
+                <div class="col-md-4"><strong>Moon owner set:</strong> ${rules.moon_owner_set ? 'Yes' : '<span class="text-danger">No, nothing is checked</span>'}</div>
+            </div>
             <div class="row mb-2">
                 <div class="col-md-4"><strong>Unresolved Incidents:</strong> <span class="text-danger">${fmtNum(unresolvedCount)}</span></div>
                 <div class="col-md-8"><strong>By Severity:</strong>
@@ -4219,11 +4573,11 @@ function runTheftDiagnostic() {
         }
         html += '</div>';
 
-        // Paid characters list - controller returns [{character_id, character_name, status}]
+        // Players the next run takes off the list - controller returns [{character_id, character_name, status}]
         const paidChars = data.paid_characters || [];
         if (Array.isArray(paidChars) && paidChars.length > 0) {
             html += `<div class="provider-test-result success" style="margin-top: 10px;">
-                <h5><i class="fas fa-check-circle"></i> Paid Characters (${paidChars.length})</h5>
+                <h5><i class="fas fa-check-circle"></i> Nothing Overdue Any More, Off the List on the Next Run (${paidChars.length})</h5>
                 <table class="table table-sm table-dark table-striped" style="font-size: 0.85em;">
                     <thead><tr><th>Character</th><th>Character ID</th><th>Status</th></tr></thead><tbody>`;
             paidChars.forEach(c => {
@@ -4241,7 +4595,8 @@ function runTheftDiagnostic() {
             </div>`;
         }
 
-        // Character analysis - controller returns {character_id, character_name, is_external_miner, moon_ore_mined_30d[], existing_incident}
+        // Character analysis - controller returns {character_name, corporation_name, is_external_miner, player_characters,
+        // overdue_bills, bills_past_theft_line, moon_ore_mined_30d[], existing_incident, verdict}
         if (data.character_analysis) {
             const ca = data.character_analysis;
             const isExternal = ca.is_external_miner || false;
@@ -4249,13 +4604,19 @@ function runTheftDiagnostic() {
             const existingIncident = ca.existing_incident;
             html += `<div class="provider-test-result ${isExternal ? 'error' : 'success'}" style="margin-top: 10px;">
                 <h5><i class="fas fa-user-check"></i> Character Analysis: ${ca.character_name || 'ID: ' + charId}</h5>
+                <p class="mb-2"><strong>Next run:</strong> ${ca.verdict || 'N/A'}</p>
                 <div class="row mb-2">
-                    <div class="col-md-4"><strong>External Miner:</strong> <span class="badge badge-${isExternal ? 'danger' : 'success'}">${isExternal ? 'YES' : 'NO'}</span></div>
-                    <div class="col-md-4"><strong>Moon Ores Mined (30d):</strong> ${moonOres.length} types</div>
+                    <div class="col-md-4"><strong>Corporation:</strong> ${ca.corporation_name || 'Not placed yet'}</div>
+                    <div class="col-md-4"><strong>Outside Our Corporations:</strong> <span class="badge badge-${isExternal ? 'danger' : 'success'}">${isExternal ? 'YES' : 'NO'}</span></div>
+                    <div class="col-md-4"><strong>Characters on the Account:</strong> ${fmtNum(ca.player_characters)}</div>
+                </div>
+                <div class="row mb-2">
+                    <div class="col-md-4"><strong>Overdue Bills:</strong> ${fmtNum(ca.overdue_bills)} (${fmtNum(ca.bills_past_theft_line)} past the theft line)</div>
+                    <div class="col-md-4"><strong>Moon Ores Mined Here (30d):</strong> ${moonOres.length} types</div>
                     <div class="col-md-4"><strong>Existing Incident:</strong> <span class="badge badge-${existingIncident ? 'warning' : 'success'}">${existingIncident ? 'YES' : 'NO'}</span></div>
                 </div>`;
             if (moonOres.length > 0) {
-                html += `<h6 class="mt-2">Moon Ore Mining (Last 30 Days)</h6>
+                html += `<h6 class="mt-2">Moon Ore Mined at the Moon Owner's Refineries (Last 30 Days)</h6>
                     <table class="table table-sm table-dark table-striped" style="font-size: 0.85em;">
                     <thead><tr><th>Ore</th><th class="text-right">Quantity</th><th>Last Seen</th></tr></thead><tbody>`;
                 moonOres.forEach(ore => {
@@ -4323,6 +4684,13 @@ function runEventDiagnostic() {
         const fmtISK = (v) => Number(v || 0).toLocaleString('en-US', {minimumFractionDigits: 2});
         const fmtNum = (v) => Number(v || 0).toLocaleString();
         let html = '';
+
+        (data.checks || []).forEach(check => {
+            const tone = check.status === 'ok' ? 'success' : (check.status === 'fail' ? 'error' : 'warning');
+            const icon = check.status === 'ok' ? 'fa-check-circle text-success' : (check.status === 'fail' ? 'fa-times-circle text-danger' : 'fa-exclamation-triangle text-warning');
+            html += `<div class="provider-test-result ${tone}" style="margin-bottom: 10px;">
+                <h5><i class="fas ${icon}"></i> ${check.label}</h5><p class="mb-0">${check.message}</p></div>`;
+        });
 
         if (data.mode === 'single_event' && data.event) {
             // Single event details - controller returns {id, name, type, status, start_time, end_time, participant_count, total_mined, tax_modifier, is_active, is_future, duration}

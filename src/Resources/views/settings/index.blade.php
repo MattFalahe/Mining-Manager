@@ -4,7 +4,7 @@
 @section('page_header', trans('mining-manager::settings.settings'))
 
 @push('head')
-<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=8">
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=10">
 <style>
     .settings-wrapper {
         display: flex;
@@ -128,35 +128,7 @@
     </div>
     @endif
 
-    {{-- Corporation Context Indicator --}}
-    @if(isset($corporationId) && $corporationId)
-        @php
-            $selectedCorp = $corporations->firstWhere('corporation_id', $corporationId);
-        @endphp
-        <div class="alert alert-info d-flex align-items-center justify-content-between mb-3" style="border-left: 4px solid #17a2b8;">
-            <div>
-                <h5 class="mb-1">
-                    <i class="fas fa-building"></i>
-                    Editing Corporation-Specific Tax Settings
-                </h5>
-                <p class="mb-0">
-                    @if($selectedCorp)
-                        <strong>[{{ $selectedCorp->ticker }}] {{ $selectedCorp->name }}</strong>
-                    @else
-                        Corporation ID: {{ $corporationId }}
-                    @endif
-                    @if($isFirstTimeSetup ?? false)
-                        <span class="badge badge-warning ml-2">First Time Setup</span>
-                    @elseif($hasCustomSettings ?? false)
-                        <span class="badge badge-success ml-2">Custom Settings Active</span>
-                    @endif
-                </p>
-            </div>
-            <a href="{{ route('mining-manager.settings.index') }}" class="btn btn-outline-light btn-sm">
-                <i class="fas fa-globe"></i> Switch to Global
-            </a>
-        </div>
-    @endif
+    @include('mining-manager::settings.partials._settings_moved_notice')
 
     <div class="settings-wrapper">
         {{-- Sidebar --}}
@@ -169,52 +141,37 @@
             <div class="card card-dark">
                 <div class="card-body">
 
-                    {{-- General Settings Tab --}}
-                    <div id="general-settings" class="settings-section active">
-                        @include('mining-manager::settings.tabs.general', [
-                            'settings' => (object)$settings['general'],
-                            'corporations' => $corporations,
-                            'selectedCorporationId' => $corporationId ?? null
+                    {{-- Setup --}}
+                    <div id="setup" class="settings-section active">
+                        @include('mining-manager::settings.tabs.setup')
+                    </div>
+
+                    {{-- Tax profiles --}}
+                    <div id="profiles" class="settings-section">
+                        @include('mining-manager::settings.tabs.profiles')
+                    </div>
+
+                    {{-- Billing --}}
+                    <div id="billing" class="settings-section">
+                        @include('mining-manager::settings.tabs.billing')
+                    </div>
+
+                    {{-- Payments --}}
+                    <div id="payments" class="settings-section">
+                        @include('mining-manager::settings.tabs.payments')
+                    </div>
+
+                    {{-- Events --}}
+                    <div id="events" class="settings-section">
+                        @include('mining-manager::settings.tabs.events', [
+                            'eventSettings' => $settings['events'] ?? [],
                         ])
                     </div>
 
-                    {{-- Tax Rates Tab --}}
-                    <div id="tax-rates" class="settings-section">
-                        @php
-                            // Flatten moon ore nested array for easier form access
-                            $taxRatesFlattened = $settings['tax_rates'];
-                            if (isset($taxRatesFlattened['moon_ore']) && is_array($taxRatesFlattened['moon_ore'])) {
-                                foreach ($taxRatesFlattened['moon_ore'] as $rarity => $rate) {
-                                    $taxRatesFlattened['moon_ore_' . $rarity] = $rate;
-                                }
-                                unset($taxRatesFlattened['moon_ore']);
-                            }
-
-                            // Remap tax_selector keys to match form field names
-                            // getTaxSelector() returns 'ore','ice','gas','abyssal_ore','triglavian_ore'
-                            // but the form uses 'tax_regular_ore','tax_ice','tax_gas','tax_abyssal_ore','tax_triglavian_ore'
-                            $taxSelectorMapped = [
-                                'tax_regular_ore' => $settings['tax_selector']['ore'] ?? true,
-                                'tax_ice' => $settings['tax_selector']['ice'] ?? true,
-                                'tax_gas' => $settings['tax_selector']['gas'] ?? false,
-                                'tax_abyssal_ore' => $settings['tax_selector']['abyssal_ore'] ?? false,
-                                'tax_triglavian_ore' => $settings['tax_selector']['triglavian_ore'] ?? false,
-                                // Moon ore flags keep their original names (template uses these directly)
-                                'all_moon_ore' => $settings['tax_selector']['all_moon_ore'] ?? true,
-                                'only_corp_moon_ore' => $settings['tax_selector']['only_corp_moon_ore'] ?? false,
-                                'no_moon_ore' => $settings['tax_selector']['no_moon_ore'] ?? false,
-                            ];
-
-                            // Merge all tax-related settings
-                            $taxSettings = array_merge(
-                                $taxRatesFlattened,
-                                $taxSelectorMapped,
-                                $settings['exemptions']
-                            );
-                        @endphp
-                        @include('mining-manager::settings.tabs.tax_rates', [
-                            'settings' => (object)$taxSettings,
-                            'selectedCorporationId' => $corporationId ?? null
+                    {{-- Moon Planner --}}
+                    <div id="planner" class="settings-section">
+                        @include('mining-manager::settings.tabs.planner', [
+                            'notificationSettings' => $settings['notifications'] ?? [],
                         ])
                     </div>
 
@@ -262,17 +219,18 @@
                         @include('mining-manager::settings.tabs.dashboard', [
                             'settings' => $settings,
                             'leaderboardCorporations' => $leaderboardCorporations ?? [],
-                            'selectedCorporationId' => $corporationId ?? null
                         ])
                     </div>
 
-                    {{-- Advanced Settings --}}
-                    <div id="advanced" class="settings-section">
+                    {{-- Maintenance --}}
+                    <div id="maintenance" class="settings-section">
                         <h4>
-                            <i class="fas fa-cogs"></i>
-                            {{ trans('mining-manager::settings.advanced_settings') }}
+                            <i class="fas fa-tools"></i>
+                            Maintenance
                         </h4>
                         <hr>
+
+                        @include('mining-manager::settings.partials._transfer_report')
 
                         <div class="warning-banner">
                             <i class="fas fa-exclamation-triangle"></i>
@@ -292,28 +250,50 @@
                                     <div class="card-body">
                                         <p>{{ trans('mining-manager::settings.export_description') }}</p>
 
-                                        {{-- Off by default. A webhook URL is a
-                                             credential: anyone holding the file
-                                             can post to the channel. --}}
-                                        <div class="custom-control custom-checkbox mb-3">
-                                            <input type="checkbox"
-                                                   class="custom-control-input"
-                                                   id="include_webhooks">
-                                            <label class="custom-control-label" for="include_webhooks">
-                                                {{ trans('mining-manager::settings.export_include_webhooks') }}
-                                            </label>
-                                            <small class="form-text text-warning">
-                                                <i class="fas fa-exclamation-triangle mr-1"></i>
-                                                {{ trans('mining-manager::settings.export_webhooks_warning') }}
-                                            </small>
-                                        </div>
+                                        @php
+                                            $minPassphrase = \MiningManager\Services\Configuration\SettingsCredentials::MIN_PASSPHRASE;
+                                        @endphp
+                                        <form method="POST" action="{{ route('mining-manager.settings.export') }}" id="exportSettingsForm">
+                                            @csrf
+                                            {{-- Off by default. Webhook URLs and API keys let
+                                                 whoever holds the file act as this install, so
+                                                 they go in only locked with a passphrase. --}}
+                                            <div class="custom-control custom-checkbox mb-3">
+                                                <input type="checkbox"
+                                                       class="custom-control-input"
+                                                       id="include_credentials"
+                                                       name="include_credentials"
+                                                       value="1">
+                                                <label class="custom-control-label" for="include_credentials">
+                                                    {{ trans('mining-manager::settings.export_include_credentials') }}
+                                                </label>
+                                                <small class="form-text text-muted">
+                                                    {{ trans('mining-manager::settings.export_credentials_help') }}
+                                                </small>
+                                            </div>
 
-                                        <a href="{{ route('mining-manager.settings.export') }}"
-                                           id="exportSettingsLink"
-                                           class="btn btn-info btn-block">
-                                            <i class="fas fa-download"></i>
-                                            {{ trans('mining-manager::settings.export_now') }}
-                                        </a>
+                                            <div id="exportPassphrase" class="d-none mb-3">
+                                                <div class="form-group">
+                                                    <label for="exportPassphraseInput">{{ trans('mining-manager::settings.export_passphrase') }}</label>
+                                                    <input type="password" class="form-control" id="exportPassphraseInput"
+                                                           name="passphrase" minlength="{{ $minPassphrase }}" autocomplete="new-password" disabled>
+                                                </div>
+                                                <div class="form-group mb-1">
+                                                    <label for="exportPassphraseConfirm">{{ trans('mining-manager::settings.export_passphrase_again') }}</label>
+                                                    <input type="password" class="form-control" id="exportPassphraseConfirm"
+                                                           name="passphrase_confirmation" minlength="{{ $minPassphrase }}" autocomplete="new-password" disabled>
+                                                </div>
+                                                <small class="form-text text-warning">
+                                                    <i class="fas fa-exclamation-triangle mr-1"></i>
+                                                    {{ trans('mining-manager::settings.export_passphrase_note', ['min' => $minPassphrase]) }}
+                                                </small>
+                                            </div>
+
+                                            <button type="submit" class="btn btn-info btn-block">
+                                                <i class="fas fa-download"></i>
+                                                {{ trans('mining-manager::settings.export_now') }}
+                                            </button>
+                                        </form>
                                     </div>
                                 </div>
                             </div>
@@ -337,6 +317,14 @@
                                                 <label class="custom-file-label" for="settingsFile">
                                                     {{ trans('mining-manager::settings.choose_file') }}
                                                 </label>
+                                            </div>
+                                            <div class="form-group">
+                                                <label for="importPassphrase">{{ trans('mining-manager::settings.import_passphrase') }}</label>
+                                                <input type="password" class="form-control" id="importPassphrase"
+                                                       name="passphrase" autocomplete="off">
+                                                <small class="form-text text-muted">
+                                                    {{ trans('mining-manager::settings.import_passphrase_help') }}
+                                                </small>
                                             </div>
                                             <button type="submit" class="btn btn-warning btn-block">
                                                 <i class="fas fa-upload"></i>
@@ -408,14 +396,15 @@
                                 <div class="card bg-dark">
                                     <div class="card-body">
                                         <h5>
-                                            <i class="fas fa-cog text-primary"></i>
-                                            {{ trans('mining-manager::settings.help_general') }}
+                                            <i class="fas fa-coins text-primary"></i>
+                                            {{ trans('mining-manager::settings.help_taxes') }}
                                         </h5>
-                                        <p>{{ trans('mining-manager::settings.help_general_desc') }}</p>
+                                        <p>{{ trans('mining-manager::settings.help_taxes_desc') }}</p>
                                         <ul>
-                                            <li>{{ trans('mining-manager::settings.help_general_1') }}</li>
-                                            <li>{{ trans('mining-manager::settings.help_general_2') }}</li>
-                                            <li>{{ trans('mining-manager::settings.help_general_3') }}</li>
+                                            <li>{{ trans('mining-manager::settings.help_taxes_1') }}</li>
+                                            <li>{{ trans('mining-manager::settings.help_taxes_2') }}</li>
+                                            <li>{{ trans('mining-manager::settings.help_taxes_3') }}</li>
+                                            <li>{{ trans('mining-manager::settings.help_taxes_4') }}</li>
                                         </ul>
                                     </div>
                                 </div>
@@ -425,14 +414,14 @@
                                 <div class="card bg-dark">
                                     <div class="card-body">
                                         <h5>
-                                            <i class="fas fa-coins text-success"></i>
-                                            {{ trans('mining-manager::settings.help_tax') }}
+                                            <i class="fas fa-moon text-success"></i>
+                                            {{ trans('mining-manager::settings.help_moons') }}
                                         </h5>
-                                        <p>{{ trans('mining-manager::settings.help_tax_desc') }}</p>
+                                        <p>{{ trans('mining-manager::settings.help_moons_desc') }}</p>
                                         <ul>
-                                            <li>{{ trans('mining-manager::settings.help_tax_1') }}</li>
-                                            <li>{{ trans('mining-manager::settings.help_tax_2') }}</li>
-                                            <li>{{ trans('mining-manager::settings.help_tax_3') }}</li>
+                                            <li>{{ trans('mining-manager::settings.help_moons_1') }}</li>
+                                            <li>{{ trans('mining-manager::settings.help_moons_2') }}</li>
+                                            <li>{{ trans('mining-manager::settings.help_moons_3') }}</li>
                                         </ul>
                                     </div>
                                 </div>
@@ -442,14 +431,14 @@
                                 <div class="card bg-dark">
                                     <div class="card-body">
                                         <h5>
-                                            <i class="fas fa-chart-line text-warning"></i>
-                                            {{ trans('mining-manager::settings.help_pricing') }}
+                                            <i class="fas fa-bell text-warning"></i>
+                                            {{ trans('mining-manager::settings.help_alerts') }}
                                         </h5>
-                                        <p>{{ trans('mining-manager::settings.help_pricing_desc') }}</p>
+                                        <p>{{ trans('mining-manager::settings.help_alerts_desc') }}</p>
                                         <ul>
-                                            <li>{{ trans('mining-manager::settings.help_pricing_1') }}</li>
-                                            <li>{{ trans('mining-manager::settings.help_pricing_2') }}</li>
-                                            <li>{{ trans('mining-manager::settings.help_pricing_3') }}</li>
+                                            <li>{{ trans('mining-manager::settings.help_alerts_1') }}</li>
+                                            <li>{{ trans('mining-manager::settings.help_alerts_2') }}</li>
+                                            <li>{{ trans('mining-manager::settings.help_alerts_3') }}</li>
                                         </ul>
                                     </div>
                                 </div>
@@ -459,14 +448,14 @@
                                 <div class="card bg-dark">
                                     <div class="card-body">
                                         <h5>
-                                            <i class="fas fa-toggle-on text-info"></i>
-                                            {{ trans('mining-manager::settings.help_features') }}
+                                            <i class="fas fa-puzzle-piece text-info"></i>
+                                            {{ trans('mining-manager::settings.help_plugin') }}
                                         </h5>
-                                        <p>{{ trans('mining-manager::settings.help_features_desc') }}</p>
+                                        <p>{{ trans('mining-manager::settings.help_plugin_desc') }}</p>
                                         <ul>
-                                            <li>{{ trans('mining-manager::settings.help_features_1') }}</li>
-                                            <li>{{ trans('mining-manager::settings.help_features_2') }}</li>
-                                            <li>{{ trans('mining-manager::settings.help_features_3') }}</li>
+                                            <li>{{ trans('mining-manager::settings.help_plugin_1') }}</li>
+                                            <li>{{ trans('mining-manager::settings.help_plugin_2') }}</li>
+                                            <li>{{ trans('mining-manager::settings.help_plugin_3') }}</li>
                                         </ul>
                                     </div>
                                 </div>
@@ -483,8 +472,8 @@
                                 <i class="fas fa-question-circle"></i>
                                 Full Documentation
                             </a>
-                            <a href="https://github.com/MattFalahe/seat-corp-mining-manager"
-                               target="_blank"
+                            <a href="https://github.com/MattFalahe/Mining-Manager"
+                               target="_blank" rel="noopener"
                                class="btn btn-info">
                                 <i class="fab fa-github"></i>
                                 {{ trans('mining-manager::settings.view_documentation') }}
@@ -502,30 +491,27 @@
 @push('javascript')
 <script>
 $(document).ready(function() {
-    // Carry the webhook choice onto the export link, so the download itself
-    // says whether credentials are wanted rather than the server guessing.
-    $('#include_webhooks').on('change', function() {
-        var $link = $('#exportSettingsLink');
-        var base = $link.attr('href').split('?')[0];
-        $link.attr('href', this.checked ? base + '?include_webhooks=1' : base);
+    // The passphrase is asked for only when the webhooks and API keys go into
+    // the file. Disabled otherwise, so a half-typed hidden field cannot hold
+    // the download up.
+    var $passphrase = $('#exportPassphraseInput, #exportPassphraseConfirm');
+    $('#include_credentials').on('change', function() {
+        $('#exportPassphrase').toggleClass('d-none', !this.checked);
+        $passphrase.prop('disabled', !this.checked).prop('required', this.checked);
+    }).trigger('change');
+
+    $passphrase.on('input', function() {
+        var confirm = document.getElementById('exportPassphraseConfirm');
+        confirm.setCustomValidity(confirm.value === $('#exportPassphraseInput').val() ? '' : @json(trans('mining-manager::settings.export_passphrase_mismatch')));
     });
 
-    // Corporation switching functionality
-    $('#switchCorporationBtn').on('click', function() {
-        const corporationId = $('#corporation_id').val();
-
-        if (!corporationId) {
-            alert('Please select a corporation first.');
-            return;
-        }
-
-        // Redirect to settings page with corporation_id parameter
-        window.location.href = '{{ route("mining-manager.settings.index") }}?corporation_id=' + corporationId;
-    });
-
-    // Update hidden field when corporation changes
-    $('#corporation_id').on('change', function() {
-        $('#selected_corporation_id').val($(this).val());
+    // The download leaves the page where it is, so clear the passphrase once
+    // the form has gone rather than leave it in the fields.
+    $('#exportSettingsForm').on('submit', function() {
+        setTimeout(function() {
+            $passphrase.val('');
+            document.getElementById('exportPassphraseConfirm').setCustomValidity('');
+        }, 0);
     });
 
     // Tab switching

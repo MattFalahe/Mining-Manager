@@ -4,7 +4,7 @@
 @section('page_header', trans('mining-manager::menu.mining_events'))
 
 @push('head')
-<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=8">
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=10">
 <script src="{{ asset('vendor/mining-manager/js/eve-time.js') }}?v=1" defer></script>
 <script src="{{ asset('vendor/mining-manager/js/eve-countdown.js') }}?v=1" defer></script>
 <style>
@@ -61,13 +61,13 @@
                     <i class="fas fa-play-circle"></i> {{ trans('mining-manager::menu.active_events') }}
                 </a>
             </li>
-            @can('mining-manager.director')
+            @if (app(\MiningManager\Services\Events\EventAccess::class)->canCreate(auth()->user()))
             <li class="nav-item">
                 <a class="nav-link {{ Request::is('*/events/create') ? 'active' : '' }}" href="{{ route('mining-manager.events.create') }}">
                     <i class="fas fa-plus-circle"></i> {{ trans('mining-manager::menu.create_event') }}
                 </a>
             </li>
-            @endcan
+            @endif
             <li class="nav-item">
                 <a class="nav-link {{ Request::is('*/events/calendar') ? 'active' : '' }}" href="{{ route('mining-manager.events.calendar') }}">
                     <i class="fas fa-calendar-alt"></i> {{ trans('mining-manager::menu.event_calendar') }}
@@ -270,9 +270,11 @@
                                         <a href="{{ route('mining-manager.events.show', $event->id) }}" class="btn btn-info">
                                             <i class="fas fa-eye"></i> {{ trans('mining-manager::events.view_details') }}
                                         </a>
+                                        @if($event->takesSignUps() && $event->isSignedUp(auth()->user()))
                                         <button class="btn btn-danger leave-event" data-event-id="{{ $event->id }}">
                                             <i class="fas fa-sign-out-alt"></i> {{ trans('mining-manager::events.leave') }}
                                         </button>
+                                        @endif
                                     </div>
                                 </div>
                             </div>
@@ -315,22 +317,22 @@
                                                     {{ $event->start_time->diffForHumans() }}
                                                 </span>
                                             </p>
-                                            @if($event->location)
-                                            <p><strong>{{ trans('mining-manager::events.location') }}:</strong> {{ $event->location }}</p>
+                                            @if($event->getLocationName())
+                                            <p><strong>{{ trans('mining-manager::events.location') }}:</strong> {{ $event->getLocationName() }}</p>
                                             @endif
                                         </div>
                                         <div class="col-md-6">
-                                            <p><strong>{{ trans('mining-manager::events.duration') }}:</strong> 
-                                                {{ $event->start_time->diff($event->end_time)->format('%h hours %i minutes') }}
+                                            <p><strong>{{ trans('mining-manager::events.duration') }}:</strong>
+                                                {{ $event->end_time ? $event->start_time->diffForHumans($event->end_time, true) : trans('mining-manager::events.no_end') }}
                                             </p>
-                                            <p><strong>{{ trans('mining-manager::events.registered_participants') }}:</strong> {{ $event->participants->count() }}</p>
+                                            <p><strong>{{ trans('mining-manager::events.registered_participants') }}:</strong> {{ \MiningManager\Models\MiningEvent::hasRules() ? $event->signups()->count() : 0 }}</p>
                                             <p><strong>{{ trans('mining-manager::events.tax_modifier') }}:</strong>
                                                 <span class="badge badge-{{ $event->tax_modifier < 0 ? 'success' : ($event->tax_modifier > 0 ? 'warning' : 'secondary') }}">
                                                     {{ $event->getTaxModifierLabel() }}
                                                 </span>
                                             </p>
                                             @if($event->description)
-                                            <p class="text-muted mt-2">{{ Str::limit($event->description, 100) }}</p>
+                                            <p class="text-muted mt-2">{{ Str::limit((string) $event->description, 100) }}</p>
                                             @endif
                                         </div>
                                     </div>
@@ -340,9 +342,11 @@
                                         <a href="{{ route('mining-manager.events.show', $event->id) }}" class="btn btn-info">
                                             <i class="fas fa-eye"></i> {{ trans('mining-manager::events.view_details') }}
                                         </a>
+                                        @if($event->takesSignUps() && $event->isSignedUp(auth()->user()))
                                         <button class="btn btn-danger leave-event" data-event-id="{{ $event->id }}">
                                             <i class="fas fa-user-minus"></i> {{ trans('mining-manager::events.unregister') }}
                                         </button>
+                                        @endif
                                     </div>
                                 </div>
                             </div>

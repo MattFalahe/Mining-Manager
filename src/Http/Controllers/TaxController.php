@@ -249,22 +249,14 @@ class TaxController extends Controller
             });
         }
 
-        // Filter by miner type (corp member vs guest) - uses configured corporations list
+        // Members' bills or non-members', by the tax profile that billed each
+        // one. A bill from before tax profiles goes by its main's corporation
+        // now.
         $homeCorporationIds = $this->settingsService->getHomeCorporationIds();
         if ($minerType === 'corp' && !empty($homeCorporationIds)) {
-            // Only show corp members (characters in any configured corporation)
-            $query->whereIn('character_id', function($q) use ($homeCorporationIds) {
-                $q->select('character_id')
-                    ->from('character_affiliations')
-                    ->whereIn('corporation_id', $homeCorporationIds);
-            });
+            $query->billedToMembers($homeCorporationIds);
         } elseif ($minerType === 'guest' && !empty($homeCorporationIds)) {
-            // Only show guest miners (characters NOT in any configured corporation)
-            $query->whereIn('character_id', function($q) use ($homeCorporationIds) {
-                $q->select('character_id')
-                    ->from('character_affiliations')
-                    ->whereNotIn('corporation_id', $homeCorporationIds);
-            });
+            $query->billedToNonMembers($homeCorporationIds);
         }
 
         // Scope data: members/directors (default) see own data; admin/directors (toggled) see all
@@ -299,17 +291,8 @@ class TaxController extends Controller
 
         if (!empty($homeCorporationIds) && $viewAll) {
             // Corp vs guest breakdown only shown to directors
-            $corpSummaryQuery = MiningTax::whereIn('character_id', function($q) use ($homeCorporationIds) {
-                $q->select('character_id')
-                    ->from('character_affiliations')
-                    ->whereIn('corporation_id', $homeCorporationIds);
-            });
-
-            $guestSummaryQuery = MiningTax::whereIn('character_id', function($q) use ($homeCorporationIds) {
-                $q->select('character_id')
-                    ->from('character_affiliations')
-                    ->whereNotIn('corporation_id', $homeCorporationIds);
-            });
+            $corpSummaryQuery = MiningTax::billedToMembers($homeCorporationIds);
+            $guestSummaryQuery = MiningTax::billedToNonMembers($homeCorporationIds);
         }
 
         // What is left to pay, part-paid bills included, and what actually
@@ -381,7 +364,7 @@ class TaxController extends Controller
         // represent. 'F Y' alone on the header is misleading when the
         // plugin is running biweekly or weekly.
         $periodHelper = app(TaxPeriodHelper::class);
-        $periodType = $periodHelper->getConfiguredPeriodType();
+        $periodType = $periodHelper->periodTypeForMoonOwner();
         [$currentPeriodStart, $currentPeriodEnd] = $periodHelper->getPeriodBounds(Carbon::now(), $periodType);
         $currentPeriodLabel = $periodHelper->formatPeriod($currentPeriodStart, $currentPeriodEnd, $periodType);
 
@@ -408,6 +391,7 @@ class TaxController extends Controller
             'corporationId',
             'minerType',
             'moonOwnerCorpId',
+            'homeCorporationIds',
             'isAdmin',
             'isDirector',
             'viewAll',
@@ -436,7 +420,7 @@ class TaxController extends Controller
 
         // Get configured period type
         $periodHelper = app(TaxPeriodHelper::class);
-        $periodType = $periodHelper->getConfiguredPeriodType();
+        $periodType = $periodHelper->periodTypeForMoonOwner();
 
         // Get tracking data from daily summaries
         $liveTracking = $this->getLiveTrackingData();
@@ -471,8 +455,8 @@ class TaxController extends Controller
         $moonOwnerCorpId = $this->settingsService->getSetting('general.moon_owner_corporation_id');
         $currentMonth = now()->startOfMonth();
 
-        // Get ALL character IDs who mined this month (includes guests)
-        // Guests are taxed at guest rates via daily summaries, so they must be included
+        // Get ALL character IDs who mined this month, non-members included:
+        // the daily summaries tax them by the Global profile.
         $characterIds = MiningLedger::where('date', '>=', $currentMonth)
             ->distinct()
             ->pluck('character_id')
@@ -589,6 +573,7 @@ class TaxController extends Controller
                 ->join('mining_events', 'event_mining_records.event_id', '=', 'mining_events.id')
                 ->whereIn('mining_events.status', ['active', 'completed'])
                 ->where('mining_events.tax_modifier', '<', 0)
+                ->when(MiningEvent::hasRules(), fn ($query) => $query->where('event_mining_records.qualifies', true))
                 ->selectRaw('
                     event_mining_records.character_id,
                     event_mining_records.mining_date,
@@ -769,32 +754,36 @@ class TaxController extends Controller
 
         try {
             $periodHelper = app(TaxPeriodHelper::class);
-            $periodType = $periodHelper->getConfiguredPeriodType();
             $recalculate = $validated['recalculate'] ?? false;
             $characterId = $validated['character_id'] ?? null;
             $confirmIncomplete = $validated['confirm_incomplete'] ?? false;
 
             $month = Carbon::parse($validated['month'])->startOfMonth();
 
-            // Get all periods within the selected month for the configured period type
-            // Monthly: 1 period, Biweekly: 2 periods, Weekly: 4-5 periods
-            if (!empty($validated['period_start'])) {
-                // Specific period requested
-                $periodDate = Carbon::parse($validated['period_start']);
-                $periods = [$periodHelper->getPeriodBounds($periodDate, $periodType)];
-            } else {
-                $periods = $periodHelper->getPeriodsInMonth($month, $periodType);
+            // Every billing period the tax profiles use, each with its periods
+            // in the month: monthly has one, twice a month two. A run for one
+            // period bills only the accounts on it.
+            $periodTypes = $periodHelper->periodTypesInUse(!empty($validated['period_start']) ? Carbon::parse($validated['period_start']) : $month);
+            $periods = [];
+            foreach ($periodTypes as $periodType) {
+                $bounds = !empty($validated['period_start'])
+                    ? [$periodHelper->getPeriodBounds(Carbon::parse($validated['period_start']), $periodType)]
+                    : $periodHelper->getPeriodsInMonth($month, $periodType);
+
+                foreach ($bounds as [$start, $end]) {
+                    $periods[] = [$start, $end, $periodType];
+                }
             }
 
             // Check for incomplete/future periods
-            $lastPeriodEnd = end($periods)[1];
-            $firstPeriodStart = $periods[0][0];
+            $lastPeriodEnd = collect($periods)->max(fn ($period) => $period[1]);
+            $firstPeriodStart = collect($periods)->min(fn ($period) => $period[0]);
             $monthLabel = $month->format('F Y');
 
             if (!$periodHelper->isPeriodComplete($lastPeriodEnd) && !$confirmIncomplete) {
                 $isFuture = $firstPeriodStart->gt(Carbon::now());
                 $periodCount = count($periods);
-                $periodDesc = $periodCount > 1 ? "{$periodCount} {$periodType} periods in {$monthLabel}" : $monthLabel;
+                $periodDesc = $periodCount > 1 ? "{$periodCount} periods in {$monthLabel}" : $monthLabel;
                 return response()->json([
                     'status' => 'incomplete_month',
                     'message' => $isFuture
@@ -817,7 +806,7 @@ class TaxController extends Controller
             }
             $this->setCorporationContext($corporationId);
 
-            Log::info("Mining Manager: Tax calculation triggered by {$triggeredBy} for {$monthLabel} ({$periodType}, " . count($periods) . " periods)");
+            Log::info("Mining Manager: Tax calculation triggered by {$triggeredBy} for {$monthLabel} (" . implode(', ', $periodTypes) . ', ' . count($periods) . ' periods)');
 
             // Recalculate mode: regenerate all daily summaries with current prices and tax rates
             if ($recalculate) {
@@ -830,11 +819,11 @@ class TaxController extends Controller
             $totalAmount = 0;
             $allErrors = [];
 
-            foreach ($periods as [$startDate, $endDate]) {
-                $periodLabel = $periodHelper->formatPeriod($startDate, $endDate, $periodType);
-
-                // Check if taxes already exist for this period
-                $existingQuery = MiningTax::where('period_start', $startDate->format('Y-m-d'));
+            foreach ($periods as [$startDate, $endDate, $periodType]) {
+                // A monthly bill and a first-half one start the same day, so a
+                // period counts as billed only by bills of its own kind.
+                $existingQuery = MiningTax::where('period_start', $startDate->format('Y-m-d'))
+                    ->where('period_type', $periodType);
                 if ($characterId) {
                     $existingQuery->where('character_id', $characterId);
                 }
@@ -845,20 +834,23 @@ class TaxController extends Controller
                     continue;
                 }
 
-                if ($characterId) {
-                    $taxAmount = $this->taxService->recalculateTax((int) $characterId, $startDate);
-                    $totalCount += $taxAmount > 0 ? 1 : 0;
-                    $totalAmount += $taxAmount;
-                } else {
-                    $results = $this->taxService->calculateTaxes($startDate, $endDate, $periodType, $recalculate, $triggeredBy);
-                    $totalCount += $results['count'];
-                    $totalAmount += $results['total'];
-                    $allErrors = array_merge($allErrors, $results['errors'] ?? []);
-                }
+                // A character picked means that character's account, worked out
+                // the same way as everyone's: a bill covers a main and its alts.
+                $results = $this->taxService->calculateTaxes(
+                    $startDate,
+                    $endDate,
+                    $periodType,
+                    $recalculate,
+                    $triggeredBy,
+                    $characterId ? (int) $characterId : null
+                );
+                $totalCount += $results['count'];
+                $totalAmount += $results['total'];
+                $allErrors = array_merge($allErrors, $results['errors'] ?? []);
             }
 
             $results = [
-                'method' => $characterId ? 'individual' : ($periodType === 'monthly' ? 'accumulated' : "accumulated ({$periodType})"),
+                'method' => $characterId ? 'one account' : (count($periodTypes) === 1 && $periodTypes[0] === 'monthly' ? 'accumulated' : 'accumulated (' . implode(', ', $periodTypes) . ')'),
                 'count' => $totalCount,
                 'total' => $totalAmount,
                 'errors' => $allErrors,
@@ -1244,15 +1236,16 @@ class TaxController extends Controller
 
                 // Accumulate partial payments
                 $previouslyPaid = (float) ($tax->amount_paid ?? 0);
-                $totalPaid = $previouslyPaid + $amountPaid;
+                $totalPaid = round($previouslyPaid + $amountPaid, 2);
 
-                if ($totalPaid >= (float) $tax->amount_owed) {
-                    $tax->status = 'paid';
-                    $tax->amount_paid = $totalPaid;
-                } else {
-                    $tax->status = 'partial';
-                    $tax->amount_paid = $totalPaid;
-                }
+                // Settled on the wallet matcher's terms. Bills are shown in
+                // whole ISK, so a figure typed from the page can come up a
+                // fraction short, and an exact comparison left that bill
+                // part paid over pennies, with a reminder every day.
+                $settled = round((float) $tax->amount_owed - $totalPaid, 2) < PaymentAllocationService::SETTLED_TOLERANCE;
+
+                $tax->status = $settled ? 'paid' : 'partial';
+                $tax->amount_paid = $totalPaid;
                 $tax->paid_at = Carbon::parse($paymentDate);
 
                 // Append payment note to existing notes
@@ -1662,7 +1655,7 @@ class TaxController extends Controller
             // the view's period-aware labels render sensibly instead of
             // defaulting to "F Y".
             $periodHelperEmpty = app(TaxPeriodHelper::class);
-            $periodTypeEmpty = $periodHelperEmpty->getConfiguredPeriodType();
+            $periodTypeEmpty = $periodHelperEmpty->periodTypeForViewer();
             [$periodStartEmpty, $periodEndEmpty] = $periodHelperEmpty->getPeriodBounds(Carbon::now(), $periodTypeEmpty);
 
             return view('mining-manager::taxes.my-taxes', [
@@ -1756,7 +1749,7 @@ class TaxController extends Controller
         // target the precise period the user is currently accumulating tax
         // in via period_start / period_end.
         $periodHelper = app(TaxPeriodHelper::class);
-        $periodType = $periodHelper->getConfiguredPeriodType();
+        $periodType = $periodHelper->periodTypeForViewer();
         [$currentPeriodStart, $currentPeriodEnd] = $periodHelper->getPeriodBounds(Carbon::now(), $periodType);
         $currentPeriodLabel = $periodHelper->formatPeriod($currentPeriodStart, $currentPeriodEnd, $periodType);
 
@@ -1935,7 +1928,7 @@ class TaxController extends Controller
         // period (not the whole calendar month) so bi-weekly/weekly calls
         // get a meaningful slice.
         $periodHelper = app(TaxPeriodHelper::class);
-        $periodType = $periodHelper->getConfiguredPeriodType();
+        $periodType = $periodHelper->periodTypeForViewer();
 
         if ($month) {
             $anchor = Carbon::parse($month);
@@ -2025,15 +2018,11 @@ class TaxController extends Controller
 
         $features = $this->getFeatureFlags();
 
-        // Get tax code prefix from settings for display
-        $taxCodePrefix = $this->settingsService->getSetting('tax_rates.tax_code_prefix', 'TAX-');
-
         return view('mining-manager::taxes.codes', compact(
             'taxCodes',
             'summary',
             'status',
             'search',
-            'taxCodePrefix',
             'isAdmin',
             'isDirector',
             'viewAll',
@@ -2489,55 +2478,68 @@ class TaxController extends Controller
         $startDate = $tax->period_start ? Carbon::parse($tax->period_start) : Carbon::parse($tax->month)->startOfMonth();
         $endDate = $tax->period_end ? Carbon::parse($tax->period_end) : Carbon::parse($tax->month)->endOfMonth();
 
-        $miningBreakdown = [];
-        $miningTotal = 0;
+        // A bill covers the owner's account, so the breakdown reads every
+        // character on it, not the viewer's.
+        $characterIds = [$tax->character_id];
+        try {
+            $ownerUserId = DB::table('refresh_tokens')
+                ->where('character_id', $tax->character_id)
+                ->value('user_id');
 
-        if ($taxCalculationMethod === 'accumulated') {
-            // In accumulated mode, get breakdown for all alts in the account
-            // Resolve the tax OWNER's characters (not the viewer's) for correct breakdown
+            if ($ownerUserId) {
+                $ownerUser = \Seat\Web\Models\User::find($ownerUserId);
+                if ($ownerUser) {
+                    $characterIds = $ownerUser->characters->pluck('character_id')->toArray();
+                }
+            }
+        } catch (\Exception $e) {
+            Log::debug("Mining Manager: Could not resolve tax owner's characters: " . $e->getMessage());
+        }
+
+        if (empty($characterIds)) {
             $characterIds = [$tax->character_id];
-            try {
-                $ownerUserId = DB::table('refresh_tokens')
-                    ->where('character_id', $tax->character_id)
-                    ->value('user_id');
+        }
 
-                if ($ownerUserId) {
-                    $ownerUser = \Seat\Web\Models\User::find($ownerUserId);
-                    if ($ownerUser) {
-                        $characterIds = $ownerUser->characters->pluck('character_id')->toArray();
-                    }
-                }
-            } catch (\Exception $e) {
-                Log::debug("Mining Manager: Could not resolve tax owner's characters: " . $e->getMessage());
+        // A character with a bill of its own for the same period, raised
+        // before it was grouped with this account, belongs to that bill.
+        $billedApart = MiningTax::where('id', '!=', $tax->id)
+            ->whereIn('character_id', $characterIds)
+            ->whereRaw('COALESCE(period_start, month) = ?', [$startDate->toDateString()])
+            ->pluck('character_id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+        $characterIds = array_values(array_diff(array_map('intval', $characterIds), $billedApart)) ?: [(int) $tax->character_id];
+
+        // Only the mining the bill taxed: by character and ore, and by kind
+        // of ore with moon ore by rarity.
+        $breakdown = $this->taxService->taxedBreakdown($characterIds, $startDate, $endDate);
+        $names = app(\MiningManager\Services\Character\CharacterNames::class);
+        $names->preload(array_column($breakdown['rows'], 'character_id'));
+        $miningBreakdown = array_map(
+            fn ($row) => $row + ['character_name' => $names->nameOrId($row['character_id'])],
+            $breakdown['rows']
+        );
+        $miningTotal = $breakdown['mined_value'];
+
+        // When the rows do not add up to the bill, say why where we can tell.
+        $breakdownNotes = [];
+        $billed = (float) $tax->amount_owed;
+        if (abs($billed - $breakdown['tax']) >= 1) {
+            $minimum = (float) ($this->settingsService->getPaymentSettings()['minimum_tax_amount'] ?? 0);
+            if ($minimum > 0
+                && abs($billed - $minimum) < 1
+                && $breakdown['daily_tax'] < $minimum
+                && $this->settingsService->getSetting('payment.minimum_tax_behavior', 'exempt') === 'enforce') {
+                $breakdownNotes[] = trans('mining-manager::taxes.breakdown_raised_to_minimum', ['minimum' => number_format($minimum, 0)]);
             }
-
-            if (empty($characterIds)) {
-                $characterIds = [$tax->character_id];
+            if (str_contains((string) $tax->notes, ' - Adjustment: ')) {
+                $breakdownNotes[] = trans('mining-manager::taxes.breakdown_adjusted');
             }
-
-            foreach ($characterIds as $charId) {
-                try {
-                    $breakdown = $this->taxService->getTaxBreakdown($charId, $startDate, $endDate);
-                    if (!empty($breakdown['breakdown'])) {
-                        $charInfo = $this->characterInfoService->getCharacterInfo($charId);
-                        foreach ($breakdown['breakdown'] as $ore) {
-                            $miningBreakdown[] = [
-                                'character_name' => $charInfo['name'] ?? "Character {$charId}",
-                                'type_name' => $ore['name'],
-                                'category' => $ore['category'],
-                                'rarity' => $ore['rarity'],
-                                'quantity' => $ore['quantity'],
-                                'total_value' => $ore['value'],
-                                'tax_rate' => $ore['effective_rate'],
-                                'tax_amount' => $ore['tax'],
-                                'event_modifier' => $ore['event_modifier'],
-                            ];
-                        }
-                        $miningTotal += $breakdown['total_value'];
-                    }
-                } catch (\Exception $e) {
-                    Log::debug("Mining Manager: Error getting breakdown for char {$charId}: " . $e->getMessage());
-                }
+            if ($tax->calculated_at && Carbon::parse($tax->calculated_at)->lt($endDate->copy()->endOfDay())) {
+                $breakdownNotes[] = trans('mining-manager::taxes.breakdown_early', ['date' => Carbon::parse($tax->calculated_at)->format('M j, Y')]);
+            }
+            if (abs($breakdown['daily_tax'] - $breakdown['tax']) >= 1) {
+                $breakdownNotes[] = trans('mining-manager::taxes.breakdown_rebuilt');
             }
         }
 
@@ -2547,6 +2549,8 @@ class TaxController extends Controller
             'tax',
             'miningBreakdown',
             'miningTotal',
+            'breakdown',
+            'breakdownNotes',
             'taxCalculationMethod',
             'isAdmin',
             'isDirector',
@@ -2947,6 +2951,7 @@ class TaxController extends Controller
             $taxCode->mining_tax_id = $validated['mining_tax_id'];
             $taxCode->character_id = $tax->character_id;
             $taxCode->code = $validated['code'] ?? $this->codeService->generateUniqueCode();
+            $taxCode->prefix = $this->codeService->prefixFor($tax);
             $taxCode->status = 'active';
             $taxCode->generated_at = Carbon::now();
             $taxCode->expires_at = isset($validated['expires_at'])
@@ -3424,7 +3429,7 @@ class TaxController extends Controller
     public function downloadReceipt(Request $request, $id)
     {
         try {
-            $tax = MiningTax::with(['taxCode'])->findOrFail($id);
+            $tax = MiningTax::with('taxCodes')->findOrFail($id);
 
             // Check if user has permission to view this tax
             $user = auth()->user();
@@ -3448,8 +3453,13 @@ class TaxController extends Controller
             $receipt .= "Due Date: " . ($tax->due_date ?? 'N/A') . "\n";
             $receipt .= "Paid At: " . ($tax->paid_at ?? 'N/A') . "\n";
 
-            if ($tax->taxCode) {
-                $receipt .= "\nPayment Code: " . $tax->taxCode->code . "\n";
+            // The code the bill's pages show, prefix included, so the receipt
+            // matches what went in the transfer.
+            $taxCode = $tax->taxCodes->where('status', 'active')->first()
+                ?? $tax->taxCodes->where('status', 'used')->first();
+
+            if ($taxCode) {
+                $receipt .= "\nPayment Code: " . $taxCode->getFullCode() . "\n";
             }
 
             $receipt .= "\nGenerated: " . Carbon::now()->toDateTimeString() . "\n";

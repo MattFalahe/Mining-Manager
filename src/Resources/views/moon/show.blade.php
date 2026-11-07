@@ -4,7 +4,7 @@
 @section('page_header', trans('mining-manager::menu.moon_extractions'))
 
 @push('head')
-<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=8">
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=10">
 <script src="{{ asset('vendor/mining-manager/js/eve-time.js') }}?v=1" defer></script>
 <script src="{{ asset('vendor/mining-manager/js/eve-countdown.js') }}?v=1" defer></script>
 @endpush
@@ -65,6 +65,13 @@
                 </button>
             </form>
             @endcan
+
+            {{-- An event on this refinery, over the days the chunk's belt can last; moon managers too, when the Events settings let them --}}
+            @if ($extraction->status !== 'cancelled' && $extraction->chunk_arrival_time && app(\MiningManager\Services\Events\EventAccess::class)->canCreate(auth()->user()))
+                <a href="{{ route('mining-manager.events.create', ['refinery' => $extraction->structure_id, 'arrival' => $extraction->chunk_arrival_time->toDateString()]) }}" class="btn btn-mm-primary">
+                    <i class="fas fa-calendar-plus"></i> {{ trans('mining-manager::events.make_event') }}
+                </a>
+            @endif
 
             {{-- Report Jackpot Button (only for ready/fractured extractions — chunk must have arrived) --}}
             @if(!$extraction->is_jackpot && in_array($extraction->getEffectiveStatus(), ['ready', 'unstable']))
@@ -394,7 +401,7 @@
                             <i class="fas fa-satellite-dish"></i>
                             <strong>{{ trans('mining-manager::moons.moon_not_scanned_title') }}</strong>
                             {{ trans('mining-manager::moons.moon_not_scanned') }}
-                            <a href="{{ url('/tools/moons') }}" target="_blank" class="alert-link">{{ trans('mining-manager::moons.moon_not_scanned_link') }}</a>
+                            <a href="{{ url('/tools/moons') }}" target="_blank" rel="noopener" class="alert-link">{{ trans('mining-manager::moons.moon_not_scanned_link') }}</a>
                         </div>
                     @endif
                     @if($extraction->is_jackpot)
@@ -579,7 +586,7 @@
                         <ol>
                             <li><strong>Scan the Moon:</strong> Use a Survey Scanner probe in-game to scan this moon</li>
                             <li><strong>Copy the Report:</strong> Copy the moon scan results from your in-game survey window</li>
-                            <li><strong>Submit to SeAT:</strong> Paste the scan report into the <a href="{{ url('/tools/moons') }}" target="_blank">SeAT Moons Reporter tool</a></li>
+                            <li><strong>Submit to SeAT:</strong> Paste the scan report into the <a href="{{ url('/tools/moons') }}" target="_blank" rel="noopener">SeAT Moons Reporter tool</a></li>
                             <li><strong>Update This Page:</strong> Composition will appear with the next extraction update, or click the "Refresh Data" button above</li>
                         </ol>
                     </div>

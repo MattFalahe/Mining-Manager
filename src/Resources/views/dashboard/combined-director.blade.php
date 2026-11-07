@@ -4,7 +4,7 @@
 @section('page_header', trans('mining-manager::dashboard.director_dashboard'))
 
 @push('head')
-<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=8">
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=10">
 <style>
 /* ULTRA-AGGRESSIVE CSS OVERRIDES - INLINE TO BEAT EVERYTHING */
 .mining-dashboard .tab-content {
@@ -49,6 +49,7 @@
 @section('full')
 <div class="mining-dashboard combined-director-dashboard">
     @include('mining-manager::dashboard.partials._tax_banner')
+    @include('mining-manager::settings.partials._settings_moved_notice')
 
     {{-- TAB NAVIGATION --}}
     <div class="row">
@@ -70,8 +71,7 @@
                         </li>
                         <li class="nav-item">
                             <a class="nav-link" id="guest-miners-tab" data-toggle="pill" href="#guest-miners" role="tab" aria-controls="guest-miners" aria-selected="false">
-                                <i class="fas fa-user-friends"></i> Guest Miners
-                                <span class="badge badge-secondary ml-2">Guests</span>
+                                <i class="fas fa-user-friends"></i> Non-member Miners
                             </a>
                         </li>
                     </ul>
@@ -82,14 +82,22 @@
                         {{-- PERSONAL STATS TAB --}}
                         <div class="tab-pane fade show active" id="personal" role="tabpanel" aria-labelledby="personal-tab">
 
-                            {{-- CURRENT MONTH PERSONAL STATISTICS --}}
+                            {{-- CURRENT TAX PERIOD AND CURRENT MONTH PERSONAL STATISTICS: the half we are in first when the viewer's account is billed twice a month --}}
+                            @php
+                                $statSections = [];
+                                if (!empty($personalCurrentPeriodStats)) {
+                                    $statSections[] = ['title' => trans('mining-manager::dashboard.current_period_stats') . ' - ' . $currentPeriodLabel, 'icon' => 'fa-hourglass-half', 'stats' => $personalCurrentPeriodStats];
+                                }
+                                $statSections[] = ['title' => trans('mining-manager::dashboard.current_month_stats') . ' - ' . now()->format('F Y'), 'icon' => 'fa-calendar-alt', 'stats' => $personalCurrentMonthStats];
+                            @endphp
+                            @foreach($statSections as $section)
                             <div class="row">
                                 <div class="col-12">
                                     <div class="card card-dark">
                                         <div class="card-header">
                                             <h3 class="card-title">
-                                                <i class="fas fa-calendar-alt"></i>
-                                                {{ trans('mining-manager::dashboard.current_month_stats') }} - {{ now()->format('F Y') }}
+                                                <i class="fas {{ $section['icon'] }}"></i>
+                                                {{ $section['title'] }}
                                             </h3>
                                             <div class="card-tools">
                                                 <span class="badge badge-success">
@@ -107,7 +115,7 @@
                                                         </span>
                                                         <div class="info-box-content">
                                                             <span class="info-box-text">{{ trans('mining-manager::dashboard.total_mined_value') }}</span>
-                                                            <span class="info-box-number">{{ number_format($personalCurrentMonthStats['total_value'], 0) }}</span>
+                                                            <span class="info-box-number">{{ number_format($section['stats']['total_value'], 0) }}</span>
                                                             <small>ISK</small>
                                                         </div>
                                                     </div>
@@ -121,7 +129,7 @@
                                                         </span>
                                                         <div class="info-box-content">
                                                             <span class="info-box-text">{{ trans('mining-manager::dashboard.total_mined_quantity') }}</span>
-                                                            <span class="info-box-number">{{ number_format($personalCurrentMonthStats['total_quantity'], 0) }}</span>
+                                                            <span class="info-box-number">{{ number_format($section['stats']['total_quantity'], 0) }}</span>
                                                             <small>{{ trans('mining-manager::dashboard.units') }}</small>
                                                         </div>
                                                     </div>
@@ -134,8 +142,8 @@
                                                             <i class="fas fa-file-invoice-dollar"></i>
                                                         </span>
                                                         <div class="info-box-content">
-                                                            <span class="info-box-text">{{ trans('mining-manager::dashboard.tax_owed') }}</span>
-                                                            <span class="info-box-number">{{ number_format($personalCurrentMonthStats['tax_isk'], 0) }}</span>
+                                                            <span class="info-box-text">{{ trans('mining-manager::dashboard.estimated_tax') }}</span>
+                                                            <span class="info-box-number">{{ number_format($section['stats']['tax_isk'], 0) }}</span>
                                                             <small>ISK</small>
                                                         </div>
                                                     </div>
@@ -149,7 +157,7 @@
                                                         </span>
                                                         <div class="info-box-content">
                                                             <span class="info-box-text">{{ trans('mining-manager::dashboard.mining_days') }}</span>
-                                                            <span class="info-box-number">{{ $personalCurrentMonthStats['mining_days'] }}</span>
+                                                            <span class="info-box-number">{{ $section['stats']['mining_days'] }}</span>
                                                             <small>{{ trans('mining-manager::dashboard.days') }}</small>
                                                         </div>
                                                     </div>
@@ -159,6 +167,7 @@
                                     </div>
                                 </div>
                             </div>
+                            @endforeach
 
                             {{-- LAST 12 MONTHS PERSONAL STATISTICS --}}
                             <div class="row">
@@ -411,6 +420,61 @@
                             </div>
                             <div id="corp-tab-content" style="display: none;">
 
+                                {{-- CURRENT TAX PERIOD CORPORATION STATISTICS: only while the Moon Owner bills twice a month, shown once the tab's data says so --}}
+                                <div class="row" id="corp-period-card" style="display: none;">
+                                    <div class="col-12">
+                                        <div class="card card-dark">
+                                            <div class="card-header">
+                                                <h3 class="card-title">
+                                                    <i class="fas fa-hourglass-half"></i>
+                                                    {{ trans('mining-manager::dashboard.current_period_stats') }} - <span id="corp-period-label"></span>
+                                                </h3>
+                                            </div>
+                                            <div class="card-body">
+                                                <div class="row">
+                                                    <div class="col-lg-3 col-md-6">
+                                                        <div class="info-box bg-gradient-success">
+                                                            <span class="info-box-icon"><i class="fas fa-gem"></i></span>
+                                                            <div class="info-box-content">
+                                                                <span class="info-box-text">All Ore Value</span>
+                                                                <span class="info-box-number" id="corp-period-all-ore-value">--</span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div class="col-lg-3 col-md-6">
+                                                        <div class="info-box bg-gradient-warning">
+                                                            <span class="info-box-icon"><i class="fas fa-moon"></i></span>
+                                                            <div class="info-box-content">
+                                                                <span class="info-box-text">Moon Ore Value</span>
+                                                                <span class="info-box-number" id="corp-period-moon-ore-value">--</span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div class="col-lg-3 col-md-6">
+                                                        <div class="info-box bg-gradient-info">
+                                                            <span class="info-box-icon"><i class="fas fa-users"></i></span>
+                                                            <div class="info-box-content">
+                                                                <span class="info-box-text">Active Miners</span>
+                                                                <span class="info-box-number" id="corp-period-active-miners">--</span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div class="col-lg-3 col-md-6">
+                                                        <div class="info-box bg-gradient-danger">
+                                                            <span class="info-box-icon"><i class="fas fa-coins"></i></span>
+                                                            <div class="info-box-content">
+                                                                <span class="info-box-text">Tax Collected</span>
+                                                                <span class="info-box-number" id="corp-period-tax-collected">--</span>
+                                                                <small id="corp-period-tax-note" style="display: none;"></small>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
                                 {{-- CURRENT MONTH CORPORATION STATISTICS --}}
                                 <div class="row">
                                     <div class="col-12">
@@ -617,7 +681,7 @@
                                     // that means both H1 and H2 tax rows contribute to the
                                     // same month bar — which is correct, but worth calling
                                     // out so directors know what they're seeing.
-                                    $__chartPeriodType = app(\MiningManager\Services\Tax\TaxPeriodHelper::class)->getConfiguredPeriodType();
+                                    $__chartPeriodType = app(\MiningManager\Services\Tax\TaxPeriodHelper::class)->periodTypeForMoonOwner();
                                 @endphp
                                 <div class="row">
                                     <div class="col-lg-6">
@@ -665,7 +729,7 @@
                                 <div class="spinner-border text-info" role="status" style="width: 3rem; height: 3rem;">
                                     <span class="sr-only">Loading...</span>
                                 </div>
-                                <p class="text-muted mt-3">Loading guest miner data...</p>
+                                <p class="text-muted mt-3">Loading non-member miners...</p>
                             </div>
                             <div id="guest-tab-content" style="display: none;">
 
@@ -696,7 +760,7 @@
                                             <div class="card-header">
                                                 <h3 class="card-title">
                                                     <i class="fas fa-user-friends"></i>
-                                                    Guest Miners — Non-Corp Pilots at Your Structures
+                                                    Non-member Miners at Your Refineries
                                                 </h3>
                                             </div>
                                             <div class="card-body">
@@ -705,7 +769,7 @@
                                                         <div class="info-box bg-gradient-info">
                                                             <span class="info-box-icon"><i class="fas fa-users"></i></span>
                                                             <div class="info-box-content">
-                                                                <span class="info-box-text">GUEST MINERS</span>
+                                                                <span class="info-box-text">NON-MEMBER MINERS</span>
                                                                 <span class="info-box-number" id="guest-count">0</span>
                                                             </div>
                                                         </div>
@@ -748,7 +812,7 @@
                                     <div class="col-12">
                                         <div class="card card-dark">
                                             <div class="card-header">
-                                                <h3 class="card-title"><i class="fas fa-list"></i> Guest Miners</h3>
+                                                <h3 class="card-title"><i class="fas fa-list"></i> Non-member Miners</h3>
                                             </div>
                                             <div class="card-body table-responsive p-0">
                                                 <table class="table table-hover table-striped">
@@ -995,6 +1059,23 @@ $('#corporation-tab').on('shown.bs.tab', function() {
             $('#corp-moon-ore-value').text(formatISK(cm.moon_ore_value || 0) + ' ISK');
             $('#corp-active-miners').text(cm.active_miners || 0);
             $('#corp-tax-collected').text(formatISK(cm.tax_collected || 0) + ' ISK');
+
+            // === CURRENT TAX PERIOD STATS (biweekly only) ===
+            var cp = data.corpCurrentPeriodStats;
+            if (cp) {
+                $('#corp-period-label').text(data.currentPeriodLabel || '');
+                $('#corp-period-all-ore-value').text(formatISK(cp.all_ore_value || 0) + ' ISK');
+                $('#corp-period-moon-ore-value').text(formatISK(cp.moon_ore_value || 0) + ' ISK');
+                $('#corp-period-active-miners').text(cp.active_miners || 0);
+                if ((cp.bills_covering || 0) > 0) {
+                    $('#corp-period-tax-collected').text(formatISK(cp.tax_collected || 0) + ' ISK');
+                } else {
+                    // Nothing is billed until the period is over.
+                    $('#corp-period-tax-collected').text(@json(trans('mining-manager::dashboard.not_billed_yet')));
+                    $('#corp-period-tax-note').text(@json(trans('mining-manager::dashboard.bills_go_out')).replace(':date', cp.bills_go_out || '')).show();
+                }
+                $('#corp-period-card').show();
+            }
 
             // === LAST 12 MONTHS STATS ===
             var l12 = data.corpLast12MonthsStats || {};
@@ -1269,7 +1350,7 @@ function loadGuestMinersData(month) {
 
             var miners = data.guestMiners || [];
             if (miners.length === 0) {
-                $tbody.append('<tr><td colspan="8" class="text-center text-muted">No guest miners found for this month</td></tr>');
+                $tbody.append('<tr><td colspan="8" class="text-center text-muted">No non-member miners this month</td></tr>');
             } else {
                 for (var i = 0; i < miners.length; i++) {
                     var m = miners[i];
@@ -1303,7 +1384,7 @@ function loadGuestMinersData(month) {
         .fail(function() {
             $('#guest-tab-loading').html(
                 '<div class="alert alert-danger">' +
-                '<i class="fas fa-exclamation-triangle"></i> Failed to load guest miner data. ' +
+                '<i class="fas fa-exclamation-triangle"></i> Could not load the non-member miners. ' +
                 '<a href="#" onclick="location.reload()">Reload page</a></div>'
             );
         });

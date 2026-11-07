@@ -6,6 +6,7 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
+use MiningManager\Services\Diagnostic\TestDataLeftovers;
 
 class GenerateTestDataCommand extends Command
 {
@@ -52,6 +53,7 @@ class GenerateTestDataCommand extends Command
             $this->warn("\nCleanup will remove:");
             $this->line("  {$testCorporations} corporations named \"Test Corp...\" and {$testCharacters} characters named \"Test Miner...\"");
             $this->line('  their mining ledger rows, tax records, affiliations and corporation settings');
+            $this->line('  the summaries, event rows and name lookups the plugin made for those characters');
             $this->line('  character_infos and corporation_infos rows, which belong to SeAT rather than to this plugin');
 
             if (!$this->confirm('Remove that test data first?', false)) {
@@ -339,6 +341,8 @@ class GenerateTestDataCommand extends Command
                 ->whereIn('character_id', $testCharacterIds)
                 ->delete();
 
+            $leftovers = TestDataLeftovers::remove($testCharacterIds);
+
             // Delete corporation settings
             $settingsDeleted = DB::table('mining_manager_settings')
                 ->whereIn('corporation_id', $testCorporationIds)
@@ -374,6 +378,11 @@ class GenerateTestDataCommand extends Command
             $this->line("  ✓ Deleted {$ledgerDeleted} ledger entries");
             $this->line("  ✓ Deleted {$taxesDeleted} tax records");
             $this->line("  ✓ Deleted {$settingsDeleted} settings");
+            foreach ($leftovers as $kind => $count) {
+                if ($count > 0) {
+                    $this->line("  ✓ Deleted {$count} {$kind}");
+                }
+            }
 
         } catch (\Exception $e) {
             DB::rollBack();

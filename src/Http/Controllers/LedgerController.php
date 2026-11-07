@@ -4,14 +4,16 @@ namespace MiningManager\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Seat\Web\Http\Controllers\Controller;
 use MiningManager\Models\MiningLedger;
 use MiningManager\Models\MiningPriceCache;
 use MiningManager\Models\MiningTax;
-use MiningManager\Models\Setting;
-use Seat\Eveapi\Models\Industry\CharacterMining;
 use MiningManager\Services\Character\CharacterInfoService;
 use MiningManager\Services\Ledger\LedgerSummaryService;
+use MiningManager\Services\Analytics\ChartFilter;
+use MiningManager\Services\Tax\ClassificationEpoch;
+use MiningManager\Services\Tax\TaxPeriodHelper;
 use MiningManager\Services\Pricing\OreValuationService;
 use MiningManager\Services\Configuration\SettingsManagerService;
 use MiningManager\Services\TypeIdRegistry;
@@ -44,186 +46,6 @@ class LedgerController extends Controller
         $this->settingsService = $settingsService;
     }
     /**
-     * Display the mining ledger index with all mining activity
-     *
-     * @param Request $request
-     * @return \Illuminate\View\View
-     */
-    public function index(Request $request)
-    {
-        // Validate filter parameters
-        $request->validate([
-            'date_from' => 'nullable|date|date_format:Y-m-d',
-            'date_to' => 'nullable|date|date_format:Y-m-d',
-            'character_id' => 'nullable|integer',
-            'corporation_id' => 'nullable|integer',
-            'ore_type' => 'nullable|string|in:ore,moon,ice,gas',
-            'system' => 'nullable|string|max:100',
-            'sort_by' => 'nullable|string|in:date_desc,date_asc,value_desc,value_asc,quantity_desc',
-            'per_page' => 'nullable|integer|in:25,50,100,200',
-        ]);
-
-        // Get validated filter parameters
-        $dateFrom = $request->get('date_from', now()->startOfMonth()->format('Y-m-d'));
-        $dateTo = $request->get('date_to', now()->format('Y-m-d'));
-        $characterId = $request->get('character_id');
-        $corporationId = $request->get('corporation_id');
-        $oreType = $request->get('ore_type');
-        $system = $request->get('system');
-        $sortBy = $request->get('sort_by', 'date_desc');
-        $perPage = $request->get('per_page', 50);
-
-        // Build query with eager loading
-        $query = MiningLedger::with(['affiliation', 'solarSystem', 'type'])
-            ->whereBetween('date', [$dateFrom, $dateTo]);
-
-        // Apply filters
-        if ($characterId) {
-            $query->where('character_id', $characterId);
-        }
-
-        // Corporation filter: who mines for it, as every page counts it, so its
-        // members SeAT has no record of are listed too.
-        if ($corporationId) {
-            $query->whereIn('character_id', app(\MiningManager\Services\Character\CorporationMembers::class)->characterIds((int) $corporationId));
-        }
-
-        if ($oreType) {
-            switch ($oreType) {
-                case 'ore':
-                    $query->where('is_moon_ore', false)
-                          ->where('is_ice', false)
-                          ->where('is_gas', false);
-                    break;
-                case 'moon':
-                    $query->where('is_moon_ore', true);
-                    break;
-                case 'ice':
-                    $query->where('is_ice', true);
-                    break;
-                case 'gas':
-                    $query->where('is_gas', true);
-                    break;
-            }
-        }
-        
-        if ($system) {
-            $query->where('solar_system_name', 'like', '%' . $system . '%');
-        }
-
-        // Apply sorting
-        switch ($sortBy) {
-            case 'date_desc':
-                $query->orderBy('date', 'desc');
-                break;
-            case 'date_asc':
-                $query->orderBy('date', 'asc');
-                break;
-            case 'value_desc':
-                $query->orderBy('total_value', 'desc');
-                break;
-            case 'value_asc':
-                $query->orderBy('total_value', 'asc');
-                break;
-            case 'quantity_desc':
-                $query->orderBy('quantity', 'desc');
-                break;
-            default:
-                $query->orderBy('date', 'desc');
-        }
-
-        // Paginate results
-        $ledgerEntries = $query->paginate($perPage);
-        
-        // Enrich with character information (names, corporations for external characters)
-        $ledgerEntries = $this->enrichPaginatorWithCharacterInfo(
-            $ledgerEntries,
-            $this->characterInfoService
-        );
-
-        // Calculate summary statistics for current month
-        $topOre = MiningLedger::whereBetween('date', [$dateFrom, $dateTo])
-            ->select('type_id', DB::raw('SUM(quantity) as total'))
-            ->groupBy('type_id')
-            ->orderBy('total', 'desc')
-            ->with('type')
-            ->first();
-        
-        // Aggregate total_value and active_miners from pre-computed daily summaries
-        $summaryAgg = MiningLedgerDailySummary::whereBetween('date', [$dateFrom, $dateTo]);
-
-        // Apply same filters as main query
-        if ($request->filled('character_id')) {
-            $summaryAgg->where('character_id', $request->input('character_id'));
-        }
-        if ($request->filled('corporation_id')) {
-            $corpCharIds = DB::table('character_affiliations')
-                ->where('corporation_id', $request->input('corporation_id'))
-                ->pluck('character_id');
-            $summaryAgg->whereIn('character_id', $corpCharIds);
-        }
-
-        $summaryStats = $summaryAgg->selectRaw('
-            SUM(total_quantity) as total_quantity,
-            SUM(total_value) as total_value,
-            COUNT(DISTINCT character_id) as active_miners
-        ')->first();
-
-        $summary = [
-            'total_entries' => MiningLedger::whereBetween('date', [$dateFrom, $dateTo])->count(),
-            'total_value' => (float) ($summaryStats->total_value ?? 0),
-            'active_miners' => (int) ($summaryStats->active_miners ?? 0),
-            'top_ore_type' => $topOre ? ($topOre->type->typeName ?? 'N/A') : 'N/A',
-        ];
-
-        // Get available characters for filter dropdown - include ALL characters (registered + unregistered)
-        $characterIds = MiningLedger::select('character_id')
-            ->distinct()
-            ->pluck('character_id')
-            ->toArray();
-            
-        $charactersInfo = $this->characterInfoService->getBatchCharacterInfo($characterIds);
-        $characters = collect($charactersInfo)->sortBy('name');
-
-        // Get corporations with mining activity
-        $corporationIds = DB::table('character_affiliations')
-            ->whereIn('character_id', function($query) {
-                $query->select('character_id')
-                    ->from('mining_ledger')
-                    ->distinct();
-            })
-            ->distinct()
-            ->pluck('corporation_id');
-
-        $corporations = DB::table('corporation_infos')
-            ->whereIn('corporation_id', $corporationIds)
-            ->select('corporation_id', 'name', 'ticker')
-            ->orderBy('name')
-            ->get();
-
-        // The ledger views read $features['allow_export_data'] to decide whether
-        // to offer an export at all, and were never given it, so their own
-        // fallback kept the button on however the setting was set.
-        $features = $this->settingsService->getFeatureFlags();
-
-        return view('mining-manager::ledger.index', compact(
-            'features',
-            'ledgerEntries',
-            'summary',
-            'characters',
-            'corporations',
-            'dateFrom',
-            'dateTo',
-            'characterId',
-            'corporationId',
-            'oreType',
-            'system',
-            'sortBy',
-            'perPage'
-        ));
-    }
-
-    /**
      * Display personal mining activity for the logged-in user
      *
      * @param Request $request
@@ -239,7 +61,7 @@ class LedgerController extends Controller
             return view('mining-manager::ledger.my-mining', [
                 'ledgerEntries' => collect(),
                 'stats' => $this->getEmptyStats(),
-                'trendData' => ['labels' => [], 'values' => []],
+                'trendData' => ['labels' => [], 'values' => [], 'by_type' => []],
                 'oreDistribution' => ['labels' => [], 'values' => []],
                 'monthlyComparison' => ['labels' => [], 'values' => []],
                 'recentActivity' => collect(),
@@ -249,21 +71,37 @@ class LedgerController extends Controller
                 'dateTo' => now()->format('Y-m-d'),
                 'characterId' => null,
                 'features' => $this->settingsService->getFeatureFlags(),
+                'period' => 'period',
+                'rangeLabel' => null,
+                'billedOn' => null,
                 'message' => trans('mining-manager::ledger.no_characters'),
             ]);
         }
 
-        // Get date range — support period shortcuts (week, month, year, all)
-        $period = $request->get('period', 'month');
+        // The tax period we are in, the one before it, or a rolling window.
+        // The tax periods line up with the bills, so the page opens on this one.
+        $period = $request->get('period', 'period');
         $dateFrom = $request->get('date_from');
         $dateTo = $request->get('date_to', now()->format('Y-m-d'));
         $characterId = $request->get('character_id');
 
-        // If no explicit date_from, calculate from period
+        $periodHelper = app(TaxPeriodHelper::class);
+        $periodType = $periodHelper->periodTypeForViewer();
+        [$periodStart, $periodEnd] = $periodHelper->getPeriodBounds(now(), $periodType);
+
         if (!$dateFrom) {
             switch ($period) {
+                case 'last_period':
+                    // The period holding the day before this one began.
+                    [$lastStart, $lastEnd] = $periodHelper->getPeriodBounds($periodStart->copy()->subDay(), $periodType);
+                    $dateFrom = $lastStart->format('Y-m-d');
+                    $dateTo = $lastEnd->format('Y-m-d');
+                    break;
                 case 'week':
-                    $dateFrom = now()->subWeek()->format('Y-m-d');
+                    $dateFrom = now()->subDays(6)->format('Y-m-d');
+                    break;
+                case 'month':
+                    $dateFrom = now()->subDays(29)->format('Y-m-d');
                     break;
                 case 'year':
                     $dateFrom = now()->subYear()->format('Y-m-d');
@@ -271,12 +109,28 @@ class LedgerController extends Controller
                 case 'all':
                     $dateFrom = '2003-01-01'; // EVE Online launch date
                     break;
-                case 'month':
+                case 'period':
                 default:
-                    $dateFrom = now()->subMonth()->format('Y-m-d');
+                    $period = 'period';
+                    $dateFrom = $periodStart->format('Y-m-d');
+                    $dateTo = $periodEnd->format('Y-m-d');
                     break;
             }
         }
+
+        $taxPeriodShown = in_array($period, ['period', 'last_period'], true) && !$request->filled('date_from');
+        $rangeLabel = match (true) {
+            $taxPeriodShown => $periodHelper->formatPeriod(Carbon::parse($dateFrom), Carbon::parse($dateTo), $periodType),
+            $period === 'all' && !$request->filled('date_from') => trans('mining-manager::ledger.all_time'),
+            default => Carbon::parse($dateFrom)->format('M j, Y') . ' - ' . Carbon::parse($dateTo)->format('M j, Y'),
+        };
+
+        // A tax period's bills go out on the nightly run two days after it
+        // ends. Only said when the run is switched on to send them.
+        $features = $this->settingsService->getFeatureFlags();
+        $billedOn = $taxPeriodShown && ($features['auto_calculate_taxes'] ?? true)
+            ? Carbon::parse($dateTo)->addDays(2)->setTime(2, 15)
+            : null;
 
         // Build query for user's characters with eager loading
         $query = MiningLedger::with(['solarSystem', 'type'])
@@ -306,6 +160,7 @@ class LedgerController extends Controller
         $trendData = [
             'labels' => $rawChartData['daily']['labels'],
             'values' => $rawChartData['daily']['data'],
+            'by_type' => $rawChartData['daily']['by_type'],
         ];
         $oreDistribution = [
             'labels' => $rawChartData['topOres']['labels'],
@@ -329,10 +184,11 @@ class LedgerController extends Controller
         $charactersInfo = $this->characterInfoService->getBatchCharacterInfo($userCharacters->toArray());
         $characters = collect($charactersInfo)->sortBy('name');
 
-        $features = $this->settingsService->getFeatureFlags();
-
         return view('mining-manager::ledger.my-mining', compact(
             'features',
+            'period',
+            'rangeLabel',
+            'billedOn',
             'ledgerEntries',
             'stats',
             'trendData',
@@ -372,28 +228,6 @@ class LedgerController extends Controller
         // Members can only view their own linked characters
         $userCharacterIds = $user->characters->pluck('character_id')->toArray();
         return in_array($characterId, $userCharacterIds);
-    }
-
-    protected function calculateLedgerStats($startDate, $endDate, $characterId = null)
-    {
-        $agg = MiningLedgerDailySummary::whereBetween('date', [$startDate, $endDate])
-            ->when($characterId, fn($q) => $q->where('character_id', $characterId))
-            ->selectRaw('
-                SUM(total_quantity) as total_quantity,
-                SUM(total_value) as total_value,
-                SUM(total_tax) as total_tax,
-                COUNT(DISTINCT character_id) as unique_miners,
-                COUNT(DISTINCT date) as mining_days
-            ')
-            ->first();
-
-        return [
-            'total_quantity' => (float) ($agg->total_quantity ?? 0),
-            'total_value' => (float) ($agg->total_value ?? 0),
-            'total_tax' => (float) ($agg->total_tax ?? 0),
-            'unique_miners' => (int) ($agg->unique_miners ?? 0),
-            'mining_days' => (int) ($agg->mining_days ?? 0),
-        ];
     }
 
     /**
@@ -439,19 +273,20 @@ class LedgerController extends Controller
         // Best single day by value (from daily summaries)
         $bestDayValue = (float) ($agg->best_day_value ?? 0);
 
-        // Tax paid from mining_taxes (for selected date range): everything
-        // paid, part payments included, on the same bills as the owed figure
-        // below, so the outstanding figure compares like with like.
-        $paidTaxAmount = MiningTax::whereIn('character_id', $characterIds)
-            ->whereBetween('month', [$startDate, $endDate])
+        // The bills that cover any of the days shown, each counted whole, as
+        // it was billed. A bill's month is only the month it falls in, which a
+        // rolling window can start after while still taking in the bill's
+        // days. Bills from before periods were stored cover their month.
+        $bills = MiningTax::whereIn('character_id', $characterIds)
             ->when($specificCharacterId, fn($q) => $q->where('character_id', $specificCharacterId))
-            ->sum('amount_paid');
+            ->whereNotIn('status', MiningTax::WRITTEN_OFF_STATUSES)
+            ->whereRaw('COALESCE(period_start, month) <= ?', [$endDate])
+            ->whereRaw('COALESCE(period_end, LAST_DAY(month)) >= ?', [$startDate])
+            ->get();
 
-        // Tax owed from mining_taxes (authoritative, for selected date range)
-        $taxOwed = (float) MiningTax::whereIn('character_id', $characterIds)
-            ->whereBetween('month', [$startDate, $endDate])
-            ->when($specificCharacterId, fn($q) => $q->where('character_id', $specificCharacterId))
-            ->sum('amount_owed');
+        $taxBilled = (float) $bills->sum('amount_owed');
+        $paidTaxAmount = (float) $bills->sum('amount_paid');
+        $leftToPay = (float) $bills->sum(fn ($bill) => $bill->getRemainingBalance());
 
         // Estimated tax: daily summaries first, then the raw ledger. When both
         // say nothing is due, nothing is: mining can be untaxed (exempt, a 0%
@@ -466,9 +301,6 @@ class LedgerController extends Controller
                 ->sum('tax_amount');
         }
 
-        // Use authoritative tax_owed if available, otherwise fall back to estimated
-        $effectiveTaxOwed = $taxOwed > 0 ? $taxOwed : $estimatedTax;
-
         // All-time event tax savings — every discount the user has accrued
         // from event participation, across all events the daily summaries
         // have seen. Cheap one-column sum from mining_ledger_daily_summaries.
@@ -480,19 +312,45 @@ class LedgerController extends Controller
             'total_quantity' => $totalQuantity,
             'total_value' => $totalValue,
             'total_volume' => $totalVolume,
-            'total_sessions' => $activeDays,
             'active_days' => $activeDays,
             'best_day_value' => $bestDayValue,
             'daily_average' => $activeDays > 0 ? round($totalValue / $activeDays, 0) : 0,
             'estimated_tax_this_month' => $estimatedTax,
-            'total_tax_owed' => $effectiveTaxOwed,
+            'total_tax_billed' => $taxBilled,
             'total_tax_paid' => $paidTaxAmount,
-            'tax_outstanding' => max(0, $effectiveTaxOwed - $paidTaxAmount),
+            'tax_outstanding' => $leftToPay,
+            'bills_covering' => $bills->count(),
+            'next_payment' => $this->nextPayment($characterIds),
             'event_discount_total' => (float) ($agg->event_discount_total ?? 0),
             'event_savings_all_time' => $eventSavingsAllTime,
             'mining_days' => $activeDays,
             'favorite_ore' => $this->getFavoriteOre($characterIds, $startDate, $endDate, $specificCharacterId),
             'corp_rank' => $this->calculateCorpRank($characterIds, $startDate, $endDate),
+        ];
+    }
+
+    /**
+     * What the account has to pay next, whatever period the page shows: the
+     * overdue bills when there are any, otherwise the next one coming due.
+     *
+     * @param \Illuminate\Support\Collection $characterIds
+     * @return array{overdue_count: int, overdue_amount: float, next: MiningTax|null}
+     */
+    protected function nextPayment($characterIds): array
+    {
+        $open = MiningTax::whereIn('character_id', $characterIds)
+            ->outstanding()
+            ->get()
+            ->filter(fn ($bill) => $bill->getRemainingBalance() > 0);
+
+        $overdue = $open->filter(fn ($bill) => $bill->isOverdue());
+
+        return [
+            'overdue_count' => $overdue->count(),
+            'overdue_amount' => (float) $overdue->sum(fn ($bill) => $bill->getRemainingBalance()),
+            'next' => $open->reject(fn ($bill) => $bill->isOverdue())
+                ->sortBy(fn ($bill) => $bill->effectiveDueDate()->getTimestamp())
+                ->first(),
         ];
     }
 
@@ -512,11 +370,22 @@ class LedgerController extends Controller
             ->whereBetween('date', [$startDate, $endDate])
             ->when($specificCharacterId, fn($q) => $q->where('character_id', $specificCharacterId));
 
-        // Daily mining value from pre-computed daily summaries
+        // Daily mining value from pre-computed daily summaries, with each
+        // day split by kind of ore for the chart's By type view. The kinds
+        // add up to the day's value.
         $dailyData = MiningLedgerDailySummary::whereIn('character_id', $characterIds)
             ->whereBetween('date', [$startDate, $endDate])
             ->when($specificCharacterId, fn($q) => $q->where('character_id', $specificCharacterId))
-            ->selectRaw('date, SUM(total_value) as value')
+            ->selectRaw('
+                date,
+                SUM(total_value) as value,
+                SUM(moon_ore_value) as moon,
+                SUM(regular_ore_value) as ore,
+                SUM(ice_value) as ice,
+                SUM(gas_value) as gas,
+                SUM(abyssal_ore_value) as abyssal,
+                SUM(triglavian_ore_value) as triglavian
+            ')
             ->groupBy('date')
             ->orderBy('date')
             ->get();
@@ -530,14 +399,27 @@ class LedgerController extends Controller
             ->limit(10)
             ->get();
 
+        // Everything past the top ten as one slice, so each slice is a share of
+        // all the mining in the period rather than of the top ten.
+        $topOreLabels = $topOres->pluck('name')->toArray();
+        $topOreData = $topOres->pluck('value')->map(fn ($value) => (float) $value)->toArray();
+        $otherOres = (float) ($baseQuery())->sum('total_value') - array_sum($topOreData);
+        if ($otherOres >= 1) {
+            $topOreLabels[] = trans('mining-manager::ledger.other_ores');
+            $topOreData[] = round($otherOres, 2);
+        }
+
         return [
             'daily' => [
                 'labels' => $dailyData->pluck('date')->map(fn($d) => Carbon::parse($d)->format('M d'))->toArray(),
                 'data' => $dailyData->pluck('value')->toArray(),
+                'by_type' => collect(['moon', 'ore', 'ice', 'gas', 'abyssal', 'triglavian'])
+                    ->mapWithKeys(fn ($type) => [$type => $dailyData->pluck($type)->map(fn ($value) => (float) $value)->all()])
+                    ->all(),
             ],
             'topOres' => [
-                'labels' => $topOres->pluck('name')->toArray(),
-                'data' => $topOres->pluck('value')->toArray(),
+                'labels' => $topOreLabels,
+                'data' => $topOreData,
             ],
         ];
     }
@@ -577,36 +459,6 @@ class LedgerController extends Controller
     }
 
     /**
-     * Get tax rate for an ore type using settings service.
-     * Respects per-rarity moon ore rates (R4-R64), ore, ice, gas rates.
-     *
-     * @param int $typeId
-     * @return float Tax rate as percentage (0-100)
-     */
-    protected function getOreTaxRate(int $typeId): float
-    {
-        $taxRates = $this->settingsService->getTaxRates();
-
-        // Check if it's moon ore
-        if (TypeIdRegistry::isMoonOre($typeId)) {
-            $rarity = TypeIdRegistry::getMoonOreRarity($typeId);
-            return (float) ($taxRates['moon_ore'][$rarity] ?? $taxRates['moon_ore']['r4'] ?? 5.0);
-        }
-
-        // Check other categories
-        if (TypeIdRegistry::isIce($typeId)) {
-            return (float) ($taxRates['ice'] ?? 10.0);
-        }
-
-        if (TypeIdRegistry::isGas($typeId)) {
-            return (float) ($taxRates['gas'] ?? 10.0);
-        }
-
-        // Regular ore
-        return (float) ($taxRates['ore'] ?? 10.0);
-    }
-
-    /**
      * Get empty statistics array
      *
      * @return array
@@ -616,14 +468,16 @@ class LedgerController extends Controller
         return [
             'total_quantity' => 0,
             'total_value' => 0,
-            'total_sessions' => 0,
+
             'active_days' => 0,
             'best_day_value' => 0,
             'daily_average' => 0,
             'estimated_tax_this_month' => 0,
-            'total_tax_owed' => 0,
+            'total_tax_billed' => 0,
             'total_tax_paid' => 0,
             'tax_outstanding' => 0,
+            'bills_covering' => 0,
+            'next_payment' => ['overdue_count' => 0, 'overdue_amount' => 0.0, 'next' => null],
             'event_discount_total' => 0,
             'event_savings_all_time' => 0,
             'mining_days' => 0,
@@ -852,157 +706,6 @@ class LedgerController extends Controller
     }
 
     /**
-     * Delete a specific mining ledger entry
-     *
-     * @param int $id
-     * @return \Illuminate\Http\JsonResponse
-     */
-    public function delete($id)
-    {
-        try {
-            $entry = MiningLedger::findOrFail($id);
-            $entry->delete();
-
-            return response()->json([
-                'success' => true,
-                'message' => trans('mining-manager::ledger.entry_deleted'),
-            ]);
-
-        } catch (\Exception $e) {
-            \Log::error('Failed to delete mining ledger entry', [
-                'id' => $id,
-                'error' => $e->getMessage(),
-            ]);
-
-            return response()->json([
-                'success' => false,
-                'message' => trans('mining-manager::ledger.delete_failed'),
-            ], 500);
-        }
-    }
-
-    /**
-     * Bulk delete mining ledger entries
-     *
-     * @param Request $request
-     * @return \Illuminate\Http\JsonResponse
-     */
-    public function bulkDelete(Request $request)
-    {
-        $request->validate([
-            'entry_ids' => 'required|array',
-            'entry_ids.*' => 'integer|exists:mining_ledger,id',
-        ]);
-
-        try {
-            $deleted = MiningLedger::whereIn('id', $request->input('entry_ids'))->delete();
-
-            return response()->json([
-                'success' => true,
-                'message' => trans('mining-manager::ledger.entries_deleted', ['count' => $deleted]),
-            ]);
-
-        } catch (\Exception $e) {
-            \Log::error('Failed to bulk delete mining ledger entries', [
-                'ids' => $request->input('entry_ids'),
-                'error' => $e->getMessage(),
-            ]);
-
-            return response()->json([
-                'success' => false,
-                'message' => trans('mining-manager::ledger.delete_failed'),
-            ], 500);
-        }
-    }
-
-    /**
-     * Export mining ledger data
-     *
-     * @param Request $request
-     * @return \Symfony\Component\HttpFoundation\StreamedResponse
-     */
-    public function export(Request $request)
-    {
-        if (!$this->dataExportIsAllowed()) {
-            return $this->refuseDataExport($request);
-        }
-
-        $query = MiningLedger::with(['type', 'solarSystem']);
-
-        // Apply filters if provided
-        if ($request->has('character_id') && $request->input('character_id')) {
-            $query->where('character_id', $request->input('character_id'));
-        }
-
-        if ($request->has('type_id') && $request->input('type_id')) {
-            $query->where('type_id', $request->input('type_id'));
-        }
-
-        if ($request->has('start_date') && $request->input('start_date')) {
-            $query->where('date', '>=', $request->input('start_date'));
-        }
-
-        if ($request->has('end_date') && $request->input('end_date')) {
-            $query->where('date', '<=', $request->input('end_date'));
-        }
-
-        // If specific entry IDs provided (for selected export)
-        if ($request->has('entry_ids')) {
-            $entryIds = explode(',', $request->input('entry_ids'));
-            $query->whereIn('id', $entryIds);
-        }
-
-        $filename = 'mining_ledger_' . now()->format('Y-m-d_His') . '.csv';
-
-        // Stream the export in chunks so memory stays bounded regardless of
-        // dataset size. Previously this loaded up to 10,000 rows into PHP
-        // memory at once via ->limit(10000)->get() — fine for small corps,
-        // but a 100-character active corp could OOM the request.
-        //
-        // chunkByIdDesc uses cursor pagination (WHERE id < last_id LIMIT 500)
-        // which is stable across the iteration even if rows are inserted
-        // mid-stream. Relations specified by with() are eager-loaded per
-        // chunk, so no N+1.
-        return response()->streamDownload(function () use ($query) {
-            $handle = fopen('php://output', 'w');
-
-            // CSV Headers
-            fputcsv($handle, [
-                'Date',
-                'Character',
-                'Ore Type',
-                'Solar System',
-                'Quantity',
-                'Price',
-                'Total Value',
-                'Tax Rate',
-                'Tax Amount',
-            ]);
-
-            $names = app(\MiningManager\Services\Character\CharacterNames::class);
-            $query->chunkByIdDesc(500, function ($entries) use ($handle, $names) {
-                foreach ($entries as $entry) {
-                    fputcsv($handle, [
-                        Carbon::parse($entry->date)->format('Y-m-d H:i:s'),
-                        $names->nameOrId($entry->character_id),
-                        $entry->type->name ?? 'Unknown',
-                        $entry->solarSystem->name ?? 'Unknown',
-                        number_format($entry->quantity, 2),
-                        number_format($entry->price, 2),
-                        number_format($entry->total_value, 2),
-                        number_format($entry->tax_rate, 2) . '%',
-                        number_format($entry->tax_amount, 2),
-                    ]);
-                }
-            });
-
-            fclose($handle);
-        }, $filename, [
-            'Content-Type' => 'text/csv',
-        ]);
-    }
-
-    /**
      * Export personal mining ledger data (only current user's characters)
      *
      * @param Request $request
@@ -1083,10 +786,12 @@ class LedgerController extends Controller
     {
         // Get month parameter or default to current month
         $month = $request->get('month', now()->format('Y-m'));
-        $corporationId = $request->get('corporation_id');
         $groupByMain = $request->get('group_by_main', true); // Default to grouped view
         $sortBy = $request->get('sort_by', 'total_value'); // Default sort column
         $sortDir = $request->get('sort_dir', 'desc'); // Default sort direction
+        $scope = $request->get('scope') === LedgerSummaryService::SCOPE_MOONS
+            ? LedgerSummaryService::SCOPE_MOONS
+            : LedgerSummaryService::SCOPE_MEMBERS;
 
         // Validate month format
         try {
@@ -1096,16 +801,50 @@ class LedgerController extends Controller
             $month = $monthDate->format('Y-m');
         }
 
+        $isDirector = auth()->user()->can('mining-manager.director');
+
+        // The corporation filter is a director's: a member only ever sees their
+        // own rows. The moons view opens on the Moon Owner Corporation, and an
+        // empty choice there means every refinery the install observes.
+        $corporationId = $isDirector && $request->filled('corporation_id')
+            ? (int) $request->input('corporation_id')
+            : null;
+        if ($scope === LedgerSummaryService::SCOPE_MOONS && !($isDirector && $request->has('corporation_id'))) {
+            $corporationId = $this->settingsService->getTaxProgramCorporationId();
+        }
+
+        // All mining can be narrowed the way the Performance Charts are. The
+        // moons view is moon ore off our refineries already.
+        $ore = (string) $request->get('ore', 'all');
+        if ($scope === LedgerSummaryService::SCOPE_MOONS || !array_key_exists($ore, LedgerSummaryService::ORE_FILTERS)) {
+            $ore = 'all';
+        }
+        [$moonSource, $oreCategory] = LedgerSummaryService::ORE_FILTERS[$ore];
+        $filter = new ChartFilter(
+            $moonSource,
+            $oreCategory,
+            [],
+            (int) $this->settingsService->getSettingForCorporation('general.moon_owner_corporation_id', null) ?: null
+        );
+
+        // A Moon Owner billing twice a month bills each half of the month on
+        // its own, so the page shows one half or the whole month. It opens on
+        // the half we are in, and on the whole month for any month gone by.
+        $periodHelper = app(TaxPeriodHelper::class);
+        $biweekly = $periodHelper->periodTypeForMoonOwner() === 'biweekly';
+        $halves = $biweekly ? $periodHelper->getPeriodsInMonth($monthDate, 'biweekly') : [];
+        $half = $this->shownHalf($request, $monthDate, $biweekly);
+        $period = $half === 'month' ? null : $halves[(int) $half - 1];
+
         // Get enhanced monthly summaries (includes ore types and systems)
-        $summaries = $this->summaryService->getEnhancedMonthlySummaries($month, $corporationId);
+        $summaries = $this->summaryService->getEnhancedMonthlySummaries($month, $corporationId, $scope, $period, $filter);
 
         // Group by main character if requested
         if ($groupByMain) {
-            $summaries = $this->summaryService->groupByMainCharacter($summaries, $corporationId);
+            $summaries = $this->summaryService->groupByMainCharacter($summaries, $corporationId, $scope);
         }
 
         // Filter to user's own characters for non-directors (members see only their own)
-        $isDirector = auth()->user()->can('mining-manager.director');
         if (!$isDirector) {
             $userCharacterIds = auth()->user()->characters->pluck('character_id')->toArray();
             $summaries = $summaries->filter(function ($summary) use ($userCharacterIds) {
@@ -1139,34 +878,210 @@ class LedgerController extends Controller
             'ice_value' => $summaries->sum('ice_value'),
             'gas_value' => $summaries->sum('gas_value'),
         ];
+        foreach (LedgerSummaryService::MOON_CLASSES as $class) {
+            $totals["moon_{$class}_value"] = $summaries->sum("moon_{$class}_value");
+        }
 
-        // Get corporations for filter dropdown
-        $corporations = DB::table('corporation_infos')
-            ->whereIn('corporation_id', function($query) use ($monthDate) {
-                $query->select('corporation_id')
-                    ->from('mining_ledger')
-                    ->whereYear('date', $monthDate->year)
-                    ->whereMonth('date', $monthDate->month)
-                    ->whereNotNull('corporation_id')
-                    ->distinct();
-            })
-            ->select('corporation_id', 'name', 'ticker')
-            ->orderBy('name')
-            ->get();
+        // Each half of a biweekly month is its own bill, so the whole month
+        // shows each half's tax, and the total is the two added together. A
+        // finalized month's own tax figure was taken when the month closed,
+        // and a day rebuilt after that, such as unbilled mining at a rate
+        // changed since, moves the halves but not that figure.
+        $halfTaxes = [];
+        if ($half === 'month' && $halves && $scope !== LedgerSummaryService::SCOPE_MOONS) {
+            $shownIds = $this->summaryCharacterIds($summaries);
+            foreach ($halves as [$start, $end]) {
+                $figures = $this->summaryService->periodTax($shownIds, $start, $end, $filter);
+                $halfTaxes[] = [
+                    'label' => $periodHelper->formatPeriod($start, $end, 'biweekly'),
+                    'tax' => array_sum(array_column($figures, 'tax')),
+                ];
+            }
+            $totals['total_tax'] = array_sum(array_column($halfTaxes, 'tax'));
+        }
+
+        // Slices that read the ledger's ore flags say when the flags were
+        // corrected, as the Performance Charts do, when the days shown reach
+        // back before it.
+        $periodStart = $period ? $period[0] : $monthDate;
+        $classificationCutover = $filter->dependsOnClassification() ? ClassificationEpoch::get() : null;
+        if ($classificationCutover && $periodStart->copy()->startOfDay()->gte($classificationCutover->copy()->startOfDay())) {
+            $classificationCutover = null;
+        }
 
         return view('mining-manager::ledger.summary', [
             'summaries' => $summaries,
             'totals' => $totals,
             'month' => $month,
             'monthDate' => $monthDate,
-            'corporations' => $corporations,
+            'corporations' => $isDirector ? $this->summaryCorporations($monthDate, $scope, $corporationId) : collect(),
             'selectedCorporationId' => $corporationId,
             'isCurrentMonth' => $monthDate->isSameMonth(now()),
+            'fromFinalized' => $this->summaryService->usesFinalizedSummaries($month, $scope, $period, $filter),
+            'scope' => $scope,
+            'moonClasses' => LedgerSummaryService::MOON_CLASSES,
             'groupByMain' => $groupByMain,
             'sortBy' => $sortBy,
             'sortDir' => $sortDir,
             'isDirector' => $isDirector,
+            'ore' => $ore,
+            'filter' => $filter,
+            'classificationCutover' => $classificationCutover,
+            'biweekly' => $biweekly,
+            'half' => $half,
+            'periodNav' => $biweekly ? $this->summaryPeriodNav($request, $monthDate, $half, $halves, $periodHelper) : null,
+            'halfTaxes' => $halfTaxes,
         ]);
+    }
+
+    /**
+     * Every character a summary page shows, alts included.
+     *
+     * @param \Illuminate\Support\Collection $summaries
+     * @return array<int, int>
+     */
+    protected function summaryCharacterIds($summaries): array
+    {
+        $ids = [];
+        foreach ($summaries as $summary) {
+            $ids[] = (int) $summary->character_id;
+            foreach ($summary->alt_characters ?? [] as $alt) {
+                $ids[] = (int) $alt->character_id;
+            }
+        }
+
+        return array_values(array_unique($ids));
+    }
+
+    /**
+     * The half of the month a biweekly page shows: the one asked for, or the
+     * half we are in for this month and the whole month for one gone by. On
+     * a monthly period the page always shows the whole month.
+     */
+    protected function shownHalf(Request $request, Carbon $monthDate, bool $biweekly): string
+    {
+        $half = (string) $request->get('half', '');
+        if (!$biweekly || !in_array($half, ['1', '2', 'month'], true)) {
+            $half = $biweekly && $monthDate->isSameMonth(now()) ? (now()->day <= 14 ? '1' : '2') : 'month';
+        }
+
+        return $half;
+    }
+
+    /**
+     * The summary's period switch, keeping the filters it was opened with.
+     *
+     * @param array $halves The month's two [start, end] periods
+     */
+    protected function summaryPeriodNav(Request $request, Carbon $monthDate, string $half, array $halves, TaxPeriodHelper $periodHelper): array
+    {
+        $keep = array_filter(
+            $request->only(['scope', 'corporation_id', 'group_by_main', 'ore', 'sort_by', 'sort_dir']),
+            fn ($value) => $value !== null
+        );
+        $link = fn (Carbon $month, string $h) => route('mining-manager.ledger.summary', $keep + [
+            'month' => $month->format('Y-m'),
+            'half' => $h,
+        ]);
+
+        return $this->periodNav($link, $monthDate, $half, $halves, $periodHelper);
+    }
+
+    /**
+     * Links for a period switch: a step back or forward, by half while a half
+     * is shown and by month while the whole month is, and the two halves and
+     * whole month of the month shown. Nothing links to a period that has not
+     * started.
+     *
+     * @param \Closure $link (Carbon $month, string $half) => url
+     * @param array $halves The month's two [start, end] periods, none on a monthly period
+     * @return array{label: string, prev: string|null, next: string|null, choices: array<int, array{label: string, url: string|null, active: bool}>}
+     */
+    protected function periodNav(\Closure $link, Carbon $monthDate, string $half, array $halves, TaxPeriodHelper $periodHelper): array
+    {
+        $started = fn (Carbon $start) => $start->copy()->startOfDay()->lte(now());
+
+        $previousMonth = $monthDate->copy()->subMonthNoOverflow()->startOfMonth();
+        $nextMonth = $monthDate->copy()->addMonthNoOverflow()->startOfMonth();
+
+        if ($half === 'month') {
+            $label = $monthDate->format('F Y');
+            $prev = $link($previousMonth, 'month');
+            $next = $started($nextMonth) ? $link($nextMonth, 'month') : null;
+        } else {
+            [$start, $end] = $halves[(int) $half - 1];
+            $label = $periodHelper->formatPeriod($start, $end, 'biweekly');
+
+            if ($half === '1') {
+                $prev = $link($previousMonth, '2');
+                $next = $started($halves[1][0]) ? $link($monthDate, '2') : null;
+            } else {
+                $prev = $link($monthDate, '1');
+                $next = $started($nextMonth) ? $link($nextMonth, '1') : null;
+            }
+        }
+
+        $choices = [];
+        foreach ($halves as $index => [$start, $end]) {
+            $choices[] = [
+                'label' => $start->format('jS') . '-' . $end->format('jS'),
+                'url' => $started($start) ? $link($monthDate, (string) ($index + 1)) : null,
+                'active' => $half === (string) ($index + 1),
+            ];
+        }
+        $choices[] = [
+            'label' => trans('mining-manager::ledger.whole_month'),
+            'url' => $link($monthDate, 'month'),
+            'active' => $half === 'month',
+        ];
+
+        return compact('label', 'prev', 'next', 'choices');
+    }
+
+    /**
+     * The corporations the summary's filter offers.
+     *
+     * All mining offers the corporations this install looks after. The
+     * moons view offers the owners of refineries whose observers recorded
+     * mining that month, and always the Moon Owner Corporation it opens on.
+     * Names come from wherever the plugin knows them, so a corporation SeAT
+     * never loaded still reads right.
+     *
+     * @return \Illuminate\Support\Collection
+     */
+    protected function summaryCorporations(Carbon $monthDate, string $scope, ?int $selected)
+    {
+        if ($scope === LedgerSummaryService::SCOPE_MOONS) {
+            $ids = MiningLedger::whereYear('date', $monthDate->year)
+                ->whereMonth('date', $monthDate->month)
+                ->whereNotNull('observer_id')
+                ->whereNotNull('corporation_id')
+                ->distinct()
+                ->pluck('corporation_id')
+                ->all();
+            $ids[] = $this->settingsService->getTaxProgramCorporationId();
+        } else {
+            $ids = $this->settingsService->getHomeCorporationIds();
+        }
+
+        $ids[] = $selected;
+        $ids = array_values(array_unique(array_filter(array_map('intval', $ids))));
+
+        if (!$ids) {
+            return collect();
+        }
+
+        $names = app(\MiningManager\Services\Character\CharacterNames::class)->corporationNames($ids);
+        $tickers = DB::table('corporation_infos')->whereIn('corporation_id', $ids)->pluck('ticker', 'corporation_id');
+
+        return collect($ids)
+            ->map(fn ($id) => (object) [
+                'corporation_id' => $id,
+                'name' => $names[$id] ?? "Corporation {$id}",
+                'ticker' => $tickers[$id] ?? null,
+            ])
+            ->sortBy('name', SORT_NATURAL | SORT_FLAG_CASE)
+            ->values();
     }
 
     /**
@@ -1237,26 +1152,31 @@ class LedgerController extends Controller
         }
 
         $month = $request->get('month', now()->format('Y-m'));
-        $includeAlts = $request->get('include_alts', false); // Option to include alt characters
         $sortBy = $request->get('sort_by', 'date'); // Default sort column
         $sortDir = $request->get('sort_dir', 'desc'); // Default sort direction
+        $taxedOnly = $request->boolean('taxed');
 
         try {
             $monthDate = Carbon::parse($month)->startOfMonth();
         } catch (\Exception $e) {
             $monthDate = now()->startOfMonth();
-            $month = $monthDate->format('Y-m');
         }
+        $month = $monthDate->format('Y-m');
 
         // Get character information
         $characterInfo = $this->characterInfoService->getCharacterInfo($characterId);
+
+        // A main brings its alts along unless the link asks for the one
+        // character, as the summary's every-character view does.
+        $includeAlts = $request->has('include_alts')
+            ? $request->boolean('include_alts')
+            : (bool) ($characterInfo['is_registered'] ?? false);
 
         // Determine which character IDs to include
         $characterIds = [$characterId];
         $altCharacters = collect();
 
-        // If this is a main character, check if we should include alts
-        if ($includeAlts || $characterInfo['is_registered']) {
+        if ($includeAlts) {
             // Get user ID for this character
             $userId = DB::table('refresh_tokens')
                 ->where('character_id', $characterId)
@@ -1288,7 +1208,7 @@ class LedgerController extends Controller
         }
 
         // Validate sort parameters
-        $validColumns = ['date', 'quantity', 'total_value', 'character_id'];
+        $validColumns = ['date', 'quantity', 'total_value', 'tax', 'character_id'];
         if (!in_array($sortBy, $validColumns)) {
             $sortBy = 'date';
         }
@@ -1296,45 +1216,134 @@ class LedgerController extends Controller
             $sortDir = 'desc';
         }
 
-        // Get all mining entries for these characters with pagination
-        $entries = MiningLedger::with(['solarSystem', 'type'])
+        // An account billed twice a month has each half of the month billed
+        // on its own, so the page shows a half or the whole month, as the
+        // summary does.
+        $periodHelper = app(TaxPeriodHelper::class);
+        $biweekly = $periodHelper->periodTypeForCharacter((int) $characterId, $monthDate) === 'biweekly';
+        $halves = $biweekly ? $periodHelper->getPeriodsInMonth($monthDate, 'biweekly') : [];
+        $half = $this->shownHalf($request, $monthDate, $biweekly);
+        [$from, $to] = $half === 'month'
+            ? [$monthDate->copy()->startOfMonth(), $monthDate->copy()->endOfMonth()]
+            : $halves[(int) $half - 1];
+
+        // Every row of the period with its tax, so the taxed-only view, the
+        // tax column's sort and the totals all see the whole period rather
+        // than one page of it.
+        $rows = MiningLedger::with(['solarSystem', 'type'])
             ->whereIn('character_id', $characterIds)
-            ->whereYear('date', $monthDate->year)
-            ->whereMonth('date', $monthDate->month)
-            ->orderBy($sortBy, $sortDir)
-            ->orderBy('id', 'desc')
-            ->paginate(50)
-            ->appends([
-                'month' => $month,
-                'include_alts' => $includeAlts ? '1' : '0',
-                'sort_by' => $sortBy,
-                'sort_dir' => $sortDir,
-            ]);
+            ->whereBetween('date', [$from->toDateString(), $to->toDateString()])
+            ->get();
+        $taxes = $this->summaryService->rowTaxes($rows);
+        $shown = $taxedOnly ? $rows->filter(fn ($row) => $taxes[$row->id]['taxed']) : $rows;
 
-        // Calculate totals for all included characters
-        $totals = MiningLedger::whereIn('mining_ledger.character_id', $characterIds)
-            ->whereYear('mining_ledger.date', $monthDate->year)
-            ->whereMonth('mining_ledger.date', $monthDate->month)
-            ->join('invTypes', 'mining_ledger.type_id', '=', 'invTypes.typeID')
-            ->selectRaw('
-                SUM(mining_ledger.quantity) as total_quantity,
-                SUM(mining_ledger.quantity * invTypes.volume) as total_volume_m3,
-                SUM(mining_ledger.total_value) as total_value,
-                COUNT(DISTINCT mining_ledger.solar_system_id) as unique_systems,
-                COUNT(DISTINCT mining_ledger.type_id) as unique_ores
-            ')
-            ->first();
+        $sortValue = match ($sortBy) {
+            'quantity' => fn ($row) => (int) $row->quantity,
+            'total_value' => fn ($row) => (float) $row->total_value,
+            'tax' => fn ($row) => $taxes[$row->id]['tax'],
+            'character_id' => fn ($row) => mb_strtolower($row->character_name),
+            default => fn ($row) => $row->date->toDateString(),
+        };
+        $sorted = $shown->sort(function ($a, $b) use ($sortValue, $sortDir) {
+            $order = $sortValue($a) <=> $sortValue($b);
 
-        // Get total_tax from daily summaries (single source of truth)
-        $totals->total_tax = (float) MiningLedgerDailySummary::whereIn('character_id', $characterIds)
-            ->whereYear('date', $monthDate->year)
-            ->whereMonth('date', $monthDate->month)
-            ->sum('total_tax');
+            return $order === 0 ? $b->id <=> $a->id : ($sortDir === 'asc' ? $order : -$order);
+        })->values();
+
+        $perPage = 50;
+        $page = LengthAwarePaginator::resolveCurrentPage();
+        $entries = new LengthAwarePaginator(
+            $sorted->forPage($page, $perPage)->values(),
+            $sorted->count(),
+            $perPage,
+            $page,
+            ['path' => $request->url(), 'query' => $request->query()]
+        );
+
+        $totals = (object) [
+            'total_quantity' => $shown->sum('quantity'),
+            'total_volume_m3' => $shown->sum(fn ($row) => $row->quantity * ($row->type->volume ?? 0)),
+            'total_value' => $shown->sum(fn ($row) => (float) $row->total_value),
+            'unique_systems' => $shown->pluck('solar_system_id')->unique()->count(),
+            'unique_ores' => $shown->pluck('type_id')->unique()->count(),
+            // The daily summaries' own figure, which a billed day keeps at
+            // what was billed.
+            'total_tax' => (float) MiningLedgerDailySummary::whereIn('character_id', $characterIds)
+                ->whereBetween('date', [$from->toDateString(), $to->toDateString()])
+                ->sum('total_tax'),
+        ];
+
+        // What was taxed, by kind of ore and rate, and what was not and why,
+        // over the whole period whichever rows the table shows.
+        $taxedGroups = [];
+        $untaxedGroups = [];
+        $untaxed = function (string $reason, string $class, float $value) use (&$untaxedGroups) {
+            $kind = str_starts_with($class, 'moon') ? 'moon' : $class;
+            $key = $reason . '|' . $kind;
+            $untaxedGroups[$key] ??= ['reason' => $reason, 'kind' => $kind, 'value' => 0.0];
+            $untaxedGroups[$key]['value'] += $value;
+        };
+        foreach ($rows as $row) {
+            $figure = $taxes[$row->id];
+
+            if ($figure['taxed']) {
+                // A row that grew after its day was billed was charged on the
+                // billed part only, so the rest goes with the mining that
+                // arrived after the bill, and value times rate still gives the tax.
+                $billed = $figure['billed_share'] ?? 1.0;
+                $key = $figure['class'] . '|' . $figure['rate'];
+                $taxedGroups[$key] ??= ['class' => $figure['class'], 'rate' => $figure['rate'], 'value' => 0.0, 'tax' => 0.0, 'discount' => 0.0, 'ores' => []];
+                $taxedGroups[$key]['value'] += (float) $row->total_value * $billed;
+                $taxedGroups[$key]['tax'] += $figure['tax'];
+                $taxedGroups[$key]['discount'] += $figure['discount'];
+                $taxedGroups[$key]['ores'][$row->type_id] = $row->type_name;
+                if ($billed < 1) {
+                    $untaxed('after_bill', $figure['class'], (float) $row->total_value * (1 - $billed));
+                }
+            } else {
+                $untaxed($figure['reason'], $figure['class'], (float) $row->total_value);
+            }
+        }
+        usort($taxedGroups, fn ($a, $b) => $b['tax'] <=> $a['tax']);
+        usort($untaxedGroups, fn ($a, $b) => $b['value'] <=> $a['value']);
+        $taxedTotal = array_sum(array_column($taxedGroups, 'tax'));
+
+        // Links keep the alts choice and the sort; the period links keep the
+        // taxed-only view as well.
+        $keep = array_filter([
+            'include_alts' => $request->has('include_alts') ? ($includeAlts ? '1' : '0') : null,
+            'sort_by' => $request->has('sort_by') ? $sortBy : null,
+            'sort_dir' => $request->has('sort_dir') ? $sortDir : null,
+        ], fn ($value) => $value !== null);
+        $link = fn (Carbon $linkMonth, string $linkHalf, bool $taxed) => route('mining-manager.ledger.character-details', [
+            'characterId' => $characterId,
+            'month' => $linkMonth->format('Y-m'),
+        ] + ($biweekly ? ['half' => $linkHalf] : []) + ($taxed ? ['taxed' => '1'] : []) + $keep);
+        $periodLink = fn (Carbon $linkMonth, string $linkHalf) => $link($linkMonth, $linkHalf, $taxedOnly);
+
+        $thisMonth = now()->startOfMonth();
+        $lastMonth = $thisMonth->copy()->subMonthNoOverflow();
+        $quickPeriods = [];
+        if ($biweekly) {
+            $thisHalf = now()->day <= 14 ? '1' : '2';
+            $quickPeriods[] = [trans('mining-manager::ledger.this_period'), $thisMonth, $thisHalf];
+            $quickPeriods[] = $thisHalf === '2'
+                ? [trans('mining-manager::ledger.last_period'), $thisMonth, '1']
+                : [trans('mining-manager::ledger.last_period'), $lastMonth, '2'];
+        }
+        $quickPeriods[] = [trans('mining-manager::ledger.month_this'), $thisMonth, 'month'];
+        $quickPeriods[] = [trans('mining-manager::ledger.month_last'), $lastMonth, 'month'];
+        $quickPeriods = array_map(fn ($quick) => [
+            'label' => $quick[0],
+            'url' => $periodLink($quick[1], $quick[2]),
+            'active' => $quick[1]->isSameMonth($monthDate) && $quick[2] === $half,
+        ], $quickPeriods);
 
         return view('mining-manager::ledger.character-details', [
             'characterId' => $characterId,
             'characterInfo' => $characterInfo,
             'entries' => $entries,
+            'taxes' => $taxes,
             'totals' => $totals,
             'month' => $month,
             'monthDate' => $monthDate,
@@ -1343,6 +1352,19 @@ class LedgerController extends Controller
             'showingMultiple' => count($characterIds) > 1,
             'sortBy' => $sortBy,
             'sortDir' => $sortDir,
+            'taxedOnly' => $taxedOnly,
+            'taxedLinks' => [
+                'all' => $link($monthDate, $half, false),
+                'taxed' => $link($monthDate, $half, true),
+            ],
+            'taxedGroups' => $taxedGroups,
+            'untaxedGroups' => $untaxedGroups,
+            'taxedTotal' => $taxedTotal,
+            'biweekly' => $biweekly,
+            'half' => $half,
+            'periodNav' => $this->periodNav($periodLink, $monthDate, $half, $halves, $periodHelper),
+            'quickPeriods' => $quickPeriods,
+            'summaryUrl' => route('mining-manager.ledger.index', ['month' => $month] + ($biweekly ? ['half' => $half] : [])),
         ]);
     }
 

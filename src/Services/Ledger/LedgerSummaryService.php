@@ -15,9 +15,39 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use MiningManager\Services\Tax\InvoiceCoverage;
 use MiningManager\Services\OreClassifier;
+use MiningManager\Services\Character\CorporationMembers;
+use MiningManager\Services\Character\CorporationOnDate;
+use MiningManager\Services\Analytics\ChartFilter;
 
 class LedgerSummaryService
 {
+    /** The Mining Summary's two questions: what a corporation's miners mined... */
+    public const SCOPE_MEMBERS = 'members';
+
+    /** ...and what came off a corporation's refineries. */
+    public const SCOPE_MOONS = 'moons';
+
+    /** Moon ore classes, as the ledger stamps them (moon_r4 to moon_r64). */
+    public const MOON_CLASSES = ['r4', 'r8', 'r16', 'r32', 'r64'];
+
+    /**
+     * What the members' view can be narrowed to, as the Performance Charts
+     * slice it: where moon ore came from, or one kind of ore.
+     *
+     * @var array<string, array{0: string, 1: string|null}> key => [moon source, ore category]
+     */
+    public const ORE_FILTERS = [
+        'all' => [ChartFilter::MOON_ALL, null],
+        'my_moons' => [ChartFilter::MOON_MINE, null],
+        'other_moons' => [ChartFilter::MOON_OTHER, null],
+        'any_moons' => [ChartFilter::MOON_ANY, null],
+        'ore' => [ChartFilter::MOON_ALL, 'ore'],
+        'ice' => [ChartFilter::MOON_ALL, 'ice'],
+        'gas' => [ChartFilter::MOON_ALL, 'gas'],
+        'abyssal' => [ChartFilter::MOON_ALL, 'abyssal'],
+        'triglavian' => [ChartFilter::MOON_ALL, 'triglavian'],
+    ];
+
     /**
      * Settings manager for tax rate lookups.
      *
@@ -161,6 +191,36 @@ class LedgerSummaryService
 
     protected function buildDailySummary(int $characterId, string $date): MiningLedgerDailySummary
     {
+        [$keys, $attributes] = $this->dailySummaryFor($characterId, $date);
+
+        return MiningLedgerDailySummary::updateOrCreate($keys, $attributes);
+    }
+
+    /**
+     * What a day's summary would hold if it were built now, without saving
+     * it: the same build generateDailySummary() makes, for Diagnostics to set
+     * beside what is stored.
+     *
+     * @return array<string, mixed> the summary's attributes
+     */
+    public function previewDailySummary(int $characterId, string $date): array
+    {
+        $callerContext = $this->settingsService->getActiveCorporation();
+
+        try {
+            return $this->dailySummaryFor($characterId, $date)[1];
+        } finally {
+            $this->settingsService->setActiveCorporation($callerContext);
+        }
+    }
+
+    /**
+     * A day's summary as [the row it belongs in, what it holds].
+     *
+     * @return array{0: array<string, mixed>, 1: array<string, mixed>}
+     */
+    protected function dailySummaryFor(int $characterId, string $date): array
+    {
         $dateCarbon = Carbon::parse($date);
 
         // Only aggregate entries that have been processed (have prices calculated).
@@ -172,8 +232,8 @@ class LedgerSummaryService
         $hasData = (clone $baseQuery)->exists();
 
         if (!$hasData) {
-            // No processed mining data — create/update empty summary
-            return MiningLedgerDailySummary::updateOrCreate(
+            // No processed mining data: an empty summary
+            return [
                 [
                     'character_id' => $characterId,
                     'date' => $dateCarbon,
@@ -191,19 +251,9 @@ class LedgerSummaryService
                     'triglavian_ore_value' => 0,
                     'ore_types' => [],
                     'is_finalized' => !$dateCarbon->isSameMonth(now()),
-                ]
-            );
+                ],
+            ];
         }
-
-        // Get the character's current corporation ID. The corporation_id
-        // column was dropped from character_infos in SeAT 2019 — the current
-        // affiliation lives in character_affiliations now. Reading it from
-        // CharacterInfo directly would silently return null and break both
-        // guest-mining detection and the Phase 2 event corp-scope filter.
-        $characterCorpId = DB::table('character_affiliations')
-            ->where('character_id', $characterId)
-            ->value('corporation_id');
-        $characterCorpId = $characterCorpId ? (int) $characterCorpId : null;
 
         // Moon Owner Corporation is a GLOBAL setting (not corp-context dependent).
         // Read it directly to avoid dependency on active corporation context.
@@ -216,8 +266,25 @@ class LedgerSummaryService
             $this->settingsService->setActiveCorporation((int) $moonOwnerCorpId);
         }
 
-        // Get list of configured corporations (for character ledger tax filtering)
-        $homeCorporationIds = $this->settingsService->getHomeCorporationIds();
+        // The corporations whose members were members that day, a corporation
+        // taken off the list since included up to its last day on it.
+        $homeCorporationIds = $this->settingsService->memberCorporationsOn($dateCarbon);
+
+        // The corporation the character was in that day, not the one they are
+        // in now. It decides which profile taxes the day, whether personal
+        // mining is taxed at all, and which corporation's events apply, so a
+        // member who leaves keeps a member's tax on the days they mined as
+        // one, however often those days are rebuilt afterwards.
+        $characterCorpId = app(CorporationOnDate::class)->forDay($characterId, $dateCarbon, $homeCorporationIds);
+
+        // From the day after settings moved into tax profiles, a day is taxed
+        // by the profile of the corporation the pilot was in that day. Days
+        // before it keep the rule they were taxed under, however often they
+        // are rebuilt.
+        $profilesFrom = $this->settingsService->profilesTaxFrom();
+        $rule = $profilesFrom !== null && $dateCarbon->gte($profilesFrom)
+            ? $this->profileRule($characterCorpId ? (int) $characterCorpId : null, $homeCorporationIds, $moonOwnerCorpId ? (int) $moonOwnerCorpId : null, $dateCarbon)
+            : null;
 
         // Get corporation_id for the summary — prefer Moon Owner Corp if entries exist
         $corporationId = (clone $baseQuery)
@@ -272,44 +339,47 @@ class LedgerSummaryService
                 : null;
 
             $entryCorporationId = $entry->corporation_id;
+            $source = $this->sourceOf(
+                $entryCorporationId !== null ? (int) $entryCorporationId : null,
+                $moonOwnerCorpId ? (int) $moonOwnerCorpId : null
+            );
 
-            // ================================================================
-            // Corporation filtering: only process relevant entries
-            // ================================================================
-            if ($entryCorporationId !== null) {
-                // Observer data — ONLY process from Moon Owner Corp's structures
+            if ($rule !== null) {
+                if ($this->profileLeavesOut($rule, $source) !== null) {
+                    continue;
+                }
+
+                $isTaxable = $this->selectorTaxes($rule['selector'], $typeId, $entryCorporationId, $moonOwnerCorpId);
+                $baseTaxRate = $isTaxable ? $this->rateIn($rule['rates'], $typeId) : 0;
+            } elseif ($entryCorporationId !== null) {
+                // Before tax profiles: observer data only from the Moon Owner's
+                // structures, all of it taxed as the Moon Owner taxes it.
                 if ((int) $entryCorporationId !== (int) ($moonOwnerCorpId ?? 0)) {
                     continue; // Skip entries from other corps' observers (e.g. Mount Othrys)
                 }
-                // Moon observer entry: use Moon Owner Corp context for settings
                 if ($moonOwnerCorpId) {
                     $this->settingsService->setActiveCorporation((int) $moonOwnerCorpId);
                 }
+
+                $isTaxable = $this->shouldTaxType($typeId, $entryCorporationId, $moonOwnerCorpId);
+                $baseTaxRate = $isTaxable ? $this->getTaxRateForType($typeId, $characterCorpId, $dateCarbon) : 0;
             } else {
-                // Character ledger entry (NULL corporation_id)
-                // Only tax if the character belongs to a configured corporation
+                // Before tax profiles: a personal ledger is taxed only for a
+                // member of a configured corporation, as their corporation
+                // taxes it, and never for moon ore, which waits for our
+                // refinery's report.
                 if (!$characterCorpId || (
                     !empty($homeCorporationIds)
                     && !in_array((int) $characterCorpId, $homeCorporationIds, true)
                 )) {
                     continue; // Character not in SeAT or not in any configured corp — skip
                 }
-                // Use character's own corp context for rates
                 $this->settingsService->setActiveCorporation((int) $characterCorpId);
-            }
 
-            // Determine taxability based on ore type and tax selector settings
-            if ($entryCorporationId !== null) {
-                // Moon observer entry — use shouldTaxType (handles only_corp_moon_ore etc.)
-                $isTaxable = $this->shouldTaxType($typeId, $entryCorporationId, $moonOwnerCorpId);
-            } else {
-                // Character ledger — moon ore without observer data is not taxable yet
-                // (it will become taxable when observer data arrives and reconciliation runs)
-                // Non-moon ore types are taxable based on tax selector
                 $isTaxable = !TypeIdRegistry::isMoonOre($typeId)
                     && $this->shouldTaxType($typeId, null, $moonOwnerCorpId);
+                $baseTaxRate = $isTaxable ? $this->getTaxRateForType($typeId, $characterCorpId, $dateCarbon) : 0;
             }
-            $baseTaxRate = $isTaxable ? $this->getTaxRateForType($typeId, $characterCorpId) : 0;
 
             // Phase 2 per-row attribution: look up how much of this (char, date, type)
             // mining is event-qualified via event_mining_records. The event modifier
@@ -369,6 +439,7 @@ class LedgerSummaryService
                 'ore_name' => $oreName,
                 'category' => $category,
                 'moon_rarity' => $moonRarity,
+                'source' => $source,
                 'quantity' => (float) $quantity,
                 'unit_price' => round($unitPrice, 2),
                 'total_value' => round((float) $value, 2),
@@ -437,8 +508,7 @@ class LedgerSummaryService
             }
         }
 
-        // Create or update daily summary
-        return MiningLedgerDailySummary::updateOrCreate(
+        return [
             [
                 'character_id' => $characterId,
                 'date' => $dateCarbon,
@@ -457,8 +527,128 @@ class LedgerSummaryService
                 'triglavian_ore_value' => $triglavianOreValue,
                 'ore_types' => $oreBreakdown,
                 'is_finalized' => $isFinalized,
-            ]
-        );
+            ],
+        ];
+    }
+
+    /**
+     * The rate the daily summaries charge one ledger row on a day taxed by
+     * profiles, 0 when they leave it untaxed. Null for a day taxed before
+     * profiles: its row keeps the rate the importers always gave it, so no
+     * row from before the update is stamped differently.
+     *
+     * The ledger's own rate is shown, never billed. This keeps what it shows
+     * in line with what the bill charges.
+     */
+    public function profileRateFor(int $characterId, $date, int $typeId, ?int $refineryCorporationId): ?float
+    {
+        $day = Carbon::parse($date)->startOfDay();
+        $profilesFrom = $this->settingsService->profilesTaxFrom();
+
+        if ($profilesFrom === null || $day->lt($profilesFrom)) {
+            return null;
+        }
+
+        $moonOwnerCorpId = (int) $this->settingsService->getSettingForCorporation('general.moon_owner_corporation_id', null) ?: null;
+        $homeCorporationIds = $this->settingsService->memberCorporationsOn($day);
+        $corporationId = app(CorporationOnDate::class)->forDay($characterId, $day, $homeCorporationIds);
+        $rule = $this->profileRule($corporationId ? (int) $corporationId : null, $homeCorporationIds, $moonOwnerCorpId, $day);
+
+        if ($this->profileLeavesOut($rule, $this->sourceOf($refineryCorporationId, $moonOwnerCorpId)) !== null
+            || !$this->selectorTaxes($rule['selector'], $typeId, $refineryCorporationId, $moonOwnerCorpId)) {
+            return 0.0;
+        }
+
+        return $this->rateIn($rule['rates'], $typeId);
+    }
+
+    /**
+     * Where a slice of mining came from: our refinery, somebody else's, or
+     * the pilot's own ledger.
+     */
+    protected function sourceOf(?int $refineryCorporationId, ?int $moonOwnerCorpId): string
+    {
+        if ($refineryCorporationId === null) {
+            return 'personal';
+        }
+
+        return $moonOwnerCorpId !== null && $refineryCorporationId === $moonOwnerCorpId ? 'ours' : 'other';
+    }
+
+    /**
+     * Who taxes a pilot's mining on a day taxed by profiles, and with what.
+     *
+     * - A member of a configured corporation is taxed by its own profile: at
+     *   our refineries, for their own mining, and at other corporations'
+     *   refineries as well when the profile taxes all moon ore.
+     * - Anyone else is taxed by the Global profile, at our refineries only.
+     * - A pilot whose corporation is not known yet is taxed at our
+     *   refineries as a member of the Moon Owner, rather than at the
+     *   non-members' rate on the strength of a lookup that has not finished.
+     *   The rest of their mining waits until it has.
+     * - With no corporation configured at all, Global taxes everyone.
+     *
+     * @param array<int> $home
+     * @return array{member: bool, profile: int|null, rates: array, selector: array, moon: string, owner: int|null}
+     */
+    protected function profileRule(?int $corporationId, array $home, ?int $moonOwnerCorpId, $day): array
+    {
+        $member = $home
+            ? $corporationId !== null && in_array($corporationId, $home, true)
+            : $corporationId !== null;
+        $profile = $this->settingsService->profileFor($corporationId, $day);
+
+        $selector = $this->settingsService->taxSelectorFor($profile);
+
+        return [
+            'member' => $member,
+            'profile' => $profile,
+            'rates' => $this->settingsService->taxRatesFor($profile),
+            'selector' => $selector,
+            'moon' => $this->moonChoice($selector),
+            'owner' => $moonOwnerCorpId,
+        ];
+    }
+
+    /**
+     * Why a profile leaves a slice of mining out of the day, or null when it
+     * counts. The reasons are the ones the character ledger shows.
+     */
+    protected function profileLeavesOut(array $rule, string $source): ?string
+    {
+        if ($source === 'ours') {
+            return null;
+        }
+
+        if (!$rule['member']) {
+            return $source === 'personal' ? 'not_member' : 'other_refinery';
+        }
+
+        // Somebody else's refinery is taxed only by a profile that taxes all
+        // moon ore, and only once there is a refinery of ours to tell theirs
+        // apart from.
+        if ($source === 'other' && ($rule['moon'] !== 'all' || $rule['owner'] === null)) {
+            return 'other_refinery';
+        }
+
+        return null;
+    }
+
+    /**
+     * The moon ore a selector taxes: 'all', 'ours' for only the Moon Owner's
+     * refineries, or 'none', decided the way selectorTaxes() decides it.
+     */
+    protected function moonChoice(array $selector): string
+    {
+        if (!empty($selector['no_moon_ore'])) {
+            return 'none';
+        }
+
+        if (!empty($selector['only_corp_moon_ore'])) {
+            return 'ours';
+        }
+
+        return ($selector['all_moon_ore'] ?? true) ? 'all' : 'none';
     }
 
     /**
@@ -534,11 +724,14 @@ class LedgerSummaryService
 
                 // Sum qualified quantity + value from event_mining_records for
                 // this specific slice. Indexed by (character_id, mining_date,
-                // type_id, solar_system_id) per migration 000005.
+                // type_id, solar_system_id) per migration 000005. On an event
+                // only for those who signed up, anyone else's mining is
+                // recorded too but does not qualify.
                 $agg = EventMiningRecord::where('event_id', $event->id)
                     ->where('character_id', $characterId)
                     ->where('mining_date', $date->toDateString())
                     ->where('type_id', $typeId)
+                    ->when(MiningEvent::hasRules(), fn ($query) => $query->where('qualifies', true))
                     ->selectRaw('SUM(quantity) as qty, SUM(value_isk) as val')
                     ->first();
 
@@ -562,20 +755,27 @@ class LedgerSummaryService
     }
 
     /**
-     * Get tax rate for a specific ore type.
-     * Respects per-rarity moon ore rates and guest miner multiplier.
+     * Get tax rate for a specific ore type, by rarity for moon ore, and at
+     * non-members' rates for a character outside the configured corporations.
      *
      * Public, with shouldTaxType(), so the Extraction Simulator's income
      * estimate charges what an invoice would rather than keeping a copy.
      *
      * @param int $typeId
      * @param int|null $characterCorpId
+     * @param mixed $day the day the ore was mined, or null for today's members
      * @return float Tax rate as percentage (0-100)
      */
-    public function getTaxRateForType(int $typeId, ?int $characterCorpId = null): float
+    public function getTaxRateForType(int $typeId, ?int $characterCorpId = null, $day = null): float
     {
-        $taxRates = $this->settingsService->getTaxRatesForCorporation($characterCorpId);
+        return $this->rateIn($this->settingsService->getTaxRatesForCorporation($characterCorpId, $day), $typeId);
+    }
 
+    /**
+     * An ore's rate in a table of rates shaped like getTaxRates().
+     */
+    protected function rateIn(array $taxRates, int $typeId): float
+    {
         if (TypeIdRegistry::isMoonOre($typeId)) {
             $rarity = TypeIdRegistry::getMoonOreRarity($typeId);
             if ($rarity) {
@@ -617,8 +817,15 @@ class LedgerSummaryService
      */
     public function shouldTaxType(int $typeId, ?int $entryCorporationId = null, ?int $moonOwnerCorpId = null): bool
     {
-        $taxSelector = $this->settingsService->getTaxSelector();
+        return $this->selectorTaxes($this->settingsService->getTaxSelector(), $typeId, $entryCorporationId, $moonOwnerCorpId);
+    }
 
+    /**
+     * Whether a selector shaped like getTaxSelector() taxes an ore mined at
+     * the given refinery, or in a personal ledger when there is none.
+     */
+    protected function selectorTaxes(array $taxSelector, int $typeId, $entryCorporationId, $moonOwnerCorpId): bool
+    {
         if (TypeIdRegistry::isMoonOre($typeId)) {
             if (!empty($taxSelector['no_moon_ore'])) {
                 return false;
@@ -665,6 +872,33 @@ class LedgerSummaryService
     // broad for sub-day events. Replaced by getEventAttributionForLedgerRow()
     // above, which joins against event_mining_records to apply the
     // modifier only to the actually-event-qualified slice.
+
+    /**
+     * What SeAT's static data calls these types now. A day's summary keeps the
+     * ore names the data had when the day was worked out, and ore newer than
+     * that data was saved as "Unknown Ore (id)". Pages listing a day's ore go
+     * by these names first, so updating the data fixes days already worked out.
+     *
+     * @param array<int, int|string> $typeIds
+     * @return array<int, string> type id => name, for the types the data knows
+     */
+    public static function currentOreNames(array $typeIds): array
+    {
+        $typeIds = array_values(array_unique(array_filter(array_map('intval', $typeIds))));
+        if (!$typeIds) {
+            return [];
+        }
+
+        try {
+            return DB::table('invTypes')
+                ->whereIn('typeID', $typeIds)
+                ->pluck('typeName', 'typeID')
+                ->map(fn ($name) => (string) $name)
+                ->all();
+        } catch (\Exception $e) {
+            return [];
+        }
+    }
 
     /**
      * Get ore name from invTypes table.
@@ -756,16 +990,24 @@ class LedgerSummaryService
 
             foreach ($characters as $characterId) {
                 try {
-                    // Generate monthly summary
-                    $this->generateMonthlySummary($characterId, $month);
-                    $stats['monthly_summaries']++;
+                    // One transaction per character. The whole month in one
+                    // held every summary it touched locked against the
+                    // importer until the last character was done, and a
+                    // character that failed part way kept what it had written.
+                    $days = DB::transaction(function () use ($characterId, $month, $datesByCharacter) {
+                        // Generate monthly summary
+                        $this->generateMonthlySummary($characterId, $month);
 
-                    // Generate daily summaries only for days with actual data
-                    $characterDates = $datesByCharacter->get($characterId, collect());
-                    foreach ($characterDates as $pair) {
-                        $this->generateDailySummary($characterId, $pair->mining_date);
-                        $stats['daily_summaries']++;
-                    }
+                        // Generate daily summaries only for days with actual data
+                        $characterDates = $datesByCharacter->get($characterId, collect());
+                        foreach ($characterDates as $pair) {
+                            $this->generateDailySummary($characterId, $pair->mining_date);
+                        }
+
+                        return $characterDates->count();
+                    });
+                    $stats['monthly_summaries']++;
+                    $stats['daily_summaries'] += $days;
                 } catch (\Exception $e) {
                     $stats['errors'][] = "Character {$characterId}: " . $e->getMessage();
                     Log::error("Failed to finalize summaries for character {$characterId}", [
@@ -789,32 +1031,60 @@ class LedgerSummaryService
     /**
      * Get monthly summaries with fallback to live calculation
      *
+     * Members scope answers "what did this corporation's miners mine", every
+     * ore wherever they mined it, with a corporation's members counted the way
+     * the dashboard and Analytics count them. Moons scope answers "what came
+     * off this corporation's refineries", whoever mined it.
+     *
      * @param string $month YYYY-MM format
      * @param int|null $corporationId
+     * @param string $scope self::SCOPE_MEMBERS or self::SCOPE_MOONS
+     * @param array|null $period [start, end] inside the month, or null for all of it
+     * @param ChartFilter|null $filter The slice of ore shown, or null for every ore
      * @return \Illuminate\Support\Collection
      */
-    public function getMonthlySummaries(string $month, ?int $corporationId = null)
+    public function getMonthlySummaries(string $month, ?int $corporationId = null, string $scope = self::SCOPE_MEMBERS, ?array $period = null, ?ChartFilter $filter = null)
     {
         $monthDate = Carbon::parse($month)->startOfMonth();
-        $isCurrentMonth = $monthDate->isSameMonth(now());
 
-        // If it's the current month, always calculate live
-        if ($isCurrentMonth) {
-            return $this->calculateLiveMonthlySummaries($month, $corporationId);
+        if ($scope !== self::SCOPE_MOONS) {
+            $characterIds = $this->memberCharacterIds($corporationId);
+
+            if ($characterIds === []) {
+                return collect();
+            }
+
+            // A finalized month row covers everything one character mined, so
+            // the members of a corporation are simply the rows of its members.
+            if ($this->usesFinalizedSummaries($month, $scope, $period, $filter)) {
+                $summaries = MiningLedgerMonthlySummary::forMonth($monthDate)
+                    ->finalized()
+                    ->when($characterIds !== null, fn ($query) => $query->whereIn('character_id', $characterIds))
+                    ->get();
+
+                return $this->attachEventDiscounts($summaries, ...$this->periodBounds($monthDate, null));
+            }
         }
 
-        // For past months, try to get finalized summaries first
-        $summaries = MiningLedgerMonthlySummary::forMonth($monthDate)
-            ->forCorporation($corporationId)
-            ->finalized()
-            ->get();
+        return $this->calculateLiveMonthlySummaries($month, $corporationId, $scope, $period, $filter);
+    }
 
-        // If no finalized summaries exist, calculate live
-        if ($summaries->isEmpty()) {
-            return $this->calculateLiveMonthlySummaries($month, $corporationId);
+    /**
+     * Whether a month's summaries come from the finalized monthly rows.
+     *
+     * Only the members scope can use them, and only for a whole month of every
+     * ore: they hold each character's month as one figure, and cannot say which
+     * part of it came off whose refinery, which half it fell in or what it was.
+     */
+    public function usesFinalizedSummaries(string $month, string $scope = self::SCOPE_MEMBERS, ?array $period = null, ?ChartFilter $filter = null): bool
+    {
+        $monthDate = Carbon::parse($month)->startOfMonth();
+
+        if ($scope === self::SCOPE_MOONS || $period !== null || ($filter && $filter->isActive()) || $monthDate->isSameMonth(now())) {
+            return false;
         }
 
-        return $summaries;
+        return MiningLedgerMonthlySummary::forMonth($monthDate)->finalized()->exists();
     }
 
     /**
@@ -822,23 +1092,28 @@ class LedgerSummaryService
      *
      * @param string $month YYYY-MM format
      * @param int|null $corporationId
+     * @param string $scope self::SCOPE_MEMBERS or self::SCOPE_MOONS
+     * @param array|null $period [start, end] inside the month, or null for all of it
+     * @param ChartFilter|null $filter The slice of ore shown, or null for every ore
      * @return \Illuminate\Support\Collection
      */
-    protected function calculateLiveMonthlySummaries(string $month, ?int $corporationId = null)
+    protected function calculateLiveMonthlySummaries(string $month, ?int $corporationId = null, string $scope = self::SCOPE_MEMBERS, ?array $period = null, ?ChartFilter $filter = null)
     {
         $monthDate = Carbon::parse($month)->startOfMonth();
+        [$from, $to] = $this->periodBounds($monthDate, $period);
 
-        $query = MiningLedger::whereYear('date', $monthDate->year)
-            ->whereMonth('date', $monthDate->month);
-
-        if ($corporationId) {
-            $query->where('corporation_id', $corporationId);
+        $moonClassValues = '';
+        if ($scope === self::SCOPE_MOONS) {
+            foreach (self::MOON_CLASSES as $class) {
+                $moonClassValues .= ",\n                SUM(CASE WHEN ore_category = 'moon_{$class}' THEN total_value ELSE 0 END) as moon_{$class}_value";
+            }
         }
 
         // Group by character_id only — a character's total should be aggregated
         // across all corporations they mined at. Use MAX(corporation_id) to pick
         // the primary corporation for display purposes.
-        $summaries = $query->selectRaw('
+        $summaries = $this->scopedLedger($from, $to, $corporationId, $scope, $filter)
+            ->selectRaw('
                 character_id,
                 MAX(corporation_id) as corporation_id,
                 SUM(quantity) as total_quantity,
@@ -848,25 +1123,387 @@ class LedgerSummaryService
                 SUM(CASE WHEN is_gas = 1 THEN total_value ELSE 0 END) as gas_value,
                 SUM(CASE WHEN is_abyssal = 1 THEN total_value ELSE 0 END) as abyssal_ore_value,
                 SUM(CASE WHEN is_triglavian = 1 THEN total_value ELSE 0 END) as triglavian_ore_value,
-                SUM(CASE WHEN is_moon_ore = 0 AND is_ice = 0 AND is_gas = 0 AND is_abyssal = 0 AND is_triglavian = 0 THEN total_value ELSE 0 END) as regular_ore_value
+                SUM(CASE WHEN is_moon_ore = 0 AND is_ice = 0 AND is_gas = 0 AND is_abyssal = 0 AND is_triglavian = 0 THEN total_value ELSE 0 END) as regular_ore_value' . $moonClassValues . '
             ')
             ->groupBy('character_id')
             ->get();
 
-        // Get total_tax from daily summaries (single source of truth) instead of
-        // the stale mining_ledger.tax_amount column
-        $dailySummaryTax = MiningLedgerDailySummary::whereYear('date', $monthDate->year)
-            ->whereMonth('date', $monthDate->month)
-            ->selectRaw('character_id, SUM(total_tax) as total_tax')
-            ->groupBy('character_id')
-            ->pluck('total_tax', 'character_id');
+        // A bill covers all of a character's mining, so tax only means
+        // something next to the members view. The moons view covers only what
+        // refineries recorded, and shows no tax.
+        if ($scope === self::SCOPE_MOONS) {
+            $summaries->each(function ($summary) {
+                $summary->total_tax = 0;
+            });
 
-        // Merge daily summary tax into each character's monthly summary
-        $summaries->each(function ($summary) use ($dailySummaryTax) {
-            $summary->total_tax = (float) ($dailySummaryTax->get($summary->character_id) ?? 0);
+            return $summaries;
+        }
+
+        $tax = $this->periodTax($summaries->pluck('character_id')->all(), $from, $to, $filter);
+
+        $summaries->each(function ($summary) use ($tax) {
+            $summary->total_tax = $tax[$summary->character_id]['tax'] ?? 0.0;
+            $summary->event_discount_total = $tax[$summary->character_id]['discount'] ?? 0.0;
         });
 
         return $summaries;
+    }
+
+    /**
+     * The first and last day a view covers: the whole month, or the period
+     * asked for.
+     *
+     * @return array{0: Carbon, 1: Carbon}
+     */
+    protected function periodBounds(Carbon $monthDate, ?array $period): array
+    {
+        if ($period === null) {
+            return [$monthDate->copy()->startOfMonth(), $monthDate->copy()->endOfMonth()->startOfDay()];
+        }
+
+        return [Carbon::parse($period[0])->startOfDay(), Carbon::parse($period[1])->startOfDay()];
+    }
+
+    /**
+     * The ledger rows a scope covers over these days.
+     *
+     * The moons scope reads only what a refinery's observer recorded. Personal
+     * mining is left out of it, since nothing in it says whose moon it came off.
+     */
+    protected function scopedLedger(Carbon $from, Carbon $to, ?int $corporationId, string $scope, ?ChartFilter $filter = null)
+    {
+        $query = MiningLedger::whereBetween('mining_ledger.date', [$from->toDateString(), $to->toDateString()]);
+
+        if ($scope === self::SCOPE_MOONS) {
+            $query->whereNotNull('mining_ledger.observer_id');
+
+            if ($corporationId) {
+                $query->where('mining_ledger.corporation_id', $corporationId);
+            }
+        } else {
+            $characterIds = $this->memberCharacterIds($corporationId);
+            if ($characterIds !== null) {
+                $query->whereIn('mining_ledger.character_id', $characterIds);
+            }
+        }
+
+        if ($filter) {
+            $filter->applyTo($query);
+        }
+
+        return $query;
+    }
+
+    /**
+     * A corporation's miners, as every page that filters by one counts them,
+     * or null for everyone.
+     *
+     * @return array<int, int>|null
+     */
+    protected function memberCharacterIds(?int $corporationId): ?array
+    {
+        return $corporationId ? app(CorporationMembers::class)->characterIds($corporationId) : null;
+    }
+
+    /**
+     * Add what event modifiers took off each character's tax over these days,
+     * which the Total Tax card shows beside the tax it is already part of.
+     *
+     * @param \Illuminate\Support\Collection $summaries
+     * @return \Illuminate\Support\Collection
+     */
+    protected function attachEventDiscounts($summaries, Carbon $from, Carbon $to)
+    {
+        if ($summaries->isEmpty()) {
+            return $summaries;
+        }
+
+        $tax = $this->periodTax($summaries->pluck('character_id')->all(), $from, $to);
+
+        $summaries->each(function ($summary) use ($tax) {
+            $summary->event_discount_total = $tax[$summary->character_id]['discount'] ?? 0.0;
+        });
+
+        return $summaries;
+    }
+
+    /**
+     * Each character's tax over these days, and the event discount inside it,
+     * from the daily summaries the bills are built from.
+     *
+     * For a slice of the ore it adds up each day's per-ore breakdown, which
+     * says where each entry was mined: our refineries are "my moons", other
+     * refineries and personal ledgers are other moons. A day an invoice
+     * covers keeps the tax it was billed at as its total, while its breakdown
+     * follows the rates of the day it was last built, so a slice can stray
+     * from the bill once rates have changed.
+     *
+     * @param array<int, int|string> $characterIds
+     * @return array<int, array{tax: float, discount: float}> character_id => figures
+     */
+    public function periodTax(array $characterIds, Carbon $from, Carbon $to, ?ChartFilter $filter = null): array
+    {
+        $counts = $this->taxedSlice($filter ?? ChartFilter::none());
+        $ids = array_values(array_unique(array_map('intval', $characterIds)));
+        $figures = [];
+
+        if (!$ids) {
+            return $figures;
+        }
+
+        foreach (array_chunk($ids, 1000) as $chunk) {
+            $days = MiningLedgerDailySummary::whereIn('character_id', $chunk)
+                ->whereBetween('date', [$from->toDateString(), $to->toDateString()]);
+
+            if ($counts === null) {
+                $rows = $days->selectRaw('character_id, SUM(total_tax) as tax, SUM(event_discount_total) as discount')
+                    ->groupBy('character_id')
+                    ->get();
+
+                foreach ($rows as $row) {
+                    $figures[(int) $row->character_id] = ['tax' => (float) $row->tax, 'discount' => (float) $row->discount];
+                }
+
+                continue;
+            }
+
+            foreach ($days->get(['character_id', 'ore_types']) as $day) {
+                $id = (int) $day->character_id;
+                $figures[$id] ??= ['tax' => 0.0, 'discount' => 0.0];
+
+                foreach ((array) $day->ore_types as $entry) {
+                    if ($counts((array) $entry)) {
+                        $figures[$id]['tax'] += (float) ($entry['estimated_tax'] ?? 0);
+                        $figures[$id]['discount'] += (float) ($entry['event_discount_amount'] ?? 0);
+                    }
+                }
+            }
+        }
+
+        return $figures;
+    }
+
+    /**
+     * Which entries of a day's breakdown a slice counts the tax of, or null
+     * for all of them.
+     *
+     * A breakdown built before entries said where they were mined only ever
+     * taxed moon ore at the moon owner's refineries, so its moon tax is all
+     * "my moons" and none of it other moons.
+     */
+    protected function taxedSlice(ChartFilter $filter): ?\Closure
+    {
+        $moonSource = $filter->moonSource();
+        $category = $filter->oreCategory();
+
+        if ($moonSource === ChartFilter::MOON_ALL && $category === null) {
+            return null;
+        }
+
+        return function (array $entry) use ($moonSource, $category): bool {
+            $kind = $this->oreKind((string) ($entry['category'] ?? ''));
+
+            if ($category !== null && $kind !== $category) {
+                return false;
+            }
+
+            if ($moonSource === ChartFilter::MOON_ALL) {
+                return true;
+            }
+
+            if ($kind !== 'moon') {
+                return false;
+            }
+
+            $source = $entry['source'] ?? 'ours';
+
+            return match ($moonSource) {
+                ChartFilter::MOON_MINE => $source === 'ours',
+                ChartFilter::MOON_OTHER => $source !== 'ours',
+                default => true,
+            };
+        };
+    }
+
+    /**
+     * The ore category, as the Performance Charts name them, of a category
+     * stored in a day's breakdown. Days built before the categories were
+     * renamed still say moon_ore, abyssal_ore and triglavian_ore.
+     */
+    protected function oreKind(string $category): string
+    {
+        return match (true) {
+            str_starts_with($category, 'moon') => 'moon',
+            str_starts_with($category, 'abyssal') => 'abyssal',
+            str_starts_with($category, 'triglavian') => 'triglavian',
+            $category === 'ice', $category === 'gas' => $category,
+            default => 'ore',
+        };
+    }
+
+    /**
+     * The tax on each ledger row, read from the daily summaries the bills are
+     * built from.
+     *
+     * A day's breakdown is built under the rule that taxes that day. Before
+     * settings moved into tax profiles: the Moon Owner Corporation's settings
+     * for its refineries, the miner's own corporation's for everything else,
+     * and guest rates for a miner outside the corporations this install looks
+     * after. From the day after: the profile of the corporation the miner was
+     * in that day. Each row takes its share of the tax on its ore from the
+     * same place that day, so a day's rows add up to the day, and a row the
+     * breakdown leaves out says why.
+     *
+     * @param iterable<MiningLedger> $rows
+     * @return array<int, array{class: string, taxed: bool, rate: float, tax: float, discount: float, reason: string|null, billed_share?: float}> row id => figures
+     */
+    public function rowTaxes(iterable $rows): array
+    {
+        $rows = collect($rows);
+        if ($rows->isEmpty()) {
+            return [];
+        }
+
+        $dayOf = fn ($date) => Carbon::parse($date)->toDateString();
+        $moonOwnerCorpId = (int) $this->settingsService->getSettingForCorporation('general.moon_owner_corporation_id', null) ?: null;
+        $characterIds = $rows->pluck('character_id')->map(fn ($id) => (int) $id)->unique()->values()->all();
+        $dates = $rows->map(fn ($row) => $dayOf($row->date));
+
+        // character|date => type id => that ore's entries in the day's breakdown
+        $days = [];
+        $dayTax = [];
+        $summaries = MiningLedgerDailySummary::whereIn('character_id', $characterIds)
+            ->whereBetween('date', [$dates->min(), $dates->max()])
+            ->get(['character_id', 'date', 'ore_types', 'total_tax']);
+        foreach ($summaries as $summary) {
+            $key = $summary->character_id . '|' . $dayOf($summary->date);
+            $days[$key] = [];
+            $dayTax[$key] = (float) $summary->total_tax;
+            foreach ((array) $summary->ore_types as $entry) {
+                $days[$key][(int) ($entry['type_id'] ?? 0)][] = $entry;
+            }
+        }
+
+        // Who taxes a day turns on the corporation the miner was in that day,
+        // and on the corporations whose members were members that day.
+        $members = [];
+        $membersOn = function (string $day) use (&$members) {
+            return $members[$day] ??= $this->settingsService->memberCorporationsOn($day);
+        };
+        $onDate = app(CorporationOnDate::class);
+        $corporationOn = fn (int $characterId, string $day) => ((int) $onDate->forDay($characterId, $day, $membersOn($day))) ?: null;
+
+        // Before tax profiles, personal mining is only taxed for members of the
+        // corporations this install looks after.
+        $taxedMember = function (int $characterId, string $day) use ($corporationOn, $membersOn) {
+            $corporationId = $corporationOn($characterId, $day);
+
+            return $corporationId !== null && (!$membersOn($day) || in_array($corporationId, $membersOn($day), true));
+        };
+
+        $profilesFrom = $this->settingsService->profilesTaxFrom()?->toDateString();
+        $rules = [];
+
+        // Moon ore in a personal ledger is taxed once our refinery reports it,
+        // and reports that come in late are matched this many days back. A
+        // copy of what a refinery has reported says so, whatever the day. Past
+        // that window, or once the day is billed, no report can change anything.
+        $stillReporting = Carbon::today()->subDays(PersonalMiningReconciler::DEFAULT_DAYS)->toDateString();
+        $uncovered = RefineryCoverage::uncovered(
+            $rows->filter(fn ($row) => $row->observer_id === null && TypeIdRegistry::isMoonOre((int) $row->type_id)),
+            $moonOwnerCorpId,
+            $profilesFrom
+        );
+        $personalMoonReason = function ($row, string $day) use ($uncovered, $stillReporting) {
+            if (($uncovered[(int) $row->id] ?? null) === 0) {
+                return 'moon_counted';
+            }
+
+            return $day >= $stillReporting && !InvoiceCoverage::coversRow((int) $row->character_id, $day)
+                ? 'moon_waiting'
+                : 'moon_elsewhere';
+        };
+
+        $figures = [];
+        foreach ($rows as $row) {
+            $typeId = (int) $row->type_id;
+            $day = $dayOf($row->date);
+            $refinery = $row->corporation_id !== null ? (int) $row->corporation_id : null;
+            $source = $this->sourceOf($refinery, $moonOwnerCorpId);
+            $moon = TypeIdRegistry::isMoonOre($typeId);
+            $figure = ['class' => OreClassifier::category($typeId), 'taxed' => false, 'rate' => 0.0, 'tax' => 0.0, 'discount' => 0.0, 'reason' => null];
+
+            if ($profilesFrom !== null && $day >= $profilesFrom) {
+                $rule = $rules[$row->character_id . '|' . $day] ??= $this->profileRule(
+                    $corporationOn((int) $row->character_id, $day),
+                    $membersOn($day),
+                    $moonOwnerCorpId,
+                    $day
+                );
+                $reason = $this->profileLeavesOut($rule, $source);
+
+                // A profile that taxes only our refineries' moon ore leaves
+                // moon ore in a personal ledger to their report, as before.
+                if ($reason === null && $source === 'personal' && $moon && $rule['moon'] === 'ours') {
+                    $reason = $personalMoonReason($row, $day);
+                }
+            } elseif ($source === 'other') {
+                $reason = 'other_refinery';
+            } elseif ($source === 'personal' && $moon) {
+                $reason = $personalMoonReason($row, $day);
+            } elseif ($source === 'personal' && !$taxedMember((int) $row->character_id, $day)) {
+                $reason = 'not_member';
+            } else {
+                $reason = null;
+            }
+
+            // The day's entries for this ore from the same place. A breakdown
+            // built before entries said where they were mined is matched on
+            // the ore alone.
+            $entries = $days[$row->character_id . '|' . $day][$typeId] ?? [];
+            if ($entries && array_key_exists('source', $entries[0])) {
+                $entries = array_values(array_filter($entries, fn ($entry) => ($entry['source'] ?? null) === $source));
+            }
+
+            if ($reason !== null) {
+                $figure['reason'] = $reason;
+            } elseif ($row->processed_at === null || !$entries) {
+                $figure['reason'] = 'not_counted';
+            } else {
+                $taxable = array_filter(
+                    $entries,
+                    fn ($entry) => !empty($entry['is_taxable'])
+                );
+                $value = array_sum(array_map(fn ($entry) => (float) ($entry['total_value'] ?? 0), $taxable));
+                $share = $value > 0 ? (float) $row->total_value / $value : 0.0;
+                $rate = $taxable ? (float) (reset($taxable)['tax_rate'] ?? 0) : 0.0;
+
+                if (!$taxable) {
+                    $figure['reason'] = 'settings';
+                } elseif ($rate <= 0) {
+                    $figure['reason'] = 'zero_rate';
+                } else {
+                    $figure['taxed'] = true;
+                    $figure['rate'] = $rate;
+                    $figure['tax'] = round($share * array_sum(array_map(fn ($entry) => (float) ($entry['estimated_tax'] ?? 0), $taxable)), 2);
+                    $figure['discount'] = round($share * array_sum(array_map(fn ($entry) => (float) ($entry['event_discount_amount'] ?? 0), $taxable)), 2);
+                }
+            }
+
+            $figures[(int) $row->id] = $figure;
+        }
+
+        // A billed day keeps the tax it was billed at, but its breakdown is
+        // rebuilt from every row, mining that turned up after the bill
+        // included, so without this its rows show tax nobody was charged.
+        foreach ($rows->groupBy(fn ($row) => $row->character_id . '|' . $dayOf($row->date)) as $key => $dayRows) {
+            [$characterId, $day] = explode('|', $key);
+            if (isset($dayTax[$key]) && InvoiceCoverage::coversRow((int) $characterId, $day)) {
+                $figures = LateMining::billedDay($dayRows, $figures, $dayTax[$key]);
+            }
+        }
+
+        return $figures;
     }
 
     /**
@@ -969,14 +1606,18 @@ class LedgerSummaryService
      *
      * @param string $month YYYY-MM format
      * @param int|null $corporationId
+     * @param string $scope self::SCOPE_MEMBERS or self::SCOPE_MOONS
+     * @param array|null $period [start, end] inside the month, or null for all of it
+     * @param ChartFilter|null $filter The slice of ore shown, or null for every ore
      * @return \Illuminate\Support\Collection
      */
-    public function getEnhancedMonthlySummaries(string $month, ?int $corporationId = null)
+    public function getEnhancedMonthlySummaries(string $month, ?int $corporationId = null, string $scope = self::SCOPE_MEMBERS, ?array $period = null, ?ChartFilter $filter = null)
     {
         $monthDate = Carbon::parse($month)->startOfMonth();
+        [$from, $to] = $this->periodBounds($monthDate, $period);
 
         // Get base summaries
-        $summaries = $this->getMonthlySummaries($month, $corporationId);
+        $summaries = $this->getMonthlySummaries($month, $corporationId, $scope, $period, $filter);
 
         if ($summaries->isEmpty()) {
             return $summaries;
@@ -985,10 +1626,14 @@ class LedgerSummaryService
         // Collect all character IDs once
         $characterIds = $summaries->pluck('character_id')->unique()->toArray();
 
+        // The ore, volume and system columns cover the same rows as the value
+        // beside them: a member's mining, or what one refinery owner's
+        // observers recorded, over the days and ore shown.
+        $rows = fn () => $this->scopedLedger($from, $to, $scope === self::SCOPE_MOONS ? $corporationId : null, $scope, $filter)
+            ->whereIn('mining_ledger.character_id', $characterIds);
+
         // --- BATCH QUERY 1: Get all ore type_ids for all characters in one query ---
-        $allOreTypes = MiningLedger::whereIn('character_id', $characterIds)
-            ->whereYear('date', $monthDate->year)
-            ->whereMonth('date', $monthDate->month)
+        $allOreTypes = $rows()
             ->select('character_id', 'type_id')
             ->distinct()
             ->get()
@@ -996,18 +1641,14 @@ class LedgerSummaryService
             ->map(fn($group) => $group->pluck('type_id')->toArray());
 
         // --- BATCH QUERY 2: Get total volume (m³) for all characters in one query ---
-        $allVolumes = MiningLedger::whereIn('character_id', $characterIds)
-            ->whereYear('date', $monthDate->year)
-            ->whereMonth('date', $monthDate->month)
+        $allVolumes = $rows()
             ->join('invTypes', 'mining_ledger.type_id', '=', 'invTypes.typeID')
-            ->selectRaw('character_id, SUM(mining_ledger.quantity * invTypes.volume) as total_volume_m3')
-            ->groupBy('character_id')
+            ->selectRaw('mining_ledger.character_id, SUM(mining_ledger.quantity * invTypes.volume) as total_volume_m3')
+            ->groupBy('mining_ledger.character_id')
             ->pluck('total_volume_m3', 'character_id');
 
         // --- BATCH QUERY 3: Get all system data for all characters in one query ---
-        $allSystemData = MiningLedger::whereIn('character_id', $characterIds)
-            ->whereYear('date', $monthDate->year)
-            ->whereMonth('date', $monthDate->month)
+        $allSystemData = $rows()
             ->select('character_id', 'solar_system_id', DB::raw('SUM(total_value) as system_value'))
             ->groupBy('character_id', 'solar_system_id')
             ->get()
@@ -1081,9 +1722,11 @@ class LedgerSummaryService
      * Uses SeAT v5 structure (refresh_tokens table for character-user mapping)
      *
      * @param \Illuminate\Support\Collection $summaries
+     * @param int|null $corporationId
+     * @param string $scope self::SCOPE_MEMBERS or self::SCOPE_MOONS
      * @return \Illuminate\Support\Collection
      */
-    public function groupByMainCharacter($summaries, ?int $corporationId = null)
+    public function groupByMainCharacter($summaries, ?int $corporationId = null, string $scope = self::SCOPE_MEMBERS)
     {
         // Get all character IDs from mining data
         $characterIds = $summaries->pluck('character_id')->unique()->toArray();
@@ -1096,10 +1739,15 @@ class LedgerSummaryService
             ->pluck('user_id', 'character_id');
 
         // Also fetch ALL registered users for the corporation(s) so main accounts
-        // with zero mining still appear in the summary
-        $corpIds = $corporationId
-            ? [$corporationId]
-            : $summaries->pluck('corporation_id')->filter()->unique()->toArray();
+        // with zero mining still appear in the summary. Members scope only: in
+        // the moons scope the corporation owns the refinery, and its members who
+        // never mined there are not missing from anything.
+        $corpIds = [];
+        if ($scope !== self::SCOPE_MOONS) {
+            $corpIds = $corporationId
+                ? [$corporationId]
+                : $this->settingsService->getHomeCorporationIds();
+        }
 
         if (!empty($corpIds)) {
             // Find all character_ids affiliated with these corporations
@@ -1174,6 +1822,10 @@ class LedgerSummaryService
                 $emptySummary->gas_value = 0;
                 $emptySummary->abyssal_ore_value = 0;
                 $emptySummary->triglavian_ore_value = 0;
+                $emptySummary->event_discount_total = 0;
+                foreach (self::MOON_CLASSES as $class) {
+                    $emptySummary->{"moon_{$class}_value"} = 0;
+                }
                 $emptySummary->total_volume_m3 = 0;
                 $emptySummary->alt_characters = collect();
                 $emptySummary->alt_count = 0;
@@ -1218,6 +1870,10 @@ class LedgerSummaryService
             $mainSummary->gas_value = $userSummaries->sum('gas_value');
             $mainSummary->abyssal_ore_value = $userSummaries->sum('abyssal_ore_value');
             $mainSummary->triglavian_ore_value = $userSummaries->sum('triglavian_ore_value');
+            $mainSummary->event_discount_total = $userSummaries->sum('event_discount_total');
+            foreach (self::MOON_CLASSES as $class) {
+                $mainSummary->{"moon_{$class}_value"} = $userSummaries->sum("moon_{$class}_value");
+            }
 
             // Merge ore types from all characters
             $allOreTypes = $userSummaries->pluck('ore_type_ids')->flatten()->unique()->values();
@@ -1306,6 +1962,43 @@ class LedgerSummaryService
         }
 
         return $byEvent;
+    }
+
+    /**
+     * One event's tax savings per character, from the same daily summary
+     * entries getEventSavingsByEvent() reads: what each character's days
+     * were actually charged less because of this event.
+     *
+     * @param array<int> $characterIds
+     * @return array<int, float> character_id => total discount in ISK
+     */
+    public function getEventSavingsByCharacter(int $eventId, array $characterIds, ?Carbon $startDate = null, ?Carbon $endDate = null): array
+    {
+        if (empty($characterIds)) {
+            return [];
+        }
+
+        $query = MiningLedgerDailySummary::whereIn('character_id', $characterIds)
+            ->whereNotNull('ore_types')
+            ->where('event_discount_total', '>', 0);
+
+        if ($startDate) {
+            $query->where('date', '>=', $startDate->toDateString());
+        }
+        if ($endDate) {
+            $query->where('date', '<=', $endDate->toDateString());
+        }
+
+        $byCharacter = [];
+        foreach ($query->select('character_id', 'ore_types')->get() as $row) {
+            foreach (is_array($row->ore_types) ? $row->ore_types : [] as $entry) {
+                if ((int) ($entry['event_id'] ?? 0) === $eventId) {
+                    $byCharacter[(int) $row->character_id] = ($byCharacter[(int) $row->character_id] ?? 0) + (float) ($entry['event_discount_amount'] ?? 0);
+                }
+            }
+        }
+
+        return $byCharacter;
     }
 
     /**

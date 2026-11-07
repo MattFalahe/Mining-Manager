@@ -59,7 +59,7 @@ class TaxCodeGeneratorService
             'mining_tax_id' => $tax->id,
             'character_id' => $tax->character_id,
             'code' => $code,
-            'prefix' => TaxCode::getPrefix(),
+            'prefix' => $this->prefixFor($tax),
             'status' => 'active',
             'generated_at' => Carbon::now(),
             'expires_at' => Carbon::now()->addDays($expirationDays),
@@ -68,6 +68,24 @@ class TaxCodeGeneratorService
         Log::info("Mining Manager: Generated tax code {$code} for character {$tax->character_id}");
 
         return $taxCode;
+    }
+
+    /**
+     * The prefix a bill's code is made with: the one of its account's tax
+     * profile, once settings are in profiles.
+     */
+    public function prefixFor(MiningTax $tax): string
+    {
+        if (!$this->settings->usesTaxProfiles()) {
+            return TaxCode::getPrefix();
+        }
+
+        $profile = app(TaxPeriodHelper::class)->accountProfile(
+            (int) $tax->character_id,
+            Carbon::parse($tax->period_start ?? $tax->month)
+        );
+
+        return (string) $this->settings->getSettingForCorporation('tax_rates.tax_code_prefix', $profile, 'TAX-');
     }
 
     /**
@@ -91,18 +109,6 @@ class TaxCodeGeneratorService
     }
 
     /**
-     * Get full tax code with prefix.
-     *
-     * @param string $code
-     * @return string
-     */
-    public function getFullCode(string $code): string
-    {
-        $prefix = $this->settings->getSetting('tax_rates.tax_code_prefix', 'TAX-');
-        return $prefix . $code;
-    }
-
-    /**
      * Get payment instructions for a tax code.
      *
      * @param TaxCode $taxCode
@@ -110,7 +116,7 @@ class TaxCodeGeneratorService
      */
     public function getPaymentInstructions(TaxCode $taxCode): string
     {
-        $fullCode = $this->getFullCode($taxCode->code);
+        $fullCode = $taxCode->getFullCode();
         $amount = number_format($taxCode->miningTax->amount_owed, 2);
 
         return "Please send {$amount} ISK to [Corporation Wallet] with the following in the description: {$fullCode}";
@@ -284,7 +290,7 @@ class TaxCodeGeneratorService
         // For now, this is a placeholder
 
         try {
-            $fullCode = $this->getFullCode($taxCode->code);
+            $fullCode = $taxCode->getFullCode();
             $instructions = $this->getPaymentInstructions($taxCode);
 
             Log::info("Mining Manager: Tax code notification sent to character {$taxCode->character_id}: {$fullCode}");

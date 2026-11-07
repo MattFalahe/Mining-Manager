@@ -75,11 +75,9 @@ class MoonIncomeEstimate
             $this->settings->setActiveCorporation($moonOwner);
         }
         try {
-            // The same test OreValuationService makes when a ledger row is
-            // valued: minerals, or else the ore.
-            $basis = ($this->settings->getGeneralSettings()['ore_valuation_method'] ?? 'mineral_price') === 'mineral_price'
-                ? 'refined'
-                : 'ore';
+            // Tax is worked out on what the ore refines into, as the ledger
+            // values it.
+            $basis = 'refined';
             $refinery = $this->refineryTax($simulation['composition'] ?? [], $basis, $moonOwner);
         } finally {
             $this->settings->setActiveCorporation($previous);

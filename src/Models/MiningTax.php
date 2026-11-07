@@ -6,6 +6,8 @@ use MiningManager\Models\Concerns\HasCharacterName;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Facades\Schema;
+use MiningManager\Integrations\ManagerCoreEvents;
 use MiningManager\Services\Tax\PartPaymentEpoch;
 use MiningManager\Services\Tax\TaxPeriodHelper;
 use Seat\Eveapi\Models\Character\CharacterInfo;
@@ -33,6 +35,41 @@ class MiningTax extends Model
     public const OUTSTANDING_STATUSES = ['unpaid', 'partial', 'overdue'];
 
     /**
+     * Statuses of a bill a director let off. Nothing is owed on it, it never
+     * goes overdue, and it counts as never billed.
+     */
+    public const WRITTEN_OFF_STATUSES = ['waived', 'exempted'];
+
+    /**
+     * tax_profile on a bill billed by the Global profile. A bill billed by a
+     * configured corporation's profile holds that corporation's id, and one
+     * from before tax profiles holds nothing.
+     */
+    public const GLOBAL_PROFILE = 'global';
+
+    private static bool $recordsTaxProfile = false;
+    private static int $recordsTaxProfileCheckedAt = 0;
+
+    protected static function booted(): void
+    {
+        // A bill paid off is announced once, when its status turns paid,
+        // however the money came: the wallet, held credit, Mark as Paid,
+        // Change Status or the bulk mark. A bill let off is announced when
+        // it turns waived or exempted. All of them save the bill.
+        static::updated(function (MiningTax $tax) {
+            if (!$tax->wasChanged('status')) {
+                return;
+            }
+
+            if ($tax->status === 'paid') {
+                ManagerCoreEvents::taxPaid($tax);
+            } elseif (in_array($tax->status, self::WRITTEN_OFF_STATUSES, true)) {
+                ManagerCoreEvents::taxWrittenOff($tax);
+            }
+        });
+    }
+
+    /**
      * The attributes that are mass assignable.
      *
      * @var array
@@ -54,6 +91,7 @@ class MiningTax extends Model
         'notes',
         'due_date',
         'triggered_by',
+        'tax_profile',
     ];
 
     /**
@@ -80,6 +118,87 @@ class MiningTax extends Model
     public function character()
     {
         return $this->belongsTo(CharacterInfo::class, 'character_id', 'character_id');
+    }
+
+    /**
+     * Whether bills record the tax profile that made them yet. A queue worker
+     * can start on the new code before the update's migrations have added
+     * tax_profile, so a "no" is asked again after a while. A "yes" stays.
+     */
+    public static function recordsTaxProfile(): bool
+    {
+        if (!self::$recordsTaxProfile && time() - self::$recordsTaxProfileCheckedAt >= 30) {
+            self::$recordsTaxProfileCheckedAt = time();
+
+            try {
+                self::$recordsTaxProfile = Schema::hasColumn('mining_taxes', 'tax_profile');
+            } catch (\Throwable $e) {
+                self::$recordsTaxProfile = false;
+            }
+        }
+
+        return self::$recordsTaxProfile;
+    }
+
+    /**
+     * Members' bills: billed by a configured corporation's profile, or for a
+     * bill from before tax profiles, whose main is in one now.
+     *
+     * @param array<int, int> $memberCorporationIds
+     */
+    public function scopeBilledToMembers($query, array $memberCorporationIds)
+    {
+        $inMemberCorporationNow = fn ($bills) => $bills->whereIn('character_id', fn ($members) => $members
+            ->select('character_id')
+            ->from('character_affiliations')
+            ->whereIn('corporation_id', $memberCorporationIds));
+
+        if (!self::recordsTaxProfile()) {
+            return $query->where($inMemberCorporationNow);
+        }
+
+        return $query->where(function ($bills) use ($inMemberCorporationNow) {
+            $bills->where(fn ($billed) => $billed->whereNotNull('tax_profile')->where('tax_profile', '!=', self::GLOBAL_PROFILE))
+                ->orWhere(fn ($older) => $inMemberCorporationNow($older->whereNull('tax_profile')));
+        });
+    }
+
+    /**
+     * Non-members' bills: billed by the Global profile, or for a bill from
+     * before tax profiles, whose main is outside the configured corporations
+     * now.
+     *
+     * @param array<int, int> $memberCorporationIds
+     */
+    public function scopeBilledToNonMembers($query, array $memberCorporationIds)
+    {
+        $outsideMemberCorporationsNow = fn ($bills) => $bills->whereIn('character_id', fn ($others) => $others
+            ->select('character_id')
+            ->from('character_affiliations')
+            ->whereNotIn('corporation_id', $memberCorporationIds));
+
+        if (!self::recordsTaxProfile()) {
+            return $query->where($outsideMemberCorporationsNow);
+        }
+
+        return $query->where(function ($bills) use ($outsideMemberCorporationsNow) {
+            $bills->where('tax_profile', self::GLOBAL_PROFILE)
+                ->orWhere(fn ($older) => $outsideMemberCorporationsNow($older->whereNull('tax_profile')));
+        });
+    }
+
+    /**
+     * Whether this is a member's bill, by the same rule as billedToMembers().
+     *
+     * @param array<int, int> $memberCorporationIds
+     */
+    public function isBilledToMember(array $memberCorporationIds): bool
+    {
+        if ($this->tax_profile !== null) {
+            return $this->tax_profile !== self::GLOBAL_PROFILE;
+        }
+
+        return in_array($this->corporation_id, $memberCorporationIds, true);
     }
 
     /**
@@ -250,7 +369,7 @@ class MiningTax extends Model
      */
     public function isOverdue()
     {
-        if ($this->status === 'paid' || $this->status === 'waived') {
+        if ($this->status === 'paid' || in_array($this->status, self::WRITTEN_OFF_STATUSES, true)) {
             return false;
         }
 

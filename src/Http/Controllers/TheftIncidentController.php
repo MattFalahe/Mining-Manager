@@ -7,7 +7,6 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Auth;
 use Seat\Web\Http\Controllers\Controller;
 use MiningManager\Models\TheftIncident;
-use MiningManager\Models\MiningLedger;
 use MiningManager\Services\Theft\TheftDetectionService;
 use MiningManager\Services\Character\CharacterInfoService;
 use Carbon\Carbon;
@@ -121,13 +120,7 @@ class TheftIncidentController extends Controller
         $incident = TheftIncident::with(['corporation', 'miningTax'])
             ->findOrFail($id);
 
-        // Get mining history for the character during the incident period
-        $miningHistory = MiningLedger::where('character_id', $incident->character_id)
-            ->whereBetween('date', [$incident->mining_date_from, $incident->mining_date_to])
-            ->where('is_moon_ore', true)
-            ->with(['type'])
-            ->orderBy('date', 'desc')
-            ->get();
+        $miningHistory = $this->detectionService->incidentMining($incident);
 
         // Get character info (handles unregistered characters)
         $characterInfo = $this->characterService->getCharacterInfo($incident->character_id);

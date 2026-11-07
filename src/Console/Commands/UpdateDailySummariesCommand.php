@@ -168,8 +168,8 @@ class UpdateDailySummariesCommand extends Command
             }
 
             // Reconciliation: check the last four days for character-imported moon ore
-            // entries that now have matching observer data. Observer data can arrive
-            // 12-24h late from ESI, so we retroactively clean up and regenerate.
+            // entries that observer data now accounts for. Observer data can arrive or
+            // grow 12-24h late from ESI, so we retroactively clean up and regenerate.
             if (!$date && !$month && !$characterId) {
                 $this->reconcileLateObserverData();
             }
@@ -202,13 +202,14 @@ class UpdateDailySummariesCommand extends Command
             return;
         }
 
-        if ($result['removed'] === 0) {
+        if ($result['removed'] === 0 && $result['adjusted'] === 0) {
             $this->info('   No late observer data found to reconcile.');
 
             return;
         }
 
         $this->info("   Removed {$result['removed']} duplicate row(s), "
+            . "set {$result['adjusted']} to what was mined elsewhere, "
             . "rebuilt {$result['summaries']} daily summar(ies).");
     }
 }

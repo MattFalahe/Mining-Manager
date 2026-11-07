@@ -4,6 +4,7 @@ namespace MiningManager\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
+use MiningManager\Integrations\ManagerCoreEvents;
 use Seat\Eveapi\Models\Character\CharacterInfo;
 use Seat\Eveapi\Models\Corporation\CorporationInfo;
 use Carbon\Carbon;
@@ -65,6 +66,23 @@ class TheftIncident extends Model
         'activity_count' => 'integer',
         'on_theft_list' => 'boolean',
     ];
+
+    /**
+     * Statuses of an incident that is closed.
+     */
+    public const CLOSED_STATUSES = ['resolved', 'false_alarm', 'removed_paid'];
+
+    protected static function booted(): void
+    {
+        // Announced each time an incident closes, however it closed: a
+        // director resolving it or calling it a false alarm, or detection
+        // taking it off the list once nothing is overdue. All of them save it.
+        static::updated(function (TheftIncident $incident) {
+            if ($incident->wasChanged('status') && in_array($incident->status, self::CLOSED_STATUSES, true)) {
+                ManagerCoreEvents::theftResolved($incident);
+            }
+        });
+    }
 
     /**
      * Get the character that this incident belongs to.
@@ -418,6 +436,42 @@ class TheftIncident extends Model
         self::where('id', $this->id)->incrementEach([
             'activity_count' => 1,
             'ore_value' => $newMiningValue,
+        ]);
+
+        $this->refresh();
+    }
+
+    /**
+     * Add whole days of mining to the incident, counted through $through.
+     *
+     * @param int $quantity
+     * @param float $value
+     * @param Carbon $through The last day now counted
+     * @return void
+     */
+    public function addCountedMining(int $quantity, float $value, Carbon $through): void
+    {
+        self::where('id', $this->id)->update([
+            'mining_date_to' => $through->toDateString(),
+            'severity' => $this->calculateSeverity($this->ore_value + $value),
+        ]);
+        self::where('id', $this->id)->incrementEach([
+            'quantity_mined' => $quantity,
+            'ore_value' => $value,
+        ]);
+
+        $this->refresh();
+    }
+
+    /**
+     * Replace the counted mining with a fresh count of the same days.
+     */
+    public function recount(int $quantity, float $value): void
+    {
+        self::where('id', $this->id)->update([
+            'quantity_mined' => $quantity,
+            'ore_value' => $value,
+            'severity' => $this->calculateSeverity($value),
         ]);
 
         $this->refresh();

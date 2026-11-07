@@ -48,15 +48,17 @@ trait WebhookDispatchTrait
      * Tuned from the previous 10s cap — saves up to 5 worker-seconds per
      * rate-limited webhook. Batch dispatches (e.g. tax invoices fanning
      * out to N webhooks) accumulate this cost linearly.
+     *
+     * A property because a trait cannot hold a constant before PHP 8.2.
      */
-    protected const RETRY_AFTER_HARD_CAP_SECONDS = 5;
+    protected static int $retryAfterHardCapSeconds = 5;
 
     /**
      * Send an HTTP POST with retry logic for transient failures.
      *
      * Retries up to $maxAttempts times on 5xx server errors and 429 rate
      * limits (respecting the Retry-After header, capped at
-     * RETRY_AFTER_HARD_CAP_SECONDS). Client errors other than 429 are
+     * $retryAfterHardCapSeconds). Client errors other than 429 are
      * returned immediately — no point retrying a 4xx. Exceptions
      * (connection failures, timeouts) are retried then rethrown if all
      * attempts fail.
@@ -95,7 +97,7 @@ trait WebhookDispatchTrait
                 }
 
                 // Rate limited — respect Retry-After header if present, but
-                // cap to RETRY_AFTER_HARD_CAP_SECONDS to bound worker
+                // cap to $retryAfterHardCapSeconds to bound worker
                 // blocking time. A larger requested wait is treated as
                 // "give up this attempt" — the next attempt will retry at
                 // the bottom of the loop after the standard delay, which
@@ -103,7 +105,7 @@ trait WebhookDispatchTrait
                 // bucket reset.
                 if ($response->status() === 429) {
                     $retryAfter = (int) ($response->header('Retry-After') ?? $retryDelaySeconds);
-                    $boundedWait = min($retryAfter, self::RETRY_AFTER_HARD_CAP_SECONDS);
+                    $boundedWait = min($retryAfter, self::$retryAfterHardCapSeconds);
                     Log::debug("Mining Manager: Webhook rate limited, retrying in {$boundedWait}s (server requested {$retryAfter}s; attempt {$attempt}/{$maxAttempts})");
                     sleep($boundedWait);
                     continue;
@@ -208,9 +210,9 @@ trait WebhookDispatchTrait
      * by unrelated directors with separate moons/wallets that shouldn't
      * receive this corp's alerts.
      *
-     * Event notifications (event_created/started/completed) are GLOBAL and
-     * should NOT use this helper — they fire to every enabled subscribed
-     * webhook regardless of corporation_id.
+     * Event notifications (event_created/started/completed) pass the event's
+     * corporation as `$extraCorpId`; an event for no one corporation asks
+     * once per configured corporation (see sendViaWebhooks).
      *
      * Individual tax notifications (tax_reminder / tax_invoice / tax_overdue)
      * can pass the miner's corporation_id as `$extraCorpId` to ALSO include

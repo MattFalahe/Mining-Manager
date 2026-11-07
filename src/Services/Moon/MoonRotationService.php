@@ -529,7 +529,7 @@ class MoonRotationService
      *
      * @return \Illuminate\Support\Collection
      */
-    protected function slotsWithMissingRefineries(int $corporationId)
+    public function slotsWithMissingRefineries(int $corporationId)
     {
         $owned = $this->refineries->presentRefineryIds($corporationId);
 

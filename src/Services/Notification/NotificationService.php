@@ -29,7 +29,7 @@ use Exception;
  *
  * Supported notification types:
  *  - Tax: tax_reminder, tax_invoice, tax_overdue, tax_generated, tax_announcement
- *  - Event: event_created, event_started, event_completed
+ *  - Event: event_created, event_started, event_completed, event_review
  *  - Moon: moon_ready (chunk arrival), jackpot_detected
  *  - Theft: theft_detected, critical_theft, active_theft, incident_resolved
  *  - Report: report_generated
@@ -61,9 +61,13 @@ class NotificationService
     const TYPE_TAX_OUTSTANDING_DIGEST = 'tax_outstanding_digest';
     const TYPE_PRICE_PROVIDER = 'price_provider';
     const TYPE_MOON_SCAN_MISSING = 'moon_scan_missing';
+    const TYPE_SETTINGS_MOVED = 'settings_moved';
     const TYPE_EVENT_CREATED = 'event_created';
     const TYPE_EVENT_STARTED = 'event_started';
     const TYPE_EVENT_COMPLETED = 'event_completed';
+    // For the directors: events waiting for approval, events for past days
+    // held before they apply, and what was decided about them.
+    const TYPE_EVENT_REVIEW = 'event_review';
     const TYPE_METENOX_CARGO_FULL = 'metenox_cargo_full';
     const TYPE_MOON_READY = 'moon_ready';
     const TYPE_JACKPOT_DETECTED = 'jackpot_detected';
@@ -327,6 +331,16 @@ class NotificationService
     }
 
     /**
+     * The one message saying settings moved into tax profiles. Sent once, so
+     * it has no switch of its own: it goes where either Plugin Health alert
+     * goes. See SettingsMovedNotice.
+     */
+    public function sendSettingsMoved(array $data): array
+    {
+        return $this->send(self::TYPE_SETTINGS_MOVED, [], $data);
+    }
+
+    /**
      * Send the outstanding-tax digest to directors.
      *
      * Every other tax notification speaks to one member about one debt. This is
@@ -395,11 +409,10 @@ class NotificationService
             'period_type' => $periodType,
             'tax_count' => $taxCount,
             'total_amount' => $totalAmount,
-            'formatted_amount' => number_format($totalAmount, 2) . ' ISK',
+            'formatted_amount' => number_format($totalAmount, 0) . ' ISK',
             'due_date' => $dueDate,
             'corp_name' => $corpName,
             'wallet_division' => $divisionName,
-            'tax_code_prefix' => $this->settings->getSetting('tax_rates.tax_code_prefix', 'TAX-'),
             'my_taxes_url' => $this->getMyTaxesUrl(),
             'help_url' => $this->getHelpPayUrl(),
             'collect_url' => $this->getHelpCollectUrl(),
@@ -446,23 +459,7 @@ class NotificationService
      */
     public function sendEventCreated(MiningEvent $event): array
     {
-        $data = [
-            'event_id' => $event->id,
-            'event_name' => $event->name,
-            'event_type' => $event->getTypeLabel(),
-            'event_type_key' => $event->type,
-            'start_date' => $event->start_time->format('Y-m-d H:i'),
-            'end_date' => $event->end_time ? $event->end_time->format('Y-m-d H:i') : null,
-            'tax_modifier' => $event->tax_modifier,
-            'tax_modifier_label' => $event->getTaxModifierLabel(),
-            'location' => $event->getLocationName() ?? $event->getLocationScopeLabel(),
-            // Event's target corp — lets sendViaWebhooks scope the notification
-            // to webhooks bound to that corp (plus NULL admin + tax program
-            // corp). Null for "universal" events → admin-only delivery.
-            'event_corporation_id' => $event->corporation_id ? (int) $event->corporation_id : null,
-        ];
-
-        return $this->sendBroadcast(self::TYPE_EVENT_CREATED, $data);
+        return $this->sendBroadcast(self::TYPE_EVENT_CREATED, $this->eventData($event));
     }
 
     /**
@@ -474,18 +471,7 @@ class NotificationService
      */
     public function sendEventStarted(MiningEvent $event, array $participantIds = []): array
     {
-        $data = [
-            'event_id' => $event->id,
-            'event_name' => $event->name,
-            'event_type' => $event->getTypeLabel(),
-            'event_type_key' => $event->type,
-            'start_date' => $event->start_time->format('Y-m-d H:i'),
-            'end_date' => $event->end_time ? $event->end_time->format('Y-m-d H:i') : null,
-            'tax_modifier' => $event->tax_modifier,
-            'tax_modifier_label' => $event->getTaxModifierLabel(),
-            'location' => $event->getLocationName() ?? $event->getLocationScopeLabel(),
-            'event_corporation_id' => $event->corporation_id ? (int) $event->corporation_id : null,
-        ];
+        $data = $this->eventData($event);
 
         // If no specific participants, notify all corp members
         if (empty($participantIds)) {
@@ -504,16 +490,9 @@ class NotificationService
      */
     public function sendEventCompleted(MiningEvent $event, array $participantIds = []): array
     {
-        $data = [
-            'event_id' => $event->id,
-            'event_name' => $event->name,
-            'event_type' => $event->getTypeLabel(),
-            'total_mined' => $event->total_mined ?? 0,
+        $data = $this->eventData($event) + [
+            'total_mined' => $event->total_mined_value ?? 0,
             'participants' => $event->participant_count ?? 0,
-            'tax_modifier' => $event->tax_modifier,
-            'tax_modifier_label' => $event->getTaxModifierLabel(),
-            'location' => $event->getLocationName() ?? $event->getLocationScopeLabel(),
-            'event_corporation_id' => $event->corporation_id ? (int) $event->corporation_id : null,
         ];
 
         if (empty($participantIds)) {
@@ -521,6 +500,264 @@ class NotificationService
         }
 
         return $this->send(self::TYPE_EVENT_COMPLETED, $participantIds, $data);
+    }
+
+    /**
+     * Send an event's final results, once refinery reports for its last day
+     * can no longer come in. They go wherever Event Completed goes: it is the
+     * same event's close, with the figures that are now final.
+     */
+    public function sendEventResults(MiningEvent $event): array
+    {
+        $people = array_values(array_filter(
+            app(\MiningManager\Services\Events\EventPeople::class)->people($event),
+            fn ($person) => $person['characters'] !== []
+        ));
+        $top = array_slice($people, 0, 3);
+
+        $data = $this->eventData($event) + [
+            'final' => true,
+            'total_mined' => array_sum(array_column($people, 'value')),
+            // Pilots, as Event Completed counts them: characters, not the
+            // people they are grouped into.
+            'participants' => array_sum(array_map(fn ($person) => count($person['characters']), $people)),
+            'discount_given' => array_sum(array_column($people, 'discount')),
+            'top_miners' => implode("\n", array_map(
+                fn ($person, $rank) => ($rank + 1) . '. ' . $person['name'] . ': ' . number_format($person['value'], 0) . ' ISK',
+                $top,
+                array_keys($top)
+            )),
+        ];
+
+        $participantIds = $event->participants()->pluck('character_id')->toArray();
+
+        return empty($participantIds)
+            ? $this->sendBroadcast(self::TYPE_EVENT_COMPLETED, $data)
+            : $this->send(self::TYPE_EVENT_COMPLETED, $participantIds, $data);
+    }
+
+    /**
+     * Tell the directors something about an event that is theirs to act on
+     * or to know: waiting for approval, held before it applies to past days,
+     * approved, declined, not approved in time, cancelled, brought back or
+     * deleted. Webhooks and Slack only: these are not for the members.
+     *
+     * @param string $kind awaiting_approval, held, approved, declined, lapsed, cancelled, restored or deleted
+     * @param array{by?: string|null, reason?: string|null} $extra
+     */
+    public function sendEventReview(MiningEvent $event, string $kind, array $extra = []): array
+    {
+        if (!MiningEvent::hasGovernance()) {
+            return ['skipped' => true, 'reason' => 'not_migrated'];
+        }
+
+        $data = $this->eventData($event) + [
+            'review' => $kind,
+            'by' => $extra['by'] ?? null,
+            'reason' => $extra['reason'] ?? null,
+            'applies_at' => $event->applies_at ? $event->applies_at->format('D j M H:i') . ' EVE' : null,
+        ];
+
+        if ($kind === 'deleted') {
+            $data['event_url'] = null;
+        }
+
+        $data['description'] = match ($kind) {
+            'awaiting_approval' => 'A moon manager set up this event. It is not announced and counts nothing until a director approves it on the event page. Not approved before it starts, it does not run.',
+            'held' => 'These days have passed, so the event waits before it applies. Until then it can be changed or deleted; then its discount goes on those days and it locks.',
+            'lapsed' => 'Nobody approved it before it was due to start, so it did not run.',
+            default => null,
+        };
+
+        return $this->send(self::TYPE_EVENT_REVIEW, [], $data);
+    }
+
+    private function reviewTitle(array $data): string
+    {
+        return match ($data['review'] ?? null) {
+            'awaiting_approval' => '📝 Event Waiting for Approval',
+            'held' => '⏳ Event for Past Days Set Up',
+            'approved' => '✅ Event Approved',
+            'declined' => '⛔ Event Declined',
+            'lapsed' => '⌛ Event Not Approved in Time',
+            'cancelled' => '🚫 Event Cancelled',
+            'restored' => '↩️ Event Brought Back',
+            'deleted' => '🗑️ Event Deleted',
+            default => '📝 Event Review',
+        };
+    }
+
+    /**
+     * Amber for what still waits on someone, green for what goes ahead, red
+     * for what will not.
+     */
+    private function reviewColour(array $data, bool $slack): string|int
+    {
+        $tone = match ($data['review'] ?? null) {
+            'awaiting_approval', 'held' => 'waiting',
+            'approved', 'restored' => 'ahead',
+            default => 'stopped',
+        };
+
+        return $slack
+            ? ['waiting' => 'warning', 'ahead' => 'good', 'stopped' => 'danger'][$tone]
+            : ['waiting' => 0xF39C12, 'ahead' => 0x2ECC71, 'stopped' => 0xC0392B][$tone];
+    }
+
+    /**
+     * The fields of an Event review message, for Slack or for Discord: who
+     * did what and why, and for an event still to be decided, its rules.
+     */
+    private function reviewFields(array $data, bool $slack): array
+    {
+        $field = fn (string $name, string $value, bool $short) => $slack
+            ? ['title' => $name, 'value' => $value, 'short' => $short]
+            : ['name' => $name, 'value' => $value, 'inline' => $short];
+
+        $kind = $data['review'] ?? '';
+        $byLabel = [
+            'awaiting_approval' => 'Set up by',
+            'held' => 'Set up by',
+            'approved' => 'Approved by',
+            'declined' => 'Declined by',
+            'cancelled' => 'Cancelled by',
+            'restored' => 'Brought back by',
+            'deleted' => 'Deleted by',
+        ][$kind] ?? null;
+        $undecided = in_array($kind, ['awaiting_approval', 'held'], true);
+
+        $fields = [
+            $field('Event', (string) ($data['event_name'] ?? ''), false),
+            $byLabel && !empty($data['by']) ? $field($byLabel, (string) $data['by'], true) : null,
+            $kind === 'held' && !empty($data['applies_at']) ? $field('Applies at', (string) $data['applies_at'], true) : null,
+            !empty($data['reason']) ? $field('Reason', mb_substr((string) $data['reason'], 0, 1000), false) : null,
+            $undecided ? $field('When', (string) ($data['when'] ?? ''), false) : null,
+            $undecided ? $field('Where', (string) ($data['location'] ?? 'Anywhere'), false) : null,
+            $undecided ? $field('Ore', (string) ($data['ore'] ?? ''), true) : null,
+            $undecided ? $field('Tax Modifier', (string) ($data['tax_modifier_label'] ?? 'Normal'), true) : null,
+            $undecided ? $field('Who', trim(($data['who'] ?? '') . "\n" . ($data['sign_up'] ?? '')), false) : null,
+            !empty($data['event_url'])
+                ? $field('Details', $slack ? '<' . $data['event_url'] . '|Event page>' : '[Event page](' . $data['event_url'] . ')', true)
+                : null,
+        ];
+
+        return array_values(array_filter($fields, fn ($entry) => $entry !== null && ($entry['value'] ?? '') !== ''));
+    }
+
+    /**
+     * What every event message says about the event: its rules in plain
+     * words, and the link to its page.
+     */
+    private function eventData(MiningEvent $event): array
+    {
+        if ($event->countsWholeDays()) {
+            $when = $event->start_time->format('D j M')
+                . ($event->end_time ? ' to ' . $event->end_time->format('D j M') : ', no end')
+                . ', whole EVE days';
+        } else {
+            $when = $event->start_time->format('D j M H:i')
+                . ($event->end_time ? ' to ' . $event->end_time->format('D j M H:i') : ', no end')
+                . ' EVE';
+        }
+
+        // Narrowed to refineries: each one, with the chunk that falls in the
+        // event's days.
+        $where = $event->getLocationName() ? $event->getLocationName() . ' (' . strtolower($event->getLocationScopeLabel()) . ')' : 'Anywhere';
+        $refineries = $event->exists ? $event->refineryIds() : [];
+        if ($refineries) {
+            $lines = [];
+            foreach (app(\MiningManager\Services\Events\EventRefineries::class)->forEvent($refineries, $event->start_time, $event->end_time) as $refinery) {
+                $chunk = $refinery['chunks'][0] ?? null;
+                $lines[] = ($refinery['moon'] ?? $refinery['name'])
+                    . ($chunk ? ', chunk ' . Carbon::parse($chunk['arrival'])->format('D j M H:i') : '');
+            }
+            $where = mb_substr(implode("\n", $lines), 0, 1000);
+        }
+
+        if ($event->corporation_id) {
+            $who = 'Members of ' . ($event->corporation->name ?? $event->corporation_id);
+        } else {
+            $who = $event->members_only ? 'Members of our corporations' : 'Everyone';
+        }
+
+        return [
+            'event_id' => $event->id,
+            'event_name' => $event->name,
+            'event_type' => $event->getTypeLabel(),
+            'event_type_key' => $event->type,
+            'start_date' => $event->start_time->format('Y-m-d H:i'),
+            'end_date' => $event->end_time ? $event->end_time->format('Y-m-d H:i') : null,
+            'when' => $when,
+            'tax_modifier' => $event->tax_modifier,
+            'tax_modifier_label' => $event->getTaxModifierLabel(),
+            'location' => $where,
+            'ore' => implode(', ', array_map(fn ($category) => MiningEvent::ORE_CATEGORY_LABELS[$category] ?? $category, $event->oreCategories())),
+            'who' => $who,
+            'sign_up' => $event->needsSignUp()
+                ? 'Only those who sign up get the rate, from when they sign up'
+                : 'Everyone who mines within the rules gets the rate',
+            'event_url' => $event->exists ? route('mining-manager.events.show', $event->id) : null,
+            // Event's target corp — lets sendViaWebhooks scope the notification
+            // to webhooks bound to that corp (plus NULL admin + tax program
+            // corp). An event with none reaches every configured corporation's.
+            'event_corporation_id' => $event->corporation_id ? (int) $event->corporation_id : null,
+        ];
+    }
+
+    /**
+     * The fields of an event message, for Slack or for Discord. Created and
+     * started carry the event's rules; completed its figures, and once the
+     * last refinery reports are in, the final ones.
+     */
+    private function eventFields(string $type, array $data, bool $slack): array
+    {
+        $field = fn (string $name, string $value, bool $short) => $slack
+            ? ['title' => $name, 'value' => $value, 'short' => $short]
+            : ['name' => $name, 'value' => $value, 'inline' => $short];
+        $isk = fn ($amount) => number_format((float) $amount, 0) . ' ISK';
+
+        if ($type === self::TYPE_EVENT_COMPLETED) {
+            $final = !empty($data['final']);
+            $fields = [
+                $field('Event', $data['event_name'], false),
+                $field($final ? 'Mined' : 'Mined so far', $isk($data['total_mined'] ?? 0), true),
+                $field('Pilots', (string) ($data['participants'] ?? 0), true),
+                $final ? $field('Discount given', $isk($data['discount_given'] ?? 0), true) : null,
+                $final ? $field('Top miners', (string) ($data['top_miners'] ?? ''), false) : null,
+            ];
+        } else {
+            $fields = [
+                $field('Event', $data['event_name'], false),
+                $field('When', (string) ($data['when'] ?? $data['start_date'] ?? ''), false),
+                $field('Where', (string) ($data['location'] ?? 'Anywhere'), false),
+                $field('Ore', (string) ($data['ore'] ?? ''), true),
+                $field('Tax Modifier', (string) ($data['tax_modifier_label'] ?? 'Normal'), true),
+                $field('Who', trim(($data['who'] ?? '') . "\n" . ($data['sign_up'] ?? '')), false),
+            ];
+        }
+
+        if (!empty($data['event_url'])) {
+            $fields[] = $field('Details', $slack ? '<' . $data['event_url'] . '|Event page>' : '[Event page](' . $data['event_url'] . ')', true);
+        }
+
+        return array_values(array_filter($fields, fn ($entry) => $entry !== null && ($entry['value'] ?? '') !== ''));
+    }
+
+    /**
+     * The lines every event mail carries about the event.
+     */
+    private function eventMailDetails(array $data): string
+    {
+        return implode("\n", array_filter([
+            'Event: ' . $data['event_name'],
+            'Type: ' . ($data['event_type'] ?? ''),
+            'When: ' . ($data['when'] ?? $data['start_date'] ?? ''),
+            'Where: ' . str_replace("\n", '; ', (string) ($data['location'] ?? 'Anywhere')),
+            !empty($data['ore']) ? 'Ore: ' . $data['ore'] : null,
+            !empty($data['who']) ? 'Who: ' . $data['who'] . (!empty($data['sign_up']) ? '. ' . $data['sign_up'] . '.' : '') : null,
+            'Tax Modifier: ' . ($data['tax_modifier_label'] ?? 'Normal'),
+            !empty($data['event_url']) ? 'Details: ' . $data['event_url'] : null,
+        ]));
     }
 
     /**
@@ -998,9 +1235,9 @@ class NotificationService
      * Send an active-theft-in-progress notification (character continues
      * mining while unpaid).
      *
-     * $additionalData should include `new_mining_value` (float — ISK value
-     * of the new mining since the incident was first detected) and
-     * optionally `last_activity` (display-formatted timestamp string).
+     * $additionalData should include `new_mining_value` (float, what the
+     * player has mined so far on `mining_date`), and optionally `mining_date`
+     * (Y-m-d) and `last_activity` (display-formatted timestamp string).
      *
      * @param TheftIncident $incident
      * @param array $additionalData
@@ -1047,6 +1284,7 @@ class NotificationService
             'event_created' => self::TYPE_EVENT_CREATED,
             'event_started' => self::TYPE_EVENT_STARTED,
             'event_completed' => self::TYPE_EVENT_COMPLETED,
+            'event_review' => self::TYPE_EVENT_REVIEW,
             'moon_arrival', 'moon_ready' => self::TYPE_MOON_READY,
             'jackpot_detected' => self::TYPE_JACKPOT_DETECTED,
             'moon_chunk_unstable' => self::TYPE_MOON_CHUNK_UNSTABLE,
@@ -1179,8 +1417,9 @@ class NotificationService
      * Shared builder — flattens a TheftIncident model + caller-supplied
      * additionalData into the single $data shape the theft formatters
      * consume (character_name, severity_label, ore_value, tax_owed,
-     * detected_at_display, status_label, new_mining_value, last_activity,
-     * incident_url). All optional — missing keys get gracefully filtered.
+     * detected_at_display, status_label, reason, new_mining_value,
+     * mining_date, last_activity, incident_url). All optional: a missing key
+     * is left out of the message.
      *
      * @param TheftIncident $incident
      * @param array $additionalData
@@ -1486,6 +1725,11 @@ class NotificationService
      */
     public function isTypeGloballyEnabled(string $type): bool
     {
+        if ($type === self::TYPE_SETTINGS_MOVED) {
+            return $this->isTypeGloballyEnabled(self::TYPE_PRICE_PROVIDER)
+                || $this->isTypeGloballyEnabled(self::TYPE_MOON_SCAN_MISSING);
+        }
+
         $enabledTypes = $this->settings->getSetting('notifications.enabled_types', []);
 
         // If no toggles have been saved yet, all types are enabled by default
@@ -1505,6 +1749,7 @@ class NotificationService
             self::TYPE_EVENT_CREATED => 'event_created',
             self::TYPE_EVENT_STARTED => 'event_started',
             self::TYPE_EVENT_COMPLETED => 'event_completed',
+            self::TYPE_EVENT_REVIEW => 'event_review',
             self::TYPE_MOON_READY => 'moon_ready',
             self::TYPE_JACKPOT_DETECTED => 'jackpot_detected',
             self::TYPE_MOON_CHUNK_UNSTABLE => 'moon_chunk_unstable',
@@ -1542,6 +1787,19 @@ class NotificationService
      */
     protected function isTypeEnabledForChannel(string $type, string $channel): bool
     {
+        // Never by EVE mail, which goes to characters, not to the people
+        // looking after the plugin.
+        if ($type === self::TYPE_EVENT_REVIEW && $channel === self::CHANNEL_ESI) {
+            return false;
+        }
+
+        if ($type === self::TYPE_SETTINGS_MOVED) {
+            return $channel === self::CHANNEL_DISCORD
+                || ($channel === self::CHANNEL_SLACK
+                    && ($this->isTypeEnabledForChannel(self::TYPE_PRICE_PROVIDER, $channel)
+                        || $this->isTypeEnabledForChannel(self::TYPE_MOON_SCAN_MISSING, $channel)));
+        }
+
         $typeKey = match ($type) {
             self::TYPE_TAX_GENERATED => 'tax_generated',
             self::TYPE_TAX_ANNOUNCEMENT => 'tax_announcement',
@@ -1554,6 +1812,7 @@ class NotificationService
             self::TYPE_EVENT_CREATED => 'event_created',
             self::TYPE_EVENT_STARTED => 'event_started',
             self::TYPE_EVENT_COMPLETED => 'event_completed',
+            self::TYPE_EVENT_REVIEW => 'event_review',
             self::TYPE_MOON_READY => 'moon_ready',
             self::TYPE_JACKPOT_DETECTED => 'jackpot_detected',
             self::TYPE_MOON_CHUNK_UNSTABLE => 'moon_chunk_unstable',
@@ -1608,6 +1867,13 @@ class NotificationService
      */
     public function reachesAnyone(string $type): bool
     {
+        // Has no webhook switch of its own, and asking the webhooks for a type
+        // they have no column for would find every one of them.
+        if ($type === self::TYPE_SETTINGS_MOVED) {
+            return $this->reachesAnyone(self::TYPE_PRICE_PROVIDER)
+                || $this->reachesAnyone(self::TYPE_MOON_SCAN_MISSING);
+        }
+
         if (!$this->isEnabled() || !$this->isTypeGloballyEnabled($type)) {
             return false;
         }
@@ -1732,9 +1998,11 @@ class NotificationService
             self::TYPE_TAX_OUTSTANDING_DIGEST => 'tax_outstanding_digest',
             self::TYPE_PRICE_PROVIDER => 'price_provider',
             self::TYPE_MOON_SCAN_MISSING => 'moon_scan_missing',
+            self::TYPE_SETTINGS_MOVED => 'settings_moved',
             self::TYPE_EVENT_CREATED => 'event_created',
             self::TYPE_EVENT_STARTED => 'event_started',
             self::TYPE_EVENT_COMPLETED => 'event_completed',
+            self::TYPE_EVENT_REVIEW => 'event_review',
             // TYPE_MOON_READY (constant value 'moon_ready') deliberately
             // maps to the LEGACY webhook column name 'moon_arrival'.
             // The model column is `notify_moon_arrival` (see
@@ -1786,7 +2054,7 @@ class NotificationService
         //    the Tax Program / Moon Owner Corporation only.
         $eventTypesThatAreGlobal = ['report_generated'];
         $individualTaxEventTypes = ['tax_reminder', 'tax_invoice', 'tax_overdue'];
-        $eventDispatchTypes = ['event_created', 'event_started', 'event_completed'];
+        $eventDispatchTypes = ['event_created', 'event_started', 'event_completed', 'event_review'];
         $structureAlertTypes = ['extraction_at_risk', 'extraction_lost'];
 
         if (in_array($eventType, $eventTypesThatAreGlobal, true)) {
@@ -1806,11 +2074,21 @@ class NotificationService
             // Event notifications — include the event's target corp in the
             // scope filter if the event has one. sendEventCreated/Started/
             // Completed inject event_corporation_id from the MiningEvent model.
-            // Events with corporation_id=null degrade to admin-only scope.
+            // An event for no one corporation counts every member's mining,
+            // so it also reaches every configured corporation's webhooks.
             $eventCorpId = isset($data['event_corporation_id']) && $data['event_corporation_id']
                 ? (int) $data['event_corporation_id']
                 : null;
-            $webhooks = $this->getMoonOwnerScopedWebhooks($eventType, $eventCorpId);
+
+            if ($eventCorpId !== null) {
+                $webhooks = $this->getMoonOwnerScopedWebhooks($eventType, $eventCorpId);
+            } else {
+                $webhooks = $this->getMoonOwnerScopedWebhooks($eventType);
+                foreach ($this->settings->getHomeCorporationIds() as $corporationId) {
+                    $webhooks = $webhooks->merge($this->getMoonOwnerScopedWebhooks($eventType, (int) $corporationId));
+                }
+                $webhooks = $webhooks->unique('id')->values();
+            }
         } elseif (in_array($eventType, $structureAlertTypes, true)) {
             // Structure alert notifications (extraction_at_risk, extraction_lost)
             // — include the STRUCTURE OWNER corp in the scope filter. The
@@ -1822,6 +2100,16 @@ class NotificationService
                 ? (int) $data['structure_corporation_id']
                 : null;
             $webhooks = $this->getMoonOwnerScopedWebhooks($eventType, $structureCorpId);
+        } elseif ($eventType === 'settings_moved') {
+            // No switch of its own: every webhook taking either Plugin Health
+            // alert, each once.
+            $webhooks = collect();
+            foreach ([self::TYPE_PRICE_PROVIDER, self::TYPE_MOON_SCAN_MISSING] as $healthType) {
+                if ($this->isTypeGloballyEnabled($healthType)) {
+                    $webhooks = $webhooks->merge($this->getMoonOwnerScopedWebhooks($healthType));
+                }
+            }
+            $webhooks = $webhooks->unique('id')->values();
         } else {
             $webhooks = $this->getMoonOwnerScopedWebhooks($eventType);
         }
@@ -1960,6 +2248,7 @@ class NotificationService
             self::TYPE_EVENT_CREATED => 'event_created',
             self::TYPE_EVENT_STARTED => 'event_started',
             self::TYPE_EVENT_COMPLETED => 'event_completed',
+            self::TYPE_EVENT_REVIEW => 'event_review',
             self::TYPE_MOON_READY => 'moon_ready',
             default => null,
         };
@@ -2062,49 +2351,40 @@ class NotificationService
             ],
             self::TYPE_EVENT_CREATED => [
                 'subject' => 'New Mining Event: ' . $data['event_name'],
-                'body' => sprintf(
-                    "A new mining event has been scheduled!\n\n" .
-                    "Event: %s\nType: %s\nTax Modifier: %s\n" .
-                    "Location: %s\nStart: %s\n%s\n\n" .
-                    "Mark your calendars and get ready to mine!\n\n" .
-                    "%s Management",
-                    $data['event_name'],
-                    $data['event_type'],
-                    $data['tax_modifier_label'],
-                    $data['location'],
-                    $data['start_date'],
-                    $data['end_date'] ? "End: {$data['end_date']}" : '',
-                    $this->getCorpName()
-                )
+                'body' => "A new mining event has been scheduled.\n\n"
+                    . $this->eventMailDetails($data)
+                    . "\n\n" . $this->getCorpName() . ' Management',
             ],
             self::TYPE_EVENT_STARTED => [
                 'subject' => 'Mining Event Started: ' . $data['event_name'],
+                'body' => "A mining event has started.\n\n"
+                    . $this->eventMailDetails($data)
+                    . "\n\n" . $this->getCorpName() . ' Management',
+            ],
+            self::TYPE_EVENT_COMPLETED => !empty($data['final']) ? [
+                'subject' => 'Mining Event Results: ' . $data['event_name'],
                 'body' => sprintf(
-                    "A mining event has started!\n\n" .
-                    "Event: %s\nType: %s\nTax Modifier: %s\n" .
-                    "Location: %s\nStart: %s\n%s\n\n" .
-                    "Get mining now!\n\n" .
+                    "The results of %s are final.\n\n" .
+                    "Mined: %s ISK\nPilots: %d\nDiscount given: %s ISK\n%s\n\n" .
                     "%s Management",
                     $data['event_name'],
-                    $data['event_type'],
-                    $data['tax_modifier_label'],
-                    $data['location'],
-                    $data['start_date'],
-                    $data['end_date'] ? "End: {$data['end_date']}" : '',
+                    number_format((float) $data['total_mined'], 0),
+                    $data['participants'],
+                    number_format((float) ($data['discount_given'] ?? 0), 0),
+                    !empty($data['top_miners']) ? "\nTop miners:\n" . $data['top_miners'] : '',
                     $this->getCorpName()
                 )
-            ],
-            self::TYPE_EVENT_COMPLETED => [
+            ] : [
                 'subject' => 'Mining Event Completed: ' . $data['event_name'],
                 'body' => sprintf(
-                    "Mining event has completed!\n\n" .
-                    "Event: %s\nType: %s\nTotal Mined: %s ISK\nParticipants: %d\n" .
+                    "A mining event has ended.\n\n" .
+                    "Event: %s\nType: %s\nMined so far: %s ISK\nPilots: %d\n" .
                     "Tax Modifier: %s\n\n" .
-                    "Thank you for your participation!\n\n" .
+                    "Thank you for taking part.\n\n" .
                     "%s Management",
                     $data['event_name'],
                     $data['event_type'],
-                    number_format($data['total_mined'], 0),
+                    number_format((float) $data['total_mined'], 0),
                     $data['participants'],
                     $data['tax_modifier_label'],
                     $this->getCorpName()
@@ -2383,11 +2663,13 @@ class NotificationService
                     $data['character_name'] ?? 'Unknown',
                     $data['severity_label'] ?? ucfirst($data['severity'] ?? 'unknown'),
                     isset($data['ore_value']) ? number_format((float) $data['ore_value'], 0) : 'Unknown',
-                    isset($data['tax_owed']) ? number_format((float) $data['tax_owed'], 0) : 'Unknown',
+                    isset($data['tax_owed']) ? number_format((float) $data['tax_owed'], 2) : 'Unknown',
                     $data['detected_at_display'] ?? ($data['detected_at'] ?? 'Unknown'),
-                    ($type === self::TYPE_ACTIVE_THEFT && isset($data['new_mining_value']))
-                        ? "New Activity Value: " . number_format((float) $data['new_mining_value'], 0) . " ISK\n"
-                        : '',
+                    (($type === self::TYPE_ACTIVE_THEFT && isset($data['new_mining_value']))
+                        ? (isset($data['mining_date']) ? "Mined on {$data['mining_date']} so far: " : 'New Activity Value: ')
+                            . number_format((float) $data['new_mining_value'], 0) . " ISK\n"
+                        : '')
+                    . (isset($data['reason']) ? "Reason: {$data['reason']}\n" : ''),
                     !empty($data['incident_url']) ? "Details: {$data['incident_url']}\n" : '',
                     $this->getCorpName()
                 )
@@ -2462,12 +2744,14 @@ class NotificationService
             self::TYPE_TAX_OUTSTANDING_DIGEST => 'warning',
             self::TYPE_PRICE_PROVIDER => 'warning',
             self::TYPE_MOON_SCAN_MISSING => '#E67E22',
+            self::TYPE_SETTINGS_MOVED => '#667EEA',
             self::TYPE_TAX_REMINDER => 'warning',
             self::TYPE_TAX_INVOICE => 'warning',
             self::TYPE_TAX_GENERATED => 'good',
             self::TYPE_TAX_ANNOUNCEMENT => '#3498DB',
             self::TYPE_EVENT_CREATED => '#439FE0',
             self::TYPE_EVENT_STARTED, self::TYPE_EVENT_COMPLETED => 'good',
+            self::TYPE_EVENT_REVIEW => $this->reviewColour($data, true),
             self::TYPE_MOON_READY => '#3498DB',
             self::TYPE_JACKPOT_DETECTED => '#FFD700',
             self::TYPE_MOON_CHUNK_UNSTABLE => '#FF6B00',
@@ -2498,9 +2782,11 @@ class NotificationService
                     . (!empty($data['fallback_ok']) ? ". Prices come from " . $data['fallback'] . " meanwhile" : '')
                 : "Price provider " . ($data['provider'] ?? 'unknown') . " is answering again",
             self::TYPE_MOON_SCAN_MISSING => "🛰️ " . $this->moonScanTotalLine($data) . (!empty($data['description']) ? "\n" . $data['description'] : ''),
+            self::TYPE_SETTINGS_MOVED => "⚙️ Settings moved into tax profiles" . (!empty($data['description']) ? "\n" . $data['description'] : ''),
             self::TYPE_EVENT_CREATED => "New Event Created: {$data['event_name']}",
             self::TYPE_EVENT_STARTED => "Event Started: {$data['event_name']}",
-            self::TYPE_EVENT_COMPLETED => "Event Completed: {$data['event_name']}",
+            self::TYPE_EVENT_COMPLETED => !empty($data['final']) ? "Event Results: {$data['event_name']}" : "Event Completed: {$data['event_name']}",
+            self::TYPE_EVENT_REVIEW => $this->reviewTitle($data) . ': ' . ($data['event_name'] ?? ''),
             self::TYPE_MOON_READY => "Moon Chunk Ready — " . ($data['moon_name'] ?? 'Unknown Moon'),
             self::TYPE_JACKPOT_DETECTED => "⭐ JACKPOT MOON DETECTED — " . ($data['moon_name'] ?? 'Unknown Moon'),
             self::TYPE_MOON_CHUNK_UNSTABLE => "⚠️ " . ($data['moon_name'] ?? 'Moon chunk') . " going unstable in " . ($data['time_until_unstable'] ?? '~2h') . " — capital pilots prepare to dock",
@@ -2834,12 +3120,14 @@ class NotificationService
             self::TYPE_TAX_OUTSTANDING_DIGEST => 15105570, // Amber - a summary, not an alarm
             self::TYPE_PRICE_PROVIDER => 15158332, // Red while it is failing; the title says which way it went
             self::TYPE_MOON_SCAN_MISSING => 0xE67E22, // Orange: valued from a fallback until somebody scans
+            self::TYPE_SETTINGS_MOVED => 0x667EEA, // Indigo: news about the plugin itself
             self::TYPE_TAX_REMINDER => 16776960, // Yellow
             self::TYPE_TAX_INVOICE => 16776960, // Yellow (action required, same as reminder)
             self::TYPE_TAX_GENERATED => 3447003, // Teal
             self::TYPE_TAX_ANNOUNCEMENT => 4437216, // Blue
             self::TYPE_EVENT_CREATED => 4437216, // Blue
             self::TYPE_EVENT_STARTED, self::TYPE_EVENT_COMPLETED => 3066993, // Green
+            self::TYPE_EVENT_REVIEW => $this->reviewColour($data, false),
             self::TYPE_MOON_READY => 0x3498DB, // Blue
             self::TYPE_JACKPOT_DETECTED => 0xFFD700, // Gold
             self::TYPE_MOON_CHUNK_UNSTABLE => 0xFF6B00, // Orange-red (capital-safety warning)
@@ -2876,9 +3164,11 @@ class NotificationService
             self::TYPE_TAX_OUTSTANDING_DIGEST => '📋 Outstanding Mining Tax',
             self::TYPE_PRICE_PROVIDER => '💱 Price Provider',
             self::TYPE_MOON_SCAN_MISSING => '🛰️ Moon Scan Missing',
+            self::TYPE_SETTINGS_MOVED => '⚙️ Settings Moved Into Tax Profiles',
             self::TYPE_EVENT_CREATED => '📅 New Mining Event',
             self::TYPE_EVENT_STARTED => '🚀 Mining Event Started',
-            self::TYPE_EVENT_COMPLETED => '🏁 Mining Event Completed',
+            self::TYPE_EVENT_COMPLETED => !empty($data['final']) ? '🏆 Mining Event Results' : '🏁 Mining Event Completed',
+            self::TYPE_EVENT_REVIEW => $this->reviewTitle($data),
             self::TYPE_MOON_READY => 'Moon Chunk Ready',
             self::TYPE_JACKPOT_DETECTED => 'JACKPOT MOON DETECTED!',
             self::TYPE_MOON_CHUNK_UNSTABLE => '⚠️ Moon Chunk Going Unstable — Dock Capitals',
@@ -2989,25 +3279,8 @@ class NotificationService
                 isset($data['my_taxes_url']) ? ['title' => 'My Taxes', 'value' => '<' . $data['my_taxes_url'] . '|View My Taxes>', 'short' => true] : null,
                 isset($data['help_url']) ? ['title' => 'How to Pay', 'value' => '<' . $data['help_url'] . '|Payment Guide>', 'short' => true] : null,
             ])),
-            self::TYPE_EVENT_CREATED => [
-                ['title' => 'Event', 'value' => $data['event_name'], 'short' => true],
-                ['title' => 'Type', 'value' => $data['event_type'] ?? 'Mining Op', 'short' => true],
-                ['title' => 'Tax Modifier', 'value' => $data['tax_modifier_label'] ?? 'Normal', 'short' => true],
-                ['title' => 'Location', 'value' => $data['location'] ?? 'Any', 'short' => true],
-                ['title' => 'Start', 'value' => $data['start_date'], 'short' => true],
-                ['title' => 'End', 'value' => $data['end_date'] ?? 'Open', 'short' => true]
-            ],
-            self::TYPE_EVENT_STARTED => [
-                ['title' => 'Event', 'value' => $data['event_name'], 'short' => true],
-                ['title' => 'Tax Modifier', 'value' => $data['tax_modifier_label'] ?? 'Normal', 'short' => true],
-                ['title' => 'Location', 'value' => $data['location'] ?? 'Any', 'short' => true],
-                ['title' => 'End', 'value' => $data['end_date'] ?? 'Open', 'short' => true]
-            ],
-            self::TYPE_EVENT_COMPLETED => [
-                ['title' => 'Event', 'value' => $data['event_name'], 'short' => true],
-                ['title' => 'Total Mined', 'value' => isset($data['total_mined']) ? number_format($data['total_mined'], 2) . ' ISK' : 'N/A', 'short' => true],
-                ['title' => 'Participants', 'value' => (string)($data['participants'] ?? 0), 'short' => true]
-            ],
+            self::TYPE_EVENT_CREATED, self::TYPE_EVENT_STARTED, self::TYPE_EVENT_COMPLETED => $this->eventFields($type, $data, true),
+            self::TYPE_EVENT_REVIEW => $this->reviewFields($data, true),
             self::TYPE_REPORT_GENERATED => array_values(array_filter([
                 ['title' => 'Report Type', 'value' => ucfirst($data['report_type'] ?? 'monthly'), 'short' => true],
                 ['title' => 'Period', 'value' => $data['period_str'] ?? 'N/A', 'short' => true],
@@ -3110,6 +3383,10 @@ class NotificationService
             self::TYPE_SCHEDULE_NEEDS_FILLING => array_values(array_filter([
                 !empty($data['planner_url']) ? ['title' => 'Planner', 'value' => '<' . $data['planner_url'] . '|Open Moon Planner>', 'short' => false] : null,
             ])),
+            self::TYPE_SETTINGS_MOVED => array_values(array_filter([
+                !empty($data['configured']) ? ['title' => 'Configured corporations', 'value' => $data['configured'], 'short' => false] : null,
+                !empty($data['report_url']) ? ['title' => 'Full report', 'value' => '<' . $data['report_url'] . '|Settings, Maintenance>', 'short' => false] : null,
+            ])),
             self::TYPE_MOON_SCAN_MISSING => array_values(array_filter([
                 !empty($data['reminder']) ? ['title' => 'Reminder', 'value' => 'Daily, until each moon is scanned', 'short' => false] : null,
                 !empty($data['moons_url']) ? ['title' => 'Add a scan', 'value' => '<' . $data['moons_url'] . "|Open SeAT's Moons Reporter>", 'short' => false] : null,
@@ -3178,10 +3455,13 @@ class NotificationService
                 ['title' => 'Character', 'value' => $data['character_name'] ?? 'Unknown', 'short' => true],
                 isset($data['severity_label']) ? ['title' => 'Severity', 'value' => $data['severity_label'], 'short' => true] : null,
                 isset($data['ore_value']) ? ['title' => 'Ore Value', 'value' => number_format($data['ore_value'], 0) . ' ISK', 'short' => true] : null,
-                isset($data['tax_owed']) ? ['title' => 'Tax Owed', 'value' => number_format($data['tax_owed'], 0) . ' ISK', 'short' => true] : null,
+                isset($data['tax_owed']) ? ['title' => 'Tax Owed', 'value' => number_format($data['tax_owed'], 2) . ' ISK', 'short' => true] : null,
+                isset($data['reason']) ? ['title' => 'Reason', 'value' => $data['reason'], 'short' => false] : null,
                 ($type === self::TYPE_ACTIVE_THEFT && isset($data['new_mining_value'])) ? [
                     'title' => 'Active Theft Alert',
-                    'value' => 'Character continues mining! New value: ' . number_format($data['new_mining_value'], 0) . ' ISK',
+                    'value' => 'Character continues mining! '
+                        . (isset($data['mining_date']) ? "Mined on {$data['mining_date']} so far: " : 'New value: ')
+                        . number_format($data['new_mining_value'], 0) . ' ISK',
                     'short' => false,
                 ] : null,
                 isset($data['incident_url']) ? ['title' => 'Details', 'value' => '<' . $data['incident_url'] . '|View Incident>', 'short' => false] : null,
@@ -3312,25 +3592,8 @@ class NotificationService
                 isset($data['my_taxes_url']) ? ['name' => '📋 My Taxes', 'value' => '[View My Taxes](' . $data['my_taxes_url'] . ')', 'inline' => true] : null,
                 isset($data['help_url']) ? ['name' => '❓ How to Pay', 'value' => '[Payment Guide](' . $data['help_url'] . ')', 'inline' => true] : null,
             ])),
-            self::TYPE_EVENT_CREATED => [
-                ['name' => 'Event', 'value' => $data['event_name'], 'inline' => false],
-                ['name' => 'Type', 'value' => $data['event_type'] ?? 'Mining Op', 'inline' => true],
-                ['name' => 'Tax Modifier', 'value' => $data['tax_modifier_label'] ?? 'Normal', 'inline' => true],
-                ['name' => 'Location', 'value' => $data['location'] ?? 'Any', 'inline' => true],
-                ['name' => 'Start', 'value' => $data['start_date'], 'inline' => true],
-                ['name' => 'End', 'value' => $data['end_date'] ?? 'Open', 'inline' => true]
-            ],
-            self::TYPE_EVENT_STARTED => [
-                ['name' => 'Event', 'value' => $data['event_name'], 'inline' => false],
-                ['name' => 'Tax Modifier', 'value' => $data['tax_modifier_label'] ?? 'Normal', 'inline' => true],
-                ['name' => 'Location', 'value' => $data['location'] ?? 'Any', 'inline' => true],
-                ['name' => 'End', 'value' => $data['end_date'] ?? 'Open', 'inline' => true]
-            ],
-            self::TYPE_EVENT_COMPLETED => [
-                ['name' => 'Event', 'value' => $data['event_name'], 'inline' => false],
-                ['name' => 'Total Mined', 'value' => isset($data['total_mined']) ? number_format($data['total_mined'], 2) . ' ISK' : 'N/A', 'inline' => true],
-                ['name' => 'Participants', 'value' => (string)($data['participants'] ?? 0), 'inline' => true]
-            ],
+            self::TYPE_EVENT_CREATED, self::TYPE_EVENT_STARTED, self::TYPE_EVENT_COMPLETED => $this->eventFields($type, $data, false),
+            self::TYPE_EVENT_REVIEW => $this->reviewFields($data, false),
             self::TYPE_REPORT_GENERATED => array_values(array_filter([
                 ['name' => '📋 Report Type', 'value' => ucfirst($data['report_type'] ?? 'monthly'), 'inline' => true],
                 ['name' => '📅 Period', 'value' => $data['period_str'] ?? 'N/A', 'inline' => true],
@@ -3456,6 +3719,10 @@ class NotificationService
                 ['name' => '📊 Total', 'value' => $this->needsPlanningTotalLine($data), 'inline' => false],
                 !empty($data['planner_url']) ? ['name' => '🔗 Planner', 'value' => '[Open Moon Planner](' . $data['planner_url'] . ')', 'inline' => false] : null,
             ])),
+            self::TYPE_SETTINGS_MOVED => array_values(array_filter([
+                !empty($data['configured']) ? ['name' => '🏢 Configured corporations', 'value' => $data['configured'], 'inline' => false] : null,
+                !empty($data['report_url']) ? ['name' => '🔗 Full report', 'value' => '[Settings, Maintenance](' . $data['report_url'] . ')', 'inline' => false] : null,
+            ])),
             self::TYPE_MOON_SCAN_MISSING => array_values(array_filter([
                 ['name' => '📊 Total', 'value' => $this->moonScanTotalLine($data), 'inline' => false],
                 !empty($data['reminder']) ? ['name' => '🔁 Reminder', 'value' => 'Daily, until each moon is scanned', 'inline' => false] : null,
@@ -3536,13 +3803,16 @@ class NotificationService
                 ['name' => '👤 Character', 'value' => $data['character_name'] ?? 'Unknown', 'inline' => true],
                 isset($data['severity_label']) ? ['name' => '⚠️ Severity', 'value' => $data['severity_label'], 'inline' => true] : null,
                 isset($data['ore_value']) ? ['name' => '💰 Ore Value', 'value' => number_format($data['ore_value'], 0) . ' ISK', 'inline' => true] : null,
-                isset($data['tax_owed']) ? ['name' => '📋 Tax Owed', 'value' => number_format($data['tax_owed'], 0) . ' ISK', 'inline' => true] : null,
+                isset($data['tax_owed']) ? ['name' => '📋 Tax Owed', 'value' => number_format($data['tax_owed'], 2) . ' ISK', 'inline' => true] : null,
                 isset($data['detected_at_display']) ? ['name' => '📅 Detected', 'value' => $data['detected_at_display'], 'inline' => true] : null,
                 isset($data['status_label']) ? ['name' => '🔍 Status', 'value' => $data['status_label'], 'inline' => true] : null,
+                isset($data['reason']) ? ['name' => '📝 Reason', 'value' => $data['reason'], 'inline' => false] : null,
                 ($type === self::TYPE_ACTIVE_THEFT && isset($data['new_mining_value'])) ? [
                     'name' => '🔥 Active Theft Alert',
-                    'value' => "Character continues mining!\nNew value: " . number_format($data['new_mining_value'], 0) . ' ISK' .
-                               "\nActivity count: " . ($data['activity_count'] ?? 1),
+                    'value' => "Character continues mining!\n"
+                               . (isset($data['mining_date']) ? "Mined on {$data['mining_date']} so far: " : 'New value: ')
+                               . number_format($data['new_mining_value'], 0) . ' ISK'
+                               . "\nActivity count: " . ($data['activity_count'] ?? 1),
                     'inline' => false,
                 ] : null,
                 ($type === self::TYPE_ACTIVE_THEFT && isset($data['last_activity'])) ? [

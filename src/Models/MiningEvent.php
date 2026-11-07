@@ -4,7 +4,9 @@ namespace MiningManager\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use MiningManager\Services\Events\EventMiningAggregator;
 use Seat\Eveapi\Models\Character\CharacterInfo;
 use Seat\Eveapi\Models\Sde\MapDenormalize;
@@ -41,6 +43,12 @@ class MiningEvent extends Model
         'corporation_id',
         'created_by',
         'last_updated',
+        'participation',
+        'members_only',
+        'ore_categories',
+        'results_sent_at',
+        'applies_at',
+        'locked_at',
     ];
 
     /**
@@ -57,7 +65,61 @@ class MiningEvent extends Model
         'tax_modifier' => 'integer',
         'corporation_id' => 'integer',
         'last_updated' => 'datetime',
+        'members_only' => 'boolean',
+        'ore_categories' => 'array',
+        'results_sent_at' => 'datetime',
+        'applies_at' => 'datetime',
+        'locked_at' => 'datetime',
     ];
+
+    public const STATUS_PLANNED = 'planned';
+    public const STATUS_ACTIVE = 'active';
+    public const STATUS_COMPLETED = 'completed';
+    public const STATUS_CANCELLED = 'cancelled';
+
+    /** Set up for days that have passed, waiting to apply at applies_at. */
+    public const STATUS_HELD = 'held';
+
+    /** A moon manager's event waiting for a director's approval. */
+    public const STATUS_AWAITING_APPROVAL = 'awaiting_approval';
+
+    /** Declined by a director, or not approved before it was due to start. */
+    public const STATUS_DECLINED = 'declined';
+
+    /**
+     * Not announced to anyone yet, or never will be. Members do not see these;
+     * whoever set one up and the directors do.
+     */
+    public const UNANNOUNCED_STATUSES = [self::STATUS_HELD, self::STATUS_AWAITING_APPROVAL, self::STATUS_DECLINED];
+
+    /**
+     * Who gets an event's rate: everybody whose mining meets its rules, or
+     * only the accounts that signed up.
+     */
+    public const PARTICIPATION_EVERYONE = 'everyone';
+    public const PARTICIPATION_SIGNED_UP = 'signed_up';
+
+    /** The moon ore rarities, cheapest first. */
+    public const MOON_CATEGORIES = ['moon_r4', 'moon_r8', 'moon_r16', 'moon_r32', 'moon_r64'];
+
+    /** What each ore category is called on the event pages. */
+    public const ORE_CATEGORY_LABELS = [
+        'ore' => 'Belt ore',
+        'moon_r4' => 'R4 Ubiquitous',
+        'moon_r8' => 'R8 Common',
+        'moon_r16' => 'R16 Uncommon',
+        'moon_r32' => 'R32 Rare',
+        'moon_r64' => 'R64 Exceptional',
+        'ice' => 'Ice',
+        'gas' => 'Gas',
+        'abyssal' => 'Abyssal ore',
+        'triglavian' => 'Triglavian ore',
+    ];
+
+    private static bool $hasRules = false;
+    private static int $hasRulesCheckedAt = 0;
+    private static bool $hasGovernance = false;
+    private static int $hasGovernanceCheckedAt = 0;
 
     /**
      * Event type constants.
@@ -124,6 +186,258 @@ class MiningEvent extends Model
     public function participants()
     {
         return $this->hasMany(EventParticipant::class, 'event_id');
+    }
+
+    /**
+     * The refineries a moon event is narrowed to.
+     */
+    public function moons()
+    {
+        return $this->hasMany(EventMoon::class, 'event_id');
+    }
+
+    /**
+     * The accounts that signed up.
+     */
+    public function signups()
+    {
+        return $this->hasMany(EventSignup::class, 'event_id');
+    }
+
+    /**
+     * Whether the database has what events need for refineries, sign-ups and
+     * narrowed ore. A plugin update can start on the new code before its
+     * migrations have run, so a "no" is asked again after a while. A "yes"
+     * stays. The sign-ups table is the last thing the migration makes.
+     */
+    public static function hasRules(): bool
+    {
+        if (!self::$hasRules && time() - self::$hasRulesCheckedAt >= 30) {
+            self::$hasRulesCheckedAt = time();
+
+            try {
+                self::$hasRules = Schema::hasTable('mining_manager_event_signups');
+            } catch (\Throwable $e) {
+                self::$hasRules = false;
+            }
+        }
+
+        return self::$hasRules;
+    }
+
+    /**
+     * Whether the database has the event history, the hold for past events
+     * and the lock. Asked again after a while when the answer is no, as with
+     * hasRules(). The history table is the last thing its migration makes.
+     */
+    public static function hasGovernance(): bool
+    {
+        if (!self::$hasGovernance && time() - self::$hasGovernanceCheckedAt >= 30) {
+            self::$hasGovernanceCheckedAt = time();
+
+            try {
+                self::$hasGovernance = Schema::hasTable('mining_manager_event_history');
+            } catch (\Throwable $e) {
+                self::$hasGovernance = false;
+            }
+        }
+
+        return self::$hasGovernance;
+    }
+
+    /**
+     * Everything done to the event, newest first.
+     */
+    public function history()
+    {
+        return $this->hasMany(EventHistory::class, 'event_id')->orderByDesc('created_at')->orderByDesc('id');
+    }
+
+    /**
+     * Whether every day of the event has passed.
+     */
+    public function isPast(): bool
+    {
+        return $this->end_time !== null && $this->end_time->lte(now());
+    }
+
+    public function hasStarted(): bool
+    {
+        return $this->start_time !== null && $this->start_time->lte(now());
+    }
+
+    /**
+     * Whether members can see the event: anything but held, waiting for
+     * approval, or declined.
+     */
+    public function isAnnounced(): bool
+    {
+        return !in_array($this->status, self::UNANNOUNCED_STATUSES, true);
+    }
+
+    /**
+     * Whether the event's figures are final, so it can no longer be edited:
+     * it applied as a past event, its final results went out, or every one of
+     * its days is on an issued bill, which keeps what it was billed.
+     */
+    public function isLocked(): bool
+    {
+        return $this->locked_at !== null || $this->daysBilled();
+    }
+
+    /**
+     * Whether every day of the event is on an issued bill.
+     */
+    public function daysBilled(): bool
+    {
+        if ($this->end_time === null) {
+            return false;
+        }
+
+        $lastBilled = \MiningManager\Services\Tax\InvoiceCoverage::lastCoveredDay();
+
+        return $lastBilled !== null && $this->end_time->toDateString() <= $lastBilled;
+    }
+
+    /**
+     * The event's rules as its history keeps them: what a change shows as,
+     * and what a deleted event leaves on record.
+     *
+     * @return array<string, mixed>
+     */
+    public function snapshot(): array
+    {
+        $refineries = $this->refineryIds();
+        sort($refineries);
+        $ore = is_array($this->ore_categories) && $this->ore_categories !== [] ? $this->ore_categories : null;
+        if ($ore !== null) {
+            sort($ore);
+        }
+
+        return [
+            'name' => $this->name,
+            'description' => $this->description !== null && trim($this->description) !== '' ? $this->description : null,
+            'type' => $this->type,
+            'start_time' => $this->start_time?->format('Y-m-d H:i'),
+            'end_time' => $this->end_time?->format('Y-m-d H:i'),
+            'location_scope' => $this->location_scope,
+            'solar_system_id' => $this->solar_system_id ? (int) $this->solar_system_id : null,
+            'refineries' => $refineries,
+            'ore_categories' => $ore,
+            'corporation_id' => $this->corporation_id ? (int) $this->corporation_id : null,
+            'members_only' => (bool) $this->members_only,
+            'participation' => $this->participation,
+            'tax_modifier' => (int) $this->tax_modifier,
+        ];
+    }
+
+    /**
+     * The fields that differ between two snapshots, as [before, after].
+     *
+     * @param array<string, mixed> $before
+     * @param array<string, mixed> $after
+     * @return array<string, array{0: mixed, 1: mixed}>
+     */
+    public static function changesBetween(array $before, array $after): array
+    {
+        $changes = [];
+
+        foreach ($after as $field => $value) {
+            if (($before[$field] ?? null) !== $value) {
+                $changes[$field] = [$before[$field] ?? null, $value];
+            }
+        }
+
+        return $changes;
+    }
+
+    /**
+     * The ore categories the event counts: its type's, narrowed to the ones
+     * picked for it when some were.
+     *
+     * @return array<int, string>
+     */
+    public function oreCategories(): array
+    {
+        $categories = self::EVENT_TYPE_ORE_CATEGORIES[$this->type] ?? [];
+        $picked = is_array($this->ore_categories) ? $this->ore_categories : [];
+
+        return $picked === [] ? $categories : array_values(array_intersect($categories, $picked));
+    }
+
+    /**
+     * Whether only the accounts that signed up get the event's rate.
+     */
+    public function needsSignUp(): bool
+    {
+        return $this->participation === self::PARTICIPATION_SIGNED_UP;
+    }
+
+    /**
+     * Whether the event counts by whole days. Refineries report moon mining
+     * by the day, so a moon event counts every day it touches.
+     */
+    public function countsWholeDays(): bool
+    {
+        return $this->type === 'moon_extraction';
+    }
+
+    /**
+     * Sign-ups stay open until the event ends.
+     */
+    public function takesSignUps(): bool
+    {
+        return in_array($this->status, ['planned', 'active'], true)
+            && ($this->end_time === null || $this->end_time->isFuture());
+    }
+
+    /**
+     * The refineries the event is narrowed to; empty when it counts every
+     * refinery in its location.
+     *
+     * @return array<int, int>
+     */
+    public function refineryIds(): array
+    {
+        if (!$this->exists || !self::hasRules()) {
+            return [];
+        }
+
+        return $this->moons()->pluck('structure_id')->map(fn ($id) => (int) $id)->all();
+    }
+
+    /**
+     * Whether a user's account has signed up.
+     *
+     * @param \Seat\Web\Models\User|null $user
+     */
+    public function isSignedUp($user): bool
+    {
+        if (!$user || !$this->exists || !self::hasRules()) {
+            return false;
+        }
+
+        return $this->signups()->where('user_id', $user->id)->exists();
+    }
+
+    /**
+     * The account each character belongs to, as user ids keyed by character.
+     * Expired tokens still tie a character to its account.
+     *
+     * @param array<int, int> $characterIds
+     * @return array<int, int>
+     */
+    public static function accountsOf(array $characterIds): array
+    {
+        if ($characterIds === []) {
+            return [];
+        }
+
+        return DB::table('refresh_tokens')
+            ->whereIn('character_id', array_values(array_unique($characterIds)))
+            ->pluck('user_id', 'character_id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
     }
 
     /**
@@ -259,36 +573,6 @@ class MiningEvent extends Model
         }
 
         return $this->total_mined / $this->participant_count;
-    }
-
-    /**
-     * Check if a user is participating in this event.
-     *
-     * Resolves the user's character IDs and checks if any of them
-     * are in the participants list. In SeAT, User.id != character_id.
-     *
-     * @param \Seat\Web\Models\User|int $user
-     * @return bool
-     */
-    public function isParticipating($user)
-    {
-        if (is_object($user)) {
-            // Get all character IDs belonging to this user
-            $characterIds = $user->characters->pluck('character_id')->toArray();
-
-            if (empty($characterIds)) {
-                return false;
-            }
-
-            return $this->participants()
-                ->whereIn('character_id', $characterIds)
-                ->exists();
-        }
-
-        // If an integer was passed, treat it as a character_id directly
-        return $this->participants()
-            ->where('character_id', $user)
-            ->exists();
     }
 
     /**
@@ -495,11 +779,9 @@ class MiningEvent extends Model
     }
 
     /**
-     * Check if this event's tax modifier applies to the given ore category.
-     *
-     * Returns true when the event's type includes the ore category in
-     * EVENT_TYPE_ORE_CATEGORIES. "special" events apply to everything;
-     * other types apply only to their matching category (ice/gas/moon/ore).
+     * Check if this event's tax modifier applies to the given ore category:
+     * one its type covers ("special" covers everything, the others their own
+     * ore), and one picked for it when its ore was narrowed.
      *
      * @param string|null $oreCategory Value from mining_ledger.ore_category
      *                                 e.g. 'ore', 'ice', 'gas', 'moon_r64',
@@ -512,22 +794,25 @@ class MiningEvent extends Model
             return false;
         }
 
-        $allowedCategories = self::EVENT_TYPE_ORE_CATEGORIES[$this->type] ?? [];
-
-        return in_array($oreCategory, $allowedCategories, true);
+        return in_array($oreCategory, $this->oreCategories(), true);
     }
 
     /**
      * List of attribute names that, if modified, invalidate the
-     * event_mining_records materialisation for this event.
+     * event_mining_records materialisation for this event. The refineries a
+     * moon event is narrowed to are rows of their own, so whoever changes
+     * them gathers the event again.
      */
-    protected const SCOPE_AFFECTING_FIELDS = [
+    public const SCOPE_AFFECTING_FIELDS = [
         'type',
         'corporation_id',
         'solar_system_id',
         'location_scope',
         'start_time',
         'end_time',
+        'participation',
+        'members_only',
+        'ore_categories',
     ];
 
     /**
@@ -545,6 +830,12 @@ class MiningEvent extends Model
      * A full refresh (delete-then-rebuild) is the safest path because
      * it's hard to surgically undo filter changes incrementally.
      *
+     * A change of status, an event cancelled or brought back, keeps the
+     * records but decides whether the rate applies at all, and a change of
+     * rate changes what it gives, so either way their days are worked out
+     * again. A deleted event's records go and its days are worked out
+     * without it. A billed day keeps what it was billed either way.
+     *
      * We ignore non-scope saves (stats updates from EventTrackingService
      * rolling up event_participants into total_mined, participant_count,
      * etc.) to avoid an infinite aggregate ⇄ save loop.
@@ -556,15 +847,25 @@ class MiningEvent extends Model
     protected static function booted(): void
     {
         static::saved(function (self $event) {
-            if (!$event->wasChanged(self::SCOPE_AFFECTING_FIELDS)) {
-                return;
-            }
-
             try {
-                app(EventMiningAggregator::class)->aggregate($event, true);
+                if ($event->wasChanged(self::SCOPE_AFFECTING_FIELDS)) {
+                    app(EventMiningAggregator::class)->aggregate($event, true);
+                } elseif ($event->wasChanged(['status', 'tax_modifier'])) {
+                    app(EventMiningAggregator::class)->rebuildDays($event);
+                }
             } catch (\Throwable $e) {
                 Log::error(
-                    "Mining Manager: Re-aggregation failed for event {$event->id} after scope edit: {$e->getMessage()}"
+                    "Mining Manager: Re-aggregation failed for event {$event->id} after an edit: {$e->getMessage()}"
+                );
+            }
+        });
+
+        static::deleted(function (self $event) {
+            try {
+                app(EventMiningAggregator::class)->forget($event);
+            } catch (\Throwable $e) {
+                Log::error(
+                    "Mining Manager: Could not take deleted event {$event->id}'s discount off its days: {$e->getMessage()}"
                 );
             }
         });

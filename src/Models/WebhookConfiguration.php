@@ -29,6 +29,7 @@ use Carbon\Carbon;
  * @property bool $notify_event_created
  * @property bool $notify_event_started
  * @property bool $notify_event_completed
+ * @property bool $notify_event_review
  * @property bool $notify_tax_generated
  * @property bool $notify_tax_announcement
  * @property bool $notify_tax_reminder
@@ -92,6 +93,7 @@ class WebhookConfiguration extends Model
         'notify_event_created',
         'notify_event_started',
         'notify_event_completed',
+        'notify_event_review',
         'notify_tax_generated',
         'notify_tax_announcement',
         'notify_tax_reminder',
@@ -137,6 +139,7 @@ class WebhookConfiguration extends Model
         'notify_event_created' => 'boolean',
         'notify_event_started' => 'boolean',
         'notify_event_completed' => 'boolean',
+        'notify_event_review' => 'boolean',
         'notify_tax_generated' => 'boolean',
         'notify_tax_announcement' => 'boolean',
         'notify_tax_reminder' => 'boolean',
@@ -237,6 +240,7 @@ class WebhookConfiguration extends Model
             'event_created' => 'notify_event_created',
             'event_started' => 'notify_event_started',
             'event_completed' => 'notify_event_completed',
+            'event_review' => 'notify_event_review',
             'tax_generated' => 'notify_tax_generated',
             'tax_announcement' => 'notify_tax_announcement',
             'tax_reminder' => 'notify_tax_reminder',
@@ -374,6 +378,7 @@ class WebhookConfiguration extends Model
             'event_created' => $this->notify_event_created,
             'event_started' => $this->notify_event_started,
             'event_completed' => $this->notify_event_completed,
+            'event_review' => (bool) ($this->notify_event_review ?? false),
             'tax_generated' => $this->notify_tax_generated,
             'tax_announcement' => $this->notify_tax_announcement,
             'tax_reminder' => $this->notify_tax_reminder,

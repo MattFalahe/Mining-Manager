@@ -4,7 +4,7 @@
 @section('page_header', trans('mining-manager::menu.moon_extractions'))
 
 @push('head')
-<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=8">
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=10">
 <script src="{{ asset('vendor/mining-manager/js/eve-time.js') }}?v=1" defer></script>
 <script src="{{ asset('vendor/mining-manager/js/eve-countdown.js') }}?v=1" defer></script>
 <style>
@@ -343,8 +343,8 @@
                 That setting is currently unset, so this page has nothing to show.
             </p>
             <p class="mb-0">
-                Fix it: <a href="{{ route('mining-manager.settings.index') }}" class="btn btn-sm btn-warning">
-                    <i class="fas fa-cog"></i> Open Settings → General
+                Fix it: <a href="{{ route('mining-manager.settings.index') }}#setup" class="btn btn-sm btn-warning">
+                    <i class="fas fa-cog"></i> Open Settings → Setup
                 </a> and set the Moon Owner Corporation.
             </p>
         </div>

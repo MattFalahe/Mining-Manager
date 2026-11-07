@@ -190,6 +190,7 @@
                 'event_created'   => ['label' => 'Mining Event Created',   'col' => 'notify_event_created'],
                 'event_started'   => ['label' => 'Mining Event Started',   'col' => 'notify_event_started'],
                 'event_completed' => ['label' => 'Mining Event Completed', 'col' => 'notify_event_completed'],
+                'event_review'    => ['label' => 'Event Review',           'col' => 'notify_event_review'],
             ],
         ],
         'moon' => [

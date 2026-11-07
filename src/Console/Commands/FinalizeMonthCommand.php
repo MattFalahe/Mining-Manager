@@ -4,7 +4,6 @@ namespace MiningManager\Console\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\DB;
 use MiningManager\Models\MiningLedgerDailySummary;
 use MiningManager\Services\Ledger\LedgerSummaryService;
 use Carbon\Carbon;
@@ -81,21 +80,15 @@ class FinalizeMonthCommand extends Command
 
         $this->info("Finalizing summaries for {$month}...");
 
-        // Run finalization and mark daily summaries atomically
-        $result = DB::transaction(function () use ($month) {
-            $stats = $this->summaryService->finalizeMonth($month);
+        // Each character is finalized in a transaction of its own, so the
+        // importer is never kept waiting on the whole month.
+        $stats = $this->summaryService->finalizeMonth($month);
 
-            // Mark all daily summaries for this month as finalized
-            $monthDate = Carbon::parse($month)->startOfMonth();
-            $finalizedCount = MiningLedgerDailySummary::forMonth($monthDate)
-                ->where('is_finalized', false)
-                ->update(['is_finalized' => true]);
-
-            return ['stats' => $stats, 'finalizedCount' => $finalizedCount];
-        });
-
-        $stats = $result['stats'];
-        $finalizedCount = $result['finalizedCount'];
+        // A rebuilt day of a past month is finalized already. This marks the
+        // rest, such as a day whose mining has since gone from the ledger.
+        $finalizedCount = MiningLedgerDailySummary::forMonth(Carbon::parse($month)->startOfMonth())
+            ->where('is_finalized', false)
+            ->update(['is_finalized' => true]);
 
         if ($finalizedCount > 0) {
             $this->info("Marked {$finalizedCount} daily summaries as finalized.");

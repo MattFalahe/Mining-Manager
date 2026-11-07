@@ -4,7 +4,7 @@
 @section('page_header', trans('mining-manager::menu.tax_management'))
 
 @push('head')
-<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=8">
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=10">
 @include('mining-manager::taxes.partials.datatables-styles')
 @endpush
 
@@ -44,10 +44,10 @@
                         <tbody>
                             @forelse($taxCodes ?? [] as $code)
                             <tr>
-                                <td><code>{{ $taxCodePrefix }}{{ $code->code }}</code></td>
+                                <td><code>{{ $code->getFullCode() }}</code></td>
                                 <td>{{ $code->character_info['name'] ?? $code->character_name }}</td>
                                 <td data-order="{{ $code->miningTax ? \Carbon\Carbon::parse($code->miningTax->period_start ?? $code->miningTax->month)->format('Y-m-d') : '' }}">{{ $code->miningTax ? ($code->miningTax->formatted_period ?? \Carbon\Carbon::parse($code->miningTax->month)->format('F Y')) : '-' }}</td>
-                                <td data-order="{{ $code->miningTax ? (float) $code->miningTax->amount_owed : 0 }}">{{ $code->miningTax ? number_format($code->miningTax->amount_owed, 0) . ' ISK' : '-' }}</td>
+                                <td data-order="{{ $code->miningTax ? (float) $code->miningTax->amount_owed : 0 }}">{{ $code->miningTax ? number_format($code->miningTax->amount_owed, 2) . ' ISK' : '-' }}</td>
                                 <td>
                                     @if($code->status === 'used')
                                         <span class="badge badge-success">{{ trans('mining-manager::taxes.used') }}</span>
@@ -58,7 +58,7 @@
                                     @endif
                                 </td>
                                 <td class="text-center">
-                                    <button class="btn btn-sm btn-info" onclick="copyCode('{{ $taxCodePrefix }}{{ $code->code }}')"
+                                    <button class="btn btn-sm btn-info" onclick="copyCode('{{ $code->getFullCode() }}')"
                                             data-toggle="tooltip" title="{{ trans('mining-manager::taxes.copy') }}">
                                         <i class="fas fa-copy"></i>
                                     </button>
@@ -79,7 +79,7 @@
                                             <i class="fas fa-check"></i>
                                         </button>
                                         @endif
-                                        <button class="btn btn-sm btn-danger" onclick="deleteCode({{ $code->id }}, '{{ $taxCodePrefix }}{{ $code->code }}')"
+                                        <button class="btn btn-sm btn-danger" onclick="deleteCode({{ $code->id }}, '{{ $code->getFullCode() }}')"
                                                 data-toggle="tooltip" title="{{ trans('mining-manager::taxes.code_delete_help') }}">
                                             <i class="fas fa-trash"></i>
                                         </button>

@@ -1,40 +1,38 @@
 {{--
     Pending Tax Period Switch Banner
     =================================
-    Rendered on every tax-related page when the admin has queued a switch
-    from one tax calculation period type (monthly / biweekly / weekly) to
-    another. The change is always deferred to the first of the next
-    calendar month to avoid mid-period collisions on
-    mining_taxes (character_id, period_start).
+    Rendered on every tax-related page when a switch from one billing period
+    to the other is queued. The change waits for a safe day early in a
+    calendar month to avoid mid-period collisions on mining_taxes
+    (character_id, period_start).
 
-    The banner surfaces the queued change so miners and directors can see
-    what's coming and verify any open balances settle under the current
-    scheme before the cutover.
+    Each tax profile has a period of its own, so a player sees their own
+    account's queued switch, and an admin sees every profile's, named.
 
-    Data source: fetched here via TaxPeriodHelper::getPendingPeriodChange()
-    so every page that @include's this partial gets the banner for free,
-    without having to thread controller variables through.
+    Data source: TaxPeriodHelper::pendingPeriodChangesForViewer(), fetched
+    here so every page that @include's this partial gets the banner for
+    free, without threading controller variables through.
 --}}
 
 @php
     $__periodHelper = app(\MiningManager\Services\Tax\TaxPeriodHelper::class);
-    $__pendingSwitch = $__periodHelper->getPendingPeriodChange();
+    $__pendingSwitches = $__periodHelper->pendingPeriodChangesForViewer();
     $__periodLabels = [
         'monthly' => 'Monthly',
-        'biweekly' => 'Bi-weekly',
+        'biweekly' => 'Twice a month',
         'weekly' => 'Weekly',
     ];
 @endphp
 
-@if($__pendingSwitch)
+@foreach($__pendingSwitches as $__pendingSwitch)
 <div class="row">
     <div class="col-12">
         <div class="alert alert-warning" role="alert" style="border-left: 4px solid #ffc107;">
             <div class="d-flex align-items-center">
                 <i class="fas fa-calendar-alt fa-2x mr-3 text-warning"></i>
                 <div class="flex-grow-1">
-                    <strong>Tax period change scheduled</strong>
-                    &mdash; switching from
+                    <strong>Tax period change scheduled{{ $__pendingSwitch['profile'] ? ' for ' . $__pendingSwitch['profile'] : '' }}:</strong>
+                    switching from
                     <span class="badge badge-secondary">{{ $__periodLabels[$__pendingSwitch['current']] ?? $__pendingSwitch['current'] }}</span>
                     to
                     <span class="badge badge-primary">{{ $__periodLabels[$__pendingSwitch['pending']] ?? $__pendingSwitch['pending'] }}</span>
@@ -52,4 +50,4 @@
         </div>
     </div>
 </div>
-@endif
+@endforeach

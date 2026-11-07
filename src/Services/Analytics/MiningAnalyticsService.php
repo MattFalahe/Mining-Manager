@@ -188,6 +188,9 @@ class MiningAnalyticsService
     /**
      * Get count of unique miners in date range.
      *
+     * Characters, as the REST API has always reported them. The pages count
+     * players: getUniquePlayerCount().
+     *
      * @param Carbon $startDate
      * @param Carbon $endDate
      * @param int|null $corporationId Filter by miner's corporation
@@ -203,6 +206,22 @@ class MiningAnalyticsService
             $this->applyCorporationFilter($query, $corporationId);
             return $query->distinct('mining_ledger.character_id')
                 ->count('mining_ledger.character_id');
+        });
+    }
+
+    /**
+     * How many players mined in the date range, a main and their alts
+     * counted once, as the Top Miners table beside it groups them.
+     */
+    public function getUniquePlayerCount(Carbon $startDate, Carbon $endDate, ?int $corporationId = null): int
+    {
+        $cacheKey = "mining-analytics:unique-players:{$startDate->format('Ymd')}:{$endDate->format('Ymd')}" . $this->corpCacheKey($corporationId);
+        $cacheDuration = config('mining-manager.performance.query_cache_duration', 15);
+
+        return Cache::remember($cacheKey, now()->addMinutes($cacheDuration), function () use ($startDate, $endDate, $corporationId) {
+            $query = MiningLedger::whereBetween('mining_ledger.date', [$startDate, $endDate]);
+            $this->applyCorporationFilter($query, $corporationId);
+            return Players::count($query->distinct()->pluck('mining_ledger.character_id'));
         });
     }
 
@@ -401,18 +420,22 @@ class MiningAnalyticsService
                 ->whereBetween('mining_ledger.date', [$startDate, $endDate]);
             $this->applyCorporationFilter($query, $corporationId);
             $filter->applyTo($query);
+            $players = Players::perGroup(
+                (clone $query)->toBase()->select('mining_ledger.solar_system_id', 'mining_ledger.character_id')->distinct()->get(),
+                fn ($row) => $row->solar_system_id
+            );
             $results = $query->select(
                     'mining_ledger.solar_system_id',
                     DB::raw('SUM(mining_ledger.quantity) as total_quantity'),
-                    DB::raw('SUM(mining_ledger.total_value) as total_value'),
-                    DB::raw('COUNT(DISTINCT mining_ledger.character_id) as unique_miners')
+                    DB::raw('SUM(mining_ledger.total_value) as total_value')
                 )
                 ->groupBy('mining_ledger.solar_system_id')
                 ->orderByDesc('total_value')
                 ->get();
 
             // Add system names from the relationship
-            return $results->map(function($item) {
+            return $results->map(function($item) use ($players) {
+                $item->unique_miners = $players[(string) $item->solar_system_id] ?? 0;
                 $item->system_name = $item->system_name ?? 'Unknown';
                 return $item;
             });
@@ -437,15 +460,19 @@ class MiningAnalyticsService
             $query = MiningLedger::whereBetween('mining_ledger.date', [$startDate, $endDate]);
             $this->applyCorporationFilter($query, $corporationId);
             $filter->applyTo($query);
+            $players = Players::perGroup(
+                (clone $query)->toBase()->select('mining_ledger.date', 'mining_ledger.character_id')->distinct()->get(),
+                fn ($row) => Carbon::parse($row->date)->toDateString()
+            );
             return $query->select(
                     'mining_ledger.date',
                     DB::raw('SUM(mining_ledger.quantity) as total_quantity'),
-                    DB::raw('SUM(mining_ledger.total_value) as total_value'),
-                    DB::raw('COUNT(DISTINCT mining_ledger.character_id) as unique_miners')
+                    DB::raw('SUM(mining_ledger.total_value) as total_value')
                 )
                 ->groupBy('mining_ledger.date')
                 ->orderBy('mining_ledger.date')
-                ->get();
+                ->get()
+                ->each(fn ($day) => $day->unique_miners = $players[Carbon::parse($day->date)->toDateString()] ?? 0);
         });
     }
 
@@ -508,17 +535,21 @@ class MiningAnalyticsService
             $query = MiningLedger::whereBetween('mining_ledger.date', [$startDate, $endDate])
                 ->join('invTypes', 'mining_ledger.type_id', '=', 'invTypes.typeID');
             $this->applyCorporationFilter($query, $corporationId);
+            $players = Players::perGroup(
+                (clone $query)->toBase()->select('mining_ledger.type_id', 'mining_ledger.character_id')->distinct()->get(),
+                fn ($row) => $row->type_id
+            );
             return $query->select(
                     'mining_ledger.type_id',
                     'invTypes.typeName as ore_name',
                     DB::raw('SUM(mining_ledger.quantity) as total_quantity'),
                     DB::raw('SUM(mining_ledger.total_value) as total_value'),
-                    DB::raw('CASE WHEN SUM(mining_ledger.quantity) > 0 THEN SUM(mining_ledger.total_value) / SUM(mining_ledger.quantity) ELSE 0 END as average_price'),
-                    DB::raw('COUNT(DISTINCT mining_ledger.character_id) as unique_miners')
+                    DB::raw('CASE WHEN SUM(mining_ledger.quantity) > 0 THEN SUM(mining_ledger.total_value) / SUM(mining_ledger.quantity) ELSE 0 END as average_price')
                 )
                 ->groupBy('mining_ledger.type_id', 'invTypes.typeName')
                 ->orderByDesc('total_quantity')
-                ->get();
+                ->get()
+                ->each(fn ($ore) => $ore->unique_miners = $players[(string) $ore->type_id] ?? 0);
         });
     }
 
@@ -547,6 +578,10 @@ class MiningAnalyticsService
                          ->where('md_region.groupID', '=', 3);
                 });
             $this->applyCorporationFilter($query, $corporationId);
+            $players = Players::perGroup(
+                (clone $query)->toBase()->select('mining_ledger.solar_system_id', 'mining_ledger.character_id')->distinct()->get(),
+                fn ($row) => $row->solar_system_id
+            );
             return $query->select(
                     'mining_ledger.solar_system_id',
                     'solar_systems.name as system_name',
@@ -554,13 +589,13 @@ class MiningAnalyticsService
                     'md_region.itemName as region_name',
                     DB::raw('SUM(mining_ledger.quantity) as total_quantity'),
                     DB::raw('SUM(mining_ledger.total_value) as total_value'),
-                    DB::raw('COUNT(DISTINCT mining_ledger.character_id) as unique_miners'),
                     DB::raw('COUNT(DISTINCT mining_ledger.type_id) as unique_ore_types'),
                     DB::raw('COUNT(DISTINCT mining_ledger.date) as days_active')
                 )
                 ->groupBy('mining_ledger.solar_system_id', 'solar_systems.name', 'solar_systems.security', 'md_region.itemName')
                 ->orderByDesc('total_quantity')
-                ->get();
+                ->get()
+                ->each(fn ($system) => $system->unique_miners = $players[(string) $system->solar_system_id] ?? 0);
         });
     }
 

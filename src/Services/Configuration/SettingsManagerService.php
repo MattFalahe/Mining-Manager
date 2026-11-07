@@ -2,8 +2,10 @@
 
 namespace MiningManager\Services\Configuration;
 
+use Carbon\Carbon;
 use MiningManager\Models\Setting;
 use MiningManager\Models\WebhookConfiguration;
+use MiningManager\Services\VersionChecker;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
@@ -21,11 +23,73 @@ class SettingsManagerService
     const CACHE_PREFIX = 'mining_manager_settings_';
 
     /**
+     * A tax profile's billing period and its queued change, which an import
+     * applies through setPeriodFor() rather than writing straight in.
+     */
+    private const PERIOD_KEYS = [
+        'tax_rates.tax_calculation_period',
+        'tax_rates.tax_calculation_period_pending',
+        'tax_rates.tax_calculation_period_effective_from',
+    ];
+
+    /**
+     * What a settings export says it is. An import refuses another plugin's
+     * file, and one in a newer format than this version reads.
+     */
+    public const EXPORT_PLUGIN = 'mining-manager';
+
+    /**
+     * 3: settings in tax profiles. The same keys mean different things in a
+     * file from before them, so the two do not mix.
+     */
+    public const EXPORT_FORMAT = 3;
+
+    /**
+     * What a webhook needs to post: its address, and the headers and payload
+     * sent with it, which can carry a token. An export carries them only in
+     * its locked part.
+     */
+    private const WEBHOOK_CREDENTIALS = ['webhook_url', 'custom_headers', 'custom_payload_template'];
+
+    /**
+     * The last day each corporation taken off the configured list was still
+     * on it, as corporation_id => Y-m-d. Its members count as members up to
+     * that day, and their bills for that month follow its profile, so a
+     * corporation taken off part way through a month has the month billed on
+     * one period. Adding it back forgets the day.
+     */
+    public const CONFIGURED_UNTIL_KEY = 'general.configured_until';
+
+    /**
      * Active corporation ID for settings context
      *
      * @var int|null
      */
     protected $activeCorporationId = null;
+
+    /**
+     * Whether settings are in tax profiles, once known to be. See
+     * usesTaxProfiles().
+     */
+    private static bool $taxProfiles = false;
+    private static int $taxProfilesCheckedAt = 0;
+
+    /**
+     * The configured corporations for a few seconds, as [until, ids]. Every
+     * profile setting read asks for them, and rebuilding a day's tax reads
+     * dozens of those per ore.
+     *
+     * @var array{0: float, 1: array<int>}|null
+     */
+    private ?array $homeCorporations = null;
+
+    /**
+     * The corporations taken off the list for a few seconds, as [until,
+     * days]. Read with every profile setting, like the list itself.
+     *
+     * @var array{0: float, 1: array<int, string>}|null
+     */
+    private ?array $takenOff = null;
 
     /**
      * Set the active corporation context
@@ -51,19 +115,69 @@ class SettingsManagerService
     }
 
     /**
-     * Check if a corporation has custom settings
+     * Whether a corporation has settings of its own: a place on the
+     * configured list once settings are in tax profiles, any row before that.
      *
      * @param int $corporationId
      * @return bool
      */
     public function corporationHasCustomSettings(int $corporationId): bool
     {
+        if ($this->usesTaxProfiles()) {
+            return $this->isConfiguredCorporation($corporationId);
+        }
+
         return Setting::where('corporation_id', $corporationId)->exists();
     }
 
     /**
-     * Get a setting value with fallback to config
-     * Now supports corporation-specific settings
+     * Whether this install's settings have been carried into tax profiles.
+     *
+     * Until the update's migration has run, everything reads and writes as it
+     * always did. A queue worker can start on the new code before that
+     * migration finishes, so a "no" is asked again after a while. A "yes"
+     * stays.
+     */
+    public function usesTaxProfiles(): bool
+    {
+        if (!self::$taxProfiles && time() - self::$taxProfilesCheckedAt >= 30) {
+            self::$taxProfilesCheckedAt = time();
+
+            try {
+                self::$taxProfiles = DB::table('mining_manager_settings')
+                    ->where('key', SettingsTransfer::DONE_KEY)
+                    ->whereNull('corporation_id')
+                    ->exists();
+            } catch (\Throwable $e) {
+                self::$taxProfiles = false;
+            }
+        }
+
+        return self::$taxProfiles;
+    }
+
+    /**
+     * The first mining day taxed by tax profiles: the day after settings
+     * moved into them, so nothing mined before the update is taxed under
+     * rules it was not mined under. Null until they have moved.
+     */
+    public function profilesTaxFrom(): ?Carbon
+    {
+        if (!$this->usesTaxProfiles()) {
+            return null;
+        }
+
+        $movedAt = $this->getSettingForCorporation(SettingsTransfer::DONE_KEY, null);
+
+        try {
+            return $movedAt ? Carbon::parse($movedAt)->startOfDay()->addDay() : null;
+        } catch (\Throwable $e) {
+            return null;
+        }
+    }
+
+    /**
+     * Get a setting as the active corporation, with fallback to config.
      *
      * @param string $key
      * @param mixed $default
@@ -71,19 +185,7 @@ class SettingsManagerService
      */
     public function getSetting(string $key, $default = null)
     {
-        $cacheKey = self::CACHE_PREFIX . ($this->activeCorporationId ?? 'global') . '_' . $key;
-
-        return Cache::remember($cacheKey, self::CACHE_DURATION, function () use ($key, $default) {
-            $setting = Setting::getValue($key, null, $this->activeCorporationId);
-
-            if ($setting !== null) {
-                return $setting;
-            }
-
-            // Fallback to config
-            $configKey = 'mining-manager.' . $key;
-            return config($configKey, $default);
-        });
+        return $this->getSettingForCorporation($key, $this->activeCorporationId, $default);
     }
 
     /**
@@ -96,10 +198,13 @@ class SettingsManagerService
      */
     public function getSettingForCorporation(string $key, ?int $corporationId, $default = null)
     {
+        [$corporationId, $exact] = $this->placeFor($key, $corporationId);
         $cacheKey = self::CACHE_PREFIX . ($corporationId ?? 'global') . '_' . $key;
 
-        return Cache::remember($cacheKey, self::CACHE_DURATION, function () use ($key, $default, $corporationId) {
-            $setting = Setting::getValue($key, null, $corporationId);
+        return Cache::remember($cacheKey, self::CACHE_DURATION, function () use ($key, $default, $corporationId, $exact) {
+            $setting = $exact
+                ? Setting::valueAt($key, $corporationId)
+                : Setting::getValue($key, null, $corporationId);
 
             if ($setting !== null) {
                 return $setting;
@@ -108,6 +213,71 @@ class SettingsManagerService
             $configKey = 'mining-manager.' . $key;
             return config($configKey, $default);
         });
+    }
+
+    /**
+     * Where a setting is read and written, as [corporation, exactly there].
+     *
+     * Before tax profiles a key could have a global row and a row per
+     * corporation, a read fell back from one to the other, and which copy
+     * counted depended on the corporation the caller happened to be acting
+     * as. Once settings are in tax profiles the registry decides instead:
+     *
+     * - an install-wide setting, or one of the plugin's own records, is the
+     *   global row whoever asks;
+     * - a profile setting is the corporation's own profile when it is
+     *   configured, or was taken off the list (see hasOwnProfile()), and the
+     *   Global profile otherwise, because everyone outside the configured
+     *   corporations is taxed by Global;
+     * - a key being retired, or one the registry does not know, is read the
+     *   way it always was until the release that removes it.
+     *
+     * Profiles never fall back to Global: a configured corporation that has
+     * no value for a key gets the default, not the non-members' setting.
+     */
+    private function placeFor(string $key, ?int $corporationId): array
+    {
+        if (!$this->usesTaxProfiles()) {
+            return [$corporationId, false];
+        }
+
+        switch (SettingsRegistry::scope($key)) {
+            case SettingsRegistry::INSTALL:
+            case SettingsRegistry::STATE:
+                return [null, true];
+            case SettingsRegistry::PROFILE:
+                return [$corporationId && $this->hasOwnProfile($corporationId) ? $corporationId : null, true];
+            default:
+                return [$corporationId, false];
+        }
+    }
+
+    /**
+     * Whether a corporation's profile settings are its own: a configured
+     * corporation's, or one taken off the list, whose profile still taxes
+     * its members' days up to then and bills the month they left in. Which
+     * profile taxes whom is decided by profileFor(); this only says where a
+     * profile it picked is kept.
+     */
+    private function hasOwnProfile(int $corporationId): bool
+    {
+        return $this->isConfiguredCorporation($corporationId) || isset($this->configuredUntil()[$corporationId]);
+    }
+
+    /**
+     * Update a setting as a given corporation without leaving the active
+     * corporation changed, the way getSettingForCorporation() reads one.
+     */
+    public function updateSettingForCorporation(string $key, $value, ?string $type, ?int $corporationId): void
+    {
+        $previous = $this->activeCorporationId;
+
+        try {
+            $this->activeCorporationId = $corporationId;
+            $this->updateSetting($key, $value, $type);
+        } finally {
+            $this->activeCorporationId = $previous;
+        }
     }
 
     /**
@@ -139,8 +309,8 @@ class SettingsManagerService
     }
 
     /**
-     * Update or create a setting
-     * Now supports corporation-specific settings
+     * Update or create a setting, as the active corporation, in the place it
+     * is read from.
      *
      * @param string $key
      * @param mixed $value
@@ -153,14 +323,20 @@ class SettingsManagerService
             $type = $this->detectType($value);
         }
 
+        // Written where it is read, so a value saved as one corporation can
+        // never land in a copy that nothing reads.
+        [$corporationId] = $this->placeFor($key, $this->activeCorporationId);
+        $this->homeCorporations = null;
+        $this->takenOff = null;
+
         // Clear cache BEFORE writing — if another process reads between our
         // DB write and a post-write cache clear, it would populate the cache
         // with the old value (a second's worth of stale reads). Clearing
         // before write means the worst case is a cache miss that re-reads
         // fresh from DB.
         $globalCacheKey = self::CACHE_PREFIX . 'global_' . $key;
-        $corpCacheKey = $this->activeCorporationId
-            ? self::CACHE_PREFIX . $this->activeCorporationId . '_' . $key
+        $corpCacheKey = $corporationId
+            ? self::CACHE_PREFIX . $corporationId . '_' . $key
             : null;
 
         Cache::forget($globalCacheKey);
@@ -168,7 +344,7 @@ class SettingsManagerService
             Cache::forget($corpCacheKey);
         }
 
-        Setting::setValue($key, $value, $type, $this->activeCorporationId);
+        Setting::setValue($key, $value, $type, $corporationId);
 
         // Clear again AFTER the write as belt-and-suspenders — covers the
         // (unlikely) case where another process read+cached during the
@@ -184,23 +360,18 @@ class SettingsManagerService
         // request. The controller-level batch-complete log line is what
         // operators actually want to see at info; per-key writes are
         // diagnostic-only.
-        $corpContext = $this->activeCorporationId ? " (Corp ID: {$this->activeCorporationId})" : " (Global)";
+        $corpContext = $corporationId ? " (Corp ID: {$corporationId})" : " (Global)";
         Log::debug("Mining Manager: Setting updated - {$key}{$corpContext}");
     }
 
     /**
-     * Get general settings
-     * UPDATED: Now includes corporation_id and all settings are database-first with config fallback
+     * Get general settings, database first with config as fallback
      *
      * @return array
      */
     public function getGeneralSettings(): array
     {
         return [
-            // Corporation Settings (from database, config as fallback)
-            'corporation_id' => $this->getSetting('general.corporation_id', config('mining-manager.general.corporation_id')),
-            'corporation_name' => $this->getSetting('general.corporation_name', ''),
-            'corporation_ticker' => $this->getSetting('general.corporation_ticker', ''),
             // NOTE: Despite the name, this is effectively the "Tax Program Corporation ID".
             // This corp owns the moons/structures AND runs the mining tax program.
             // All tax invoices, theft detection, moon notifications, and ledger tracking
@@ -212,7 +383,6 @@ class SettingsManagerService
 
             // Ore Refining Settings (unified: reads from pricing.refining_efficiency)
             'ore_refining_rate' => $this->getSetting('pricing.refining_efficiency', config('mining-manager.pricing.refining_efficiency', 87.5)),
-            'ore_valuation_method' => $this->getSetting('general.ore_valuation_method', config('mining-manager.general.ore_valuation_method', 'mineral_price')),
             
             // Price Provider Settings
             'price_provider' => $this->getSetting('price_provider', config('mining-manager.general.price_provider', 'eve_market')),
@@ -227,103 +397,7 @@ class SettingsManagerService
             'timezone' => 'UTC',
             'date_format' => 'Y-m-d',
             'time_format' => 'H:i:s',
-
-            // Display Settings
-            'currency_decimals' => $this->getSetting('general.currency_decimals', 2),
-            'items_per_page' => $this->getSetting('general.items_per_page', 25),
-            'compact_mode' => $this->getSetting('general.compact_mode', false),
-            'show_character_portraits' => $this->getSetting('general.show_character_portraits', true),
-
-            // Payment auto-match toggle. Surfaced here so the General settings
-            // blade can render the checkbox's current state. The canonical
-            // read site for runtime gating is getPaymentSettings().
-            'auto_match_payments' => (bool) $this->getSetting('payment.auto_match_payments', true),
-
-            // Accept payments from any of a player's characters (alt-aware
-            // match, v2.0.2+). Same surfacing-pattern as auto_match_payments:
-            // the canonical read site is `getPaymentSettings()`; the value
-            // is duplicated here so the General settings blade can render
-            // the checkbox without juggling two arrays. WalletTransferService
-            // consults `getPaymentSettings()['accept_alt_characters']` at
-            // match time.
-            'accept_alt_characters' => (bool) $this->getSetting('payment.accept_alt_characters', true),
-
-            // Roll the remainder of an oversized payment onto the payer's
-            // next-oldest unpaid invoice, and keep going until the money runs
-            // out. Covers the common "settles three months in one transfer"
-            // case without a director splitting it by hand. Off means a
-            // payment only ever touches the one invoice it was matched to.
-            'cascade_remainder' => (bool) $this->getSetting('payment.cascade_remainder', true),
-
-            // What to do with money left over once every open invoice is
-            // settled. On (default) parks it against the paying character and
-            // draws it down when their next invoice is calculated. Off
-            // discards it, which is the pre-allocation-ledger behaviour.
-            'hold_surplus_as_credit' => (bool) $this->getSetting('payment.hold_surplus_as_credit', true),
-
-            // A standing keyword a member can put in the transfer reason to
-            // pay ahead of being invoiced. Unlike a tax code it never expires
-            // and is the same for everyone, so it can be pinned in a corp MOTD.
-            // Empty disables the feature entirely.
-            'upfront_keyword' => trim((string) $this->getSettingForCorporation('payment.upfront_keyword', null, 'MM-UPFRONT')),
-
-            // The mirror of that, for money going the other way. A refund is a
-            // corporation_account_withdrawal to a character, and so is an SRP
-            // payout or any other reimbursement, so amount and recipient alone
-            // cannot tell them apart. Requiring this in the transfer reason
-            // means a refund only confirms against a transfer meant to be one.
-            // Global for the same reason the other is: one wallet, one keyword.
-            'refund_keyword' => trim((string) $this->getSettingForCorporation('payment.refund_keyword', null, 'MM-REFUND')),
-
-            // Surfaced here purely so the General tab can grey the keyword box
-            // out. The canonical read for runtime gating is getFeatureFlags().
-            'enable_upfront_payments' => (bool) $this->getSettingForCorporation('features.enable_upfront_payments', null, false),
-
-            // An invoice past its due date is treated as overdue for
-            // notification purposes unless this much of it is already paid.
-            // Guards the token-payment loophole: 1m against a 1b invoice is
-            // 0.1% paid, nowhere near settled, and should not buy the gentler
-            // wording forever. The default forgives rounding and price drift,
-            // which is the only honest reason to be slightly short. 0 restores
-            // the old behaviour where any payment at all softened the tone.
-            'overdue_paid_threshold_pct' => (float) $this->getSetting('payment.overdue_paid_threshold_pct', 95),
-
-            // Notification settings have moved to the dedicated Notifications tab
-            // See getNotificationSettings() for the new per-channel configuration
-
-            // Guest Miner Tax Rates (global, tied to Moon Owner Corporation)
-            // Read with Moon Owner Corp context since that's where they're stored
-            'guest_moon_ore_r64' => $this->getGuestRateSetting('guest_tax_rates.moon_ore.r64'),
-            'guest_moon_ore_r32' => $this->getGuestRateSetting('guest_tax_rates.moon_ore.r32'),
-            'guest_moon_ore_r16' => $this->getGuestRateSetting('guest_tax_rates.moon_ore.r16'),
-            'guest_moon_ore_r8' => $this->getGuestRateSetting('guest_tax_rates.moon_ore.r8'),
-            'guest_moon_ore_r4' => $this->getGuestRateSetting('guest_tax_rates.moon_ore.r4'),
-            'guest_ore_tax' => $this->getGuestRateSetting('guest_tax_rates.ore'),
-            'guest_ice_tax' => $this->getGuestRateSetting('guest_tax_rates.ice'),
-            'guest_gas_tax' => $this->getGuestRateSetting('guest_tax_rates.gas'),
-            'guest_abyssal_ore_tax' => $this->getGuestRateSetting('guest_tax_rates.abyssal_ore'),
-            'guest_triglavian_ore_tax' => $this->getGuestRateSetting('guest_tax_rates.triglavian_ore'),
         ];
-    }
-
-    /**
-     * Read a guest tax rate setting using Moon Owner Corp context.
-     *
-     * Guest rates are always stored under the Moon Owner Corporation's
-     * settings context, regardless of which corporation is currently active.
-     *
-     * @param string $key
-     * @return float
-     */
-    private function getGuestRateSetting(string $key): float
-    {
-        $moonOwnerCorpId = $this->getSetting('general.moon_owner_corporation_id');
-        if (!$moonOwnerCorpId) {
-            return 0;
-        }
-
-        $value = $this->getSettingForCorporation($key, (int) $moonOwnerCorpId);
-        return $value !== null ? (float) $value : 0;
     }
 
     /**
@@ -342,123 +416,12 @@ class SettingsManagerService
     }
 
     /**
-     * Update general settings
-     *
-     * @param array $settings
-     * @return void
-     */
-    public function updateGeneralSettings(array $settings)
-    {
-        // Map guest rate form field names to their guest_tax_rates.* setting keys
-        $guestRateKeyMap = [
-            'guest_moon_ore_r64' => 'guest_tax_rates.moon_ore.r64',
-            'guest_moon_ore_r32' => 'guest_tax_rates.moon_ore.r32',
-            'guest_moon_ore_r16' => 'guest_tax_rates.moon_ore.r16',
-            'guest_moon_ore_r8'  => 'guest_tax_rates.moon_ore.r8',
-            'guest_moon_ore_r4'  => 'guest_tax_rates.moon_ore.r4',
-            'guest_ore_tax'      => 'guest_tax_rates.ore',
-            'guest_ice_tax'      => 'guest_tax_rates.ice',
-            'guest_gas_tax'      => 'guest_tax_rates.gas',
-            'guest_abyssal_ore_tax' => 'guest_tax_rates.abyssal_ore',
-            'guest_triglavian_ore_tax' => 'guest_tax_rates.triglavian_ore',
-        ];
-
-        DB::beginTransaction();
-
-        try {
-            // Extract guest rates from settings before the main loop
-            $guestRates = [];
-            foreach ($guestRateKeyMap as $formKey => $settingKey) {
-                if (array_key_exists($formKey, $settings)) {
-                    $guestRates[$settingKey] = $settings[$formKey];
-                    unset($settings[$formKey]);
-                }
-            }
-
-            // Capture Moon Owner Corp ID before the loop (form value or existing DB value)
-            $moonOwnerCorpId = $settings['moon_owner_corporation_id']
-                ?? $this->getSetting('general.moon_owner_corporation_id');
-
-            // Save regular general settings
-            foreach ($settings as $key => $value) {
-                // Moon Owner Corporation is ALWAYS global — single source of truth
-                // for which structures provide moon mining data, independent of
-                // corporation context (which only affects tax rates)
-                if ($key === 'moon_owner_corporation_id') {
-                    $savedContext = $this->activeCorporationId;
-                    $this->activeCorporationId = null; // Force global save
-                    $this->updateSetting('general.moon_owner_corporation_id', $value, 'integer');
-                    $this->activeCorporationId = $savedContext;
-                } elseif ($key === 'payment_refund_keyword') {
-                    // Global, like the upfront keyword and for the same reason.
-                    $savedContext = $this->activeCorporationId;
-                    $this->activeCorporationId = null;
-                    $this->updateSetting('payment.refund_keyword', $value);
-                    $this->activeCorporationId = $savedContext;
-                } elseif ($key === 'payment_upfront_keyword') {
-                    // Global for the same reason the moon owner corp is. There
-                    // is one tax program and one wallet it reads, so one keyword
-                    // serves every configured corporation. Saved per-corp it
-                    // would land in a context the matcher never reads, and the
-                    // feature would silently do nothing.
-                    $savedContext = $this->activeCorporationId;
-                    $this->activeCorporationId = null;
-                    $this->updateSetting('payment.upfront_keyword', $value);
-                    $this->activeCorporationId = $savedContext;
-                } elseif (in_array($key, [
-                    'payment_match_tolerance',
-                    'payment_grace_period_hours',
-                    'payment_auto_match_payments',
-                    'payment_accept_alt_characters',
-                    'payment_cascade_remainder',
-                    'payment_hold_surplus_as_credit',
-                    'payment_overdue_paid_threshold_pct',
-                ])) {
-                    // Payment settings use payment. prefix instead of general.
-                    // form input `payment_<x>` → setting key `payment.<x>`.
-                    $settingKey = str_replace('payment_', 'payment.', $key);
-                    $this->updateSetting($settingKey, $value);
-                } else {
-                    $this->updateSetting('general.' . $key, $value);
-                }
-            }
-
-            // Save guest rates with Moon Owner Corp context
-            if (!empty($guestRates)) {
-                if ($moonOwnerCorpId) {
-                    $savedContext = $this->activeCorporationId;
-                    $this->activeCorporationId = (int) $moonOwnerCorpId;
-
-                    foreach ($guestRates as $settingKey => $value) {
-                        $this->updateSetting($settingKey, $value, 'float');
-                    }
-
-                    $this->activeCorporationId = $savedContext;
-                } else {
-                    Log::warning('Mining Manager: Cannot save guest tax rates — no Moon Owner Corporation configured');
-                }
-            }
-
-            DB::commit();
-        } catch (\Exception $e) {
-            DB::rollBack();
-            throw $e;
-        }
-    }
-
-    /**
      * Get payment settings
      *
      * @return array
      */
     public function getPaymentSettings(): array
     {
-        // Primary source: tax_rates.tax_payment_method (set by UI)
-        // Fallback: payment.method (legacy path)
-        $method = $this->getSetting('tax_rates.tax_payment_method',
-            $this->getSetting('payment.method', 'wallet')
-        );
-
         $division = (int) $this->getSetting('tax_rates.tax_wallet_division',
             $this->getSetting('payment.wallet_division', 1)
         );
@@ -469,7 +432,8 @@ class SettingsManagerService
         }
 
         return [
-            'method' => $method,
+            // Wallet transfers are the only way to pay.
+            'method' => 'wallet',
             'wallet_division' => $division,
             'grace_period_hours' => $this->getSetting('payment.grace_period_hours', 24),
             'match_tolerance' => $this->getSetting('payment.match_tolerance', 100),
@@ -481,11 +445,19 @@ class SettingsManagerService
             // page for someone to confirm. Useful for installs that want a
             // human-review step before any invoice is updated.
             'auto_match_payments' => (bool) $this->getSetting('payment.auto_match_payments', true),
+            'minimum_tax_behavior' => $this->getSetting('payment.minimum_tax_behavior', 'exempt'),
 
-            // Read by PaymentAllocationService when deciding how far a payment
-            // reaches. Surfaced in getGeneralSettings() as well so the settings
-            // blade can render the checkboxes.
+            // Roll the remainder of an oversized payment onto the payer's
+            // next-oldest unpaid invoice, and keep going until the money runs
+            // out. Covers the common "settles three months in one transfer"
+            // case without a director splitting it by hand. Off means a
+            // payment only ever touches the one invoice it was matched to.
             'cascade_remainder' => (bool) $this->getSetting('payment.cascade_remainder', true),
+
+            // What to do with money left over once every open invoice is
+            // settled. On (default) parks it against the paying character and
+            // draws it down when their next invoice is calculated. Off
+            // discards it, which is the pre-allocation-ledger behaviour.
             'hold_surplus_as_credit' => (bool) $this->getSetting('payment.hold_surplus_as_credit', true),
 
             // A standing keyword a member can put in the transfer reason to
@@ -617,33 +589,14 @@ class SettingsManagerService
      */
     public function getTaxRates(): array
     {
-        return [
-            // Moon ore tax rates by rarity (percentage)
-            'moon_ore' => [
-                'r64' => $this->getSetting('tax_rates.moon_ore.r64', config('mining-manager.tax_rates.moon_ore.r64', 15.0)),
-                'r32' => $this->getSetting('tax_rates.moon_ore.r32', config('mining-manager.tax_rates.moon_ore.r32', 12.0)),
-                'r16' => $this->getSetting('tax_rates.moon_ore.r16', config('mining-manager.tax_rates.moon_ore.r16', 10.0)),
-                'r8' => $this->getSetting('tax_rates.moon_ore.r8', config('mining-manager.tax_rates.moon_ore.r8', 8.0)),
-                'r4' => $this->getSetting('tax_rates.moon_ore.r4', config('mining-manager.tax_rates.moon_ore.r4', 5.0)),
-            ],
-
-            // Regular ore type tax rates (percentage)
-            'ice' => $this->getSetting('tax_rates.ice', config('mining-manager.tax_rates.ice', 10.0)),
-            'ore' => $this->getSetting('tax_rates.ore', config('mining-manager.tax_rates.ore', 10.0)),
-            'gas' => $this->getSetting('tax_rates.gas', config('mining-manager.tax_rates.gas', 10.0)),
-            'abyssal_ore' => $this->getSetting('tax_rates.abyssal_ore', config('mining-manager.tax_rates.abyssal_ore', 15.0)),
-            'triglavian_ore' => $this->getSetting('tax_rates.triglavian_ore', config('mining-manager.tax_rates.triglavian_ore', 10.0)),
-
-            // Mining event bonuses (percentage reduction)
-            'event_bonus' => $this->getSetting('tax_rates.event_bonus', config('mining-manager.tax_rates.event_bonus', 2.0)),
-
-            // Tax Payment Method
-            'tax_payment_method' => $this->getSetting('tax_rates.tax_payment_method', 'wallet'),
+        return array_merge($this->taxRatesFor($this->activeCorporationId), [
+            // Wallet division tax payments arrive in
             'tax_wallet_division' => $this->getSetting('tax_rates.tax_wallet_division', 1000),
 
             // Tax Code Settings
             'tax_code_prefix' => $this->getSetting('tax_rates.tax_code_prefix', 'TAX-'),
             'tax_code_length' => $this->getSetting('tax_rates.tax_code_length', 6),
+            'tax_code_expiration_buffer' => $this->getSetting('tax_rates.tax_code_expiration_buffer', 30),
             'auto_generate_tax_codes' => $this->getSetting('tax_rates.auto_generate_tax_codes', true),
 
             // Tax Period Settings
@@ -653,19 +606,53 @@ class SettingsManagerService
             'tax_payment_deadline_days' => $this->getSetting('tax_rates.tax_payment_deadline_days', 7),
             'send_tax_reminders' => $this->getSetting('tax_rates.send_tax_reminders', true),
             'tax_reminder_days' => $this->getSetting('tax_rates.tax_reminder_days', 3),
+        ]);
+    }
+
+    /**
+     * The rates of the profile that taxes a corporation's members: its own
+     * when it is configured, Global otherwise. Read without moving the active
+     * corporation, so a caller can hold several profiles at once.
+     *
+     * @return array{moon_ore: array<string, mixed>, ice: mixed, ore: mixed, gas: mixed, abyssal_ore: mixed, triglavian_ore: mixed}
+     */
+    public function taxRatesFor(?int $corporationId): array
+    {
+        $rate = fn (string $key, float $default) => $this->getSettingForCorporation("tax_rates.{$key}", $corporationId, config("mining-manager.tax_rates.{$key}", $default));
+
+        return [
+            // Moon ore tax rates by rarity (percentage)
+            'moon_ore' => [
+                'r64' => $rate('moon_ore.r64', 15.0),
+                'r32' => $rate('moon_ore.r32', 12.0),
+                'r16' => $rate('moon_ore.r16', 10.0),
+                'r8' => $rate('moon_ore.r8', 8.0),
+                'r4' => $rate('moon_ore.r4', 5.0),
+            ],
+
+            // Regular ore type tax rates (percentage)
+            'ice' => $rate('ice', 10.0),
+            'ore' => $rate('ore', 10.0),
+            'gas' => $rate('gas', 10.0),
+            'abyssal_ore' => $rate('abyssal_ore', 15.0),
+            'triglavian_ore' => $rate('triglavian_ore', 10.0),
         ];
     }
 
     /**
-     * Get tax rates for a specific corporation.
-     * If the character is a guest miner (not from any configured corporation),
-     * uses guest miner tax rates from the Moon Owner Corp config.
-     * Guest rate = 0 means actual 0% tax (no fallback to corp rates).
+     * Get tax rates for a character in the given corporation: the active
+     * corporation's rates for a member of any configured corporation. Anyone
+     * else is taxed by the Global profile under tax profiles, and before them
+     * at the guest rates from the Moon Owner's settings, where a guest rate
+     * of 0 means 0% rather than the member rate. Asked about a day, a
+     * corporation taken off the list since is still a member's up to its
+     * last day on it.
      *
      * @param int|null $characterCorporationId The corporation ID of the character being taxed
+     * @param mixed $day the day the mining was done, or null for today's members
      * @return array
      */
-    public function getTaxRatesForCorporation(?int $characterCorporationId): array
+    public function getTaxRatesForCorporation(?int $characterCorporationId, $day = null): array
     {
         // Get base (corp member) tax rates
         $corpTaxRates = $this->getTaxRates();
@@ -676,8 +663,8 @@ class SettingsManagerService
         }
 
         // Build list of "home" corporations: configured corps + moon owner corp
-        // Anyone NOT in this list is a guest miner
-        $homeCorporationIds = $this->getHomeCorporationIds();
+        // Anyone NOT in this list is a non-member
+        $homeCorporationIds = $day === null ? $this->getHomeCorporationIds() : $this->memberCorporationsOn($day);
 
         // If no corporations configured at all, treat everyone as corp member
         if (empty($homeCorporationIds)) {
@@ -687,6 +674,13 @@ class SettingsManagerService
         // If the character belongs to any configured corporation, use corp member rates
         if (in_array((int) $characterCorporationId, $homeCorporationIds, true)) {
             return $corpTaxRates;
+        }
+
+        // Under tax profiles everyone outside the configured corporations is
+        // taxed by Global, which took the guest rates over when settings
+        // moved into profiles. The guest rows below are only read before then.
+        if ($this->usesTaxProfiles()) {
+            return array_merge($corpTaxRates, $this->taxRatesFor(null));
         }
 
         // Character is a guest miner — guest rates from Moon Owner Corp config
@@ -741,206 +735,184 @@ class SettingsManagerService
     }
 
     /**
-     * Update tax rates
-     * COMPLETELY REWRITTEN: Now handles all form fields including moon ore rarities,
-     * exemptions, tax selectors, and all other settings
+     * Change a tax profile's billing period, the profile for a corporation's
+     * members as everywhere else.
      *
-     * @param array $rates
-     * @return void
+     * Queued to TaxPeriodHelper::nextSafeEffectiveDate(), the 3rd, unless
+     * asked for today and TaxPeriodHelper::canChangePeriodToday() allows it:
+     * changed on any other day, part of the month would be billed twice or
+     * not at all. Choosing the period already in force clears any queued
+     * change.
+     *
+     * @return string|null 'today' or 'queued', or null when the period stays as it is
      */
-    public function updateTaxRates(array $rates)
+    public function setPeriodFor(?int $corporationId, string $requested, bool $applyNow): ?string
     {
-        DB::beginTransaction();
-
-        try {
-            // Update moon ore rarity rates (from individual form fields)
-            if (isset($rates['moon_ore_r64'])) {
-                $this->updateSetting('tax_rates.moon_ore.r64', $rates['moon_ore_r64'], 'float');
-            }
-            if (isset($rates['moon_ore_r32'])) {
-                $this->updateSetting('tax_rates.moon_ore.r32', $rates['moon_ore_r32'], 'float');
-            }
-            if (isset($rates['moon_ore_r16'])) {
-                $this->updateSetting('tax_rates.moon_ore.r16', $rates['moon_ore_r16'], 'float');
-            }
-            if (isset($rates['moon_ore_r8'])) {
-                $this->updateSetting('tax_rates.moon_ore.r8', $rates['moon_ore_r8'], 'float');
-            }
-            if (isset($rates['moon_ore_r4'])) {
-                $this->updateSetting('tax_rates.moon_ore.r4', $rates['moon_ore_r4'], 'float');
-            }
-
-            // Update regular ore type rates
-            if (isset($rates['ore_tax'])) {
-                $this->updateSetting('tax_rates.ore', $rates['ore_tax'], 'float');
-            }
-            if (isset($rates['ice_tax'])) {
-                $this->updateSetting('tax_rates.ice', $rates['ice_tax'], 'float');
-            }
-            if (isset($rates['gas_tax'])) {
-                $this->updateSetting('tax_rates.gas', $rates['gas_tax'], 'float');
-            }
-            if (isset($rates['abyssal_ore_tax'])) {
-                $this->updateSetting('tax_rates.abyssal_ore', $rates['abyssal_ore_tax'], 'float');
-            }
-            if (isset($rates['triglavian_ore_tax'])) {
-                $this->updateSetting('tax_rates.triglavian_ore', $rates['triglavian_ore_tax'], 'float');
-            }
-
-            // Guest miner tax rates have moved to General Settings (tied to Moon Owner Corporation).
-            // See updateGeneralSettings() for the new save path.
-            // Legacy support: if guest rate keys are somehow present, still save them.
-            $guestKeys = [
-                'guest_moon_ore_r64' => 'guest_tax_rates.moon_ore.r64',
-                'guest_moon_ore_r32' => 'guest_tax_rates.moon_ore.r32',
-                'guest_moon_ore_r16' => 'guest_tax_rates.moon_ore.r16',
-                'guest_moon_ore_r8'  => 'guest_tax_rates.moon_ore.r8',
-                'guest_moon_ore_r4'  => 'guest_tax_rates.moon_ore.r4',
-                'guest_ore_tax'      => 'guest_tax_rates.ore',
-                'guest_ice_tax'      => 'guest_tax_rates.ice',
-                'guest_gas_tax'      => 'guest_tax_rates.gas',
-                'guest_abyssal_ore_tax' => 'guest_tax_rates.abyssal_ore',
-                'guest_triglavian_ore_tax' => 'guest_tax_rates.triglavian_ore',
-            ];
-            foreach ($guestKeys as $formKey => $settingKey) {
-                if (isset($rates[$formKey])) {
-                    $this->updateSetting($settingKey, $rates[$formKey], 'float');
-                }
-            }
-
-            // Update exemption settings
-            if (isset($rates['exemption_enabled'])) {
-                $this->updateSetting('exemptions.enabled', $rates['exemption_enabled'], 'boolean');
-            }
-            if (isset($rates['exemption_threshold'])) {
-                $this->updateSetting('exemptions.threshold', $rates['exemption_threshold'], 'float');
-            }
-            if (isset($rates['grace_period_days'])) {
-                $this->updateSetting('exemptions.grace_period_days', $rates['grace_period_days'], 'integer');
-            }
-
-            // Minimum tax amount and behavior
-            if (isset($rates['minimum_tax_amount'])) {
-                $this->updateSetting('payment.minimum_tax_amount', $rates['minimum_tax_amount'], 'float');
-            }
-            if (isset($rates['minimum_tax_behavior'])) {
-                $this->updateSetting('payment.minimum_tax_behavior', $rates['minimum_tax_behavior'], 'string');
-            }
-
-            // Update tax selector - moon ore flags
-            if (isset($rates['all_moon_ore'])) {
-                $this->updateSetting('tax_selector.all_moon_ore', $rates['all_moon_ore'], 'boolean');
-            }
-            if (isset($rates['only_corp_moon_ore'])) {
-                $this->updateSetting('tax_selector.only_corp_moon_ore', $rates['only_corp_moon_ore'], 'boolean');
-            }
-            if (isset($rates['no_moon_ore'])) {
-                $this->updateSetting('tax_selector.no_moon_ore', $rates['no_moon_ore'], 'boolean');
-            }
-
-            // Update tax selector - ore type flags
-            if (isset($rates['tax_regular_ore'])) {
-                $this->updateSetting('tax_selector.ore', $rates['tax_regular_ore'], 'boolean');
-            }
-            if (isset($rates['tax_ice'])) {
-                $this->updateSetting('tax_selector.ice', $rates['tax_ice'], 'boolean');
-            }
-            if (isset($rates['tax_gas'])) {
-                $this->updateSetting('tax_selector.gas', $rates['tax_gas'], 'boolean');
-            }
-            if (isset($rates['tax_abyssal_ore'])) {
-                $this->updateSetting('tax_selector.abyssal_ore', $rates['tax_abyssal_ore'], 'boolean');
-            }
-            if (isset($rates['tax_triglavian_ore'])) {
-                $this->updateSetting('tax_selector.triglavian_ore', $rates['tax_triglavian_ore'], 'boolean');
-            }
-
-            // Update tax payment method
-            if (isset($rates['tax_payment_method'])) {
-                $this->updateSetting('tax_rates.tax_payment_method', $rates['tax_payment_method'], 'string');
-            }
-            if (isset($rates['tax_wallet_division'])) {
-                $this->updateSetting('tax_rates.tax_wallet_division', $rates['tax_wallet_division'], 'integer');
-            }
-
-            // Update tax code settings
-            if (isset($rates['tax_code_prefix'])) {
-                $this->updateSetting('tax_rates.tax_code_prefix', $rates['tax_code_prefix'], 'string');
-            }
-            if (isset($rates['tax_code_length'])) {
-                $this->updateSetting('tax_rates.tax_code_length', $rates['tax_code_length'], 'integer');
-            }
-            if (isset($rates['auto_generate_tax_codes'])) {
-                $this->updateSetting('tax_rates.auto_generate_tax_codes', $rates['auto_generate_tax_codes'], 'boolean');
-            }
-
-            // Update tax period settings.
-            //
-            // Period-type changes are QUEUED to the first of the next calendar
-            // month instead of applied immediately. mining_taxes unique key is
-            // (character_id, period_start) — biweekly H1 and monthly April both
-            // target period_start = 2026-04-01, so switching mid-month can
-            // orphan rows or silently overwrite period_type on --force recalc.
-            // Deferring to a month boundary sidesteps both.
-            //
-            // The "apply now" path (for power users / fresh installs with no
-            // existing taxes) uses the tax_calculation_period_apply_now flag.
-            // That bypasses the queue and writes directly to the active slot.
-            if (isset($rates['tax_calculation_period'])) {
-                $requested = $rates['tax_calculation_period'];
-
-                // Defense in depth: weekly was removed as a selectable period
-                // type in v1.0.3+. If a caller somehow passes 'weekly' (e.g.
-                // via a direct updateTaxRates() call or a bypassed form),
-                // coerce to 'monthly' and log it. Prevents the legacy value
-                // from being re-introduced into the settings store.
-                if ($requested === 'weekly') {
-                    \Illuminate\Support\Facades\Log::warning(
-                        'Mining Manager: Attempted to set tax_calculation_period to deprecated "weekly"; coerced to "monthly". Use biweekly for sub-monthly periods.'
-                    );
-                    $requested = 'monthly';
-                }
-
-                $currentActive = $this->getSetting('tax_rates.tax_calculation_period', 'monthly');
-                $applyNow = !empty($rates['tax_calculation_period_apply_now']);
-
-                if ($requested === $currentActive) {
-                    // No-op — also clear any stale pending queue.
-                    $this->updateSetting('tax_rates.tax_calculation_period_pending', null, 'string');
-                    $this->updateSetting('tax_rates.tax_calculation_period_effective_from', null, 'string');
-                } elseif ($applyNow) {
-                    // Power-user override: change takes effect immediately.
-                    $this->updateSetting('tax_rates.tax_calculation_period', $requested, 'string');
-                    $this->updateSetting('tax_rates.tax_calculation_period_pending', null, 'string');
-                    $this->updateSetting('tax_rates.tax_calculation_period_effective_from', null, 'string');
-                } else {
-                    // Queue with a lookahead effective date that lets the old
-                    // scheme finish calculating the current month before the
-                    // new scheme takes over. See TaxPeriodHelper::nextSafeEffectiveDate
-                    // for the rationale — TL;DR: day 3 of next month, not day 1,
-                    // because day 2 is when both biweekly and monthly schedule
-                    // their previous-period calcs.
-                    $periodHelper = app(\MiningManager\Services\Tax\TaxPeriodHelper::class);
-                    $effectiveFrom = $periodHelper->nextSafeEffectiveDate()->toDateString();
-                    $this->updateSetting('tax_rates.tax_calculation_period_pending', $requested, 'string');
-                    $this->updateSetting('tax_rates.tax_calculation_period_effective_from', $effectiveFrom, 'string');
-                }
-            }
-            if (isset($rates['tax_payment_deadline_days'])) {
-                $this->updateSetting('tax_rates.tax_payment_deadline_days', $rates['tax_payment_deadline_days'], 'integer');
-            }
-            if (isset($rates['send_tax_reminders'])) {
-                $this->updateSetting('tax_rates.send_tax_reminders', $rates['send_tax_reminders'], 'boolean');
-            }
-            if (isset($rates['tax_reminder_days'])) {
-                $this->updateSetting('tax_rates.tax_reminder_days', $rates['tax_reminder_days'], 'integer');
-            }
-
-            DB::commit();
-        } catch (\Exception $e) {
-            DB::rollBack();
-            throw $e;
+        // Defense in depth: weekly was removed as a selectable period
+        // type in v1.0.3+. If a caller somehow passes 'weekly' (e.g.
+        // via a bypassed form), coerce to 'monthly' and log it. Prevents
+        // the legacy value from being re-introduced into the settings store.
+        if ($requested === 'weekly') {
+            Log::warning('Mining Manager: Attempted to set tax_calculation_period to deprecated "weekly"; coerced to "monthly". Use biweekly for sub-monthly periods.');
+            $requested = 'monthly';
         }
+
+        $periods = app(\MiningManager\Services\Tax\TaxPeriodHelper::class);
+        $write = fn (string $key, $value) => $this->updateSettingForCorporation($key, $value, 'string', $corporationId);
+        $current = $this->getSettingForCorporation('tax_rates.tax_calculation_period', $corporationId, 'monthly');
+        $pending = $this->getSettingForCorporation('tax_rates.tax_calculation_period_pending', $corporationId);
+        $effectiveFrom = $this->getSettingForCorporation('tax_rates.tax_calculation_period_effective_from', $corporationId);
+
+        if ($requested === $current) {
+            $write('tax_rates.tax_calculation_period_pending', null);
+            $write('tax_rates.tax_calculation_period_effective_from', null);
+
+            return null;
+        }
+
+        if ($applyNow && $periods->canChangePeriodToday($corporationId)) {
+            $write('tax_rates.tax_calculation_period', $requested);
+            $write('tax_rates.tax_calculation_period_pending', null);
+            $write('tax_rates.tax_calculation_period_effective_from', null);
+
+            return 'today';
+        }
+
+        // Asking again for a change already queued keeps its date. Queued
+        // afresh on the day it takes effect, before anything has read the
+        // period, it would wait another month.
+        if ($requested !== $pending || !$effectiveFrom) {
+            $write('tax_rates.tax_calculation_period_pending', $requested);
+            $write('tax_rates.tax_calculation_period_effective_from', $periods->nextSafeEffectiveDate()->toDateString());
+        }
+
+        return 'queued';
+    }
+
+    /**
+     * Who bills a corporation's members this month while it is not
+     * configured, as [profile, its billing period]: the corporation's own
+     * profile when it was taken off the list this month, which still bills
+     * the month, otherwise Global. Asked before the corporation is
+     * configured, since configuring it rewrites its profile.
+     *
+     * @return array{0: int|null, 1: string}
+     */
+    private function billingThisMonth(int $corporationId): array
+    {
+        $until = $this->configuredUntil()[$corporationId] ?? null;
+        $profile = $until !== null && $until >= Carbon::today()->startOfMonth()->toDateString() ? $corporationId : null;
+
+        return [$profile, app(\MiningManager\Services\Tax\TaxPeriodHelper::class)->periodTypeFor($profile)];
+    }
+
+    /**
+     * Give a corporation configured part way through a month the billing
+     * period its members were on until now, as billingThisMonth() found it,
+     * with the one its profile came with queued like any change of period,
+     * unless the change can be made today. Taking the new period at once
+     * could leave part of the month billed twice or not at all for them.
+     */
+    private function startOnMembersPeriod(int $corporationId, ?int $billedBy, string $membersPeriod): void
+    {
+        $periods = app(\MiningManager\Services\Tax\TaxPeriodHelper::class);
+        $read = fn (string $key, $default = null) => $this->getSettingForCorporation($key, $corporationId, $default);
+        $write = fn (string $key, $value) => $this->updateSettingForCorporation($key, $value, 'string', $corporationId);
+
+        $active = (string) $read('tax_rates.tax_calculation_period', 'monthly');
+        $target = $read('tax_rates.tax_calculation_period_pending') ?: $active;
+
+        if (!$periods->canChangePeriodToday($billedBy)) {
+            $active = $membersPeriod;
+        }
+
+        $write('tax_rates.tax_calculation_period', $active);
+        $write('tax_rates.tax_calculation_period_pending', $target === $active ? null : $target);
+        $write('tax_rates.tax_calculation_period_effective_from', $target === $active ? null : $periods->nextSafeEffectiveDate()->toDateString());
+    }
+
+    /**
+     * Save one tax profile from the Tax profiles page: Global when the
+     * corporation is null, else that configured corporation's own.
+     *
+     * @param array{prefix?: string, moon?: string, rates?: array<string, mixed>, taxed?: array<string, mixed>, period?: string} $values
+     * @return string|null what became of the billing period, as setPeriodFor() says
+     */
+    public function saveProfile(?int $corporationId, array $values, bool $applyPeriodNow): ?string
+    {
+        $write = fn (string $key, $value, string $type) => $this->updateSettingForCorporation($key, $value, $type, $corporationId);
+
+        if (isset($values['prefix'])) {
+            $write('tax_rates.tax_code_prefix', $values['prefix'], 'string');
+        }
+
+        if (isset($values['moon'])) {
+            $write('tax_selector.all_moon_ore', $values['moon'] === 'all', 'boolean');
+            $write('tax_selector.only_corp_moon_ore', $values['moon'] === 'ours', 'boolean');
+            $write('tax_selector.no_moon_ore', $values['moon'] === 'none', 'boolean');
+        }
+
+        foreach ($values['rates'] ?? [] as $key => $rate) {
+            $write("tax_rates.{$key}", (float) $rate, 'float');
+        }
+
+        foreach ($values['taxed'] ?? [] as $key => $taxed) {
+            $write("tax_selector.{$key}", (bool) $taxed, 'boolean');
+        }
+
+        return isset($values['period']) ? $this->setPeriodFor($corporationId, $values['period'], $applyPeriodNow) : null;
+    }
+
+    /**
+     * Configure a corporation: put it on the list with a profile of its own,
+     * a copy of another profile (Global when none is named), so it starts
+     * out taxed as that one is rather than at the defaults.
+     */
+    public function configureCorporation(int $corporationId, ?int $copyFrom): void
+    {
+        [$billedBy, $membersPeriod] = $this->billingThisMonth($corporationId);
+
+        foreach (SettingsRegistry::keys(SettingsRegistry::PROFILE) as $key) {
+            $query = Setting::where('key', $key);
+            $copyFrom ? $query->where('corporation_id', $copyFrom) : $query->whereNull('corporation_id');
+            $source = $query->first();
+
+            if ($source === null) {
+                continue;
+            }
+
+            Cache::forget(self::CACHE_PREFIX . $corporationId . '_' . $key);
+            Setting::updateOrCreate(
+                ['key' => $key, 'corporation_id' => $corporationId],
+                ['value' => $source->value, 'type' => $source->type]
+            );
+            Cache::forget(self::CACHE_PREFIX . $corporationId . '_' . $key);
+        }
+
+        $this->addConfiguredCorporation($corporationId);
+        $this->startOnMembersPeriod($corporationId, $billedBy, $membersPeriod);
+    }
+
+    /**
+     * Take a corporation off the configured list. Its members count as
+     * members to the end of today and as non-members, taxed by Global, from
+     * tomorrow. Their bills for this month still follow its profile, on its
+     * billing period and code prefix, so the month is billed on one period.
+     * The profile stays where it is; adding the corporation back copies
+     * afresh. The Moon Owner is always configured and cannot be taken off.
+     */
+    public function removeConfiguredCorporation(int $corporationId): void
+    {
+        $ids = array_map('intval', (array) $this->getSettingForCorporation(SettingsTransfer::CONFIGURED_KEY, null, []));
+        if (!in_array($corporationId, $ids, true)) {
+            return;
+        }
+
+        $this->updateGlobalSetting(SettingsTransfer::CONFIGURED_KEY, array_values(array_diff($ids, [$corporationId])), 'json');
+
+        $until = $this->configuredUntil();
+        $until[$corporationId] = Carbon::today()->toDateString();
+        $this->updateGlobalSetting(self::CONFIGURED_UNTIL_KEY, $until, 'json');
     }
 
     /**
@@ -951,19 +923,79 @@ class SettingsManagerService
      */
     public function getTaxSelector(): array
     {
+        return $this->taxSelectorFor($this->activeCorporationId);
+    }
+
+    /**
+     * What the profile that taxes a corporation's members taxes, read like
+     * taxRatesFor().
+     *
+     * @return array<string, mixed>
+     */
+    public function taxSelectorFor(?int $corporationId): array
+    {
+        $taxes = fn (string $key, bool $default) => $this->getSettingForCorporation("tax_selector.{$key}", $corporationId, $default);
+
         return [
             // Moon ore selector (mutually exclusive)
-            'all_moon_ore' => $this->getSetting('tax_selector.all_moon_ore', true),
-            'only_corp_moon_ore' => $this->getSetting('tax_selector.only_corp_moon_ore', false),
-            'no_moon_ore' => $this->getSetting('tax_selector.no_moon_ore', false),
+            'all_moon_ore' => $taxes('all_moon_ore', true),
+            'only_corp_moon_ore' => $taxes('only_corp_moon_ore', false),
+            'no_moon_ore' => $taxes('no_moon_ore', false),
 
             // Other ore types (independent checkboxes)
-            'ore' => $this->getSetting('tax_selector.ore', true),
-            'ice' => $this->getSetting('tax_selector.ice', true),
-            'gas' => $this->getSetting('tax_selector.gas', false),
-            'abyssal_ore' => $this->getSetting('tax_selector.abyssal_ore', false),
-            'triglavian_ore' => $this->getSetting('tax_selector.triglavian_ore', false),
+            'ore' => $taxes('ore', true),
+            'ice' => $taxes('ice', true),
+            'gas' => $taxes('gas', false),
+            'abyssal_ore' => $taxes('abyssal_ore', false),
+            'triglavian_ore' => $taxes('triglavian_ore', false),
         ];
+    }
+
+    /**
+     * What a set of tax profiles tax between them, as one selector: every
+     * category any of them taxes, and the widest moon ore choice among them.
+     * For work that covers several profiles' members at once, such as an
+     * event open to everyone, where each miner is still charged by their own
+     * profile.
+     *
+     * Global's ore, ice and gas count only while no corporation is
+     * configured: with corporations configured, non-members' own mining is
+     * never taxed.
+     *
+     * @param array<int, int|null> $profiles
+     * @return array<string, bool>
+     */
+    public function taxSelectorAcross(array $profiles): array
+    {
+        $configured = $this->usesTaxProfiles() && $this->getHomeCorporationIds();
+        $moon = 'none';
+        $others = ['ore' => false, 'ice' => false, 'gas' => false, 'abyssal_ore' => false, 'triglavian_ore' => false];
+
+        foreach ($profiles as $profile) {
+            $selector = $this->taxSelectorFor($profile);
+
+            // Decided as the tax calculation decides it: no moon ore wins,
+            // then only the Moon Owner's.
+            $choice = !empty($selector['no_moon_ore']) ? 'none'
+                : (!empty($selector['only_corp_moon_ore']) ? 'ours' : (($selector['all_moon_ore'] ?? true) ? 'all' : 'none'));
+            if ($choice === 'all' || ($choice === 'ours' && $moon === 'none')) {
+                $moon = $choice;
+            }
+
+            if ($profile === null && $configured) {
+                continue;
+            }
+
+            foreach ($others as $key => $taxed) {
+                $others[$key] = $taxed || !empty($selector[$key]);
+            }
+        }
+
+        return [
+            'all_moon_ore' => $moon === 'all',
+            'only_corp_moon_ore' => $moon === 'ours',
+            'no_moon_ore' => $moon === 'none',
+        ] + $others;
     }
 
     /**
@@ -1077,7 +1109,6 @@ class SettingsManagerService
             'manager_core_variant' => 'min',
 
             // Refining settings
-            'use_refined_value' => $this->getSetting('pricing.use_refined_value', config('mining-manager.pricing.use_refined_value', true)),
             'refining_efficiency' => $this->getSetting('pricing.refining_efficiency', 87.5),
         ];
     }
@@ -1153,13 +1184,25 @@ class SettingsManagerService
     }
 
     /**
-     * Get event settings
+     * Who may set up events and how they wait: one set for the whole
+     * install, since directors approve for every corporation alike.
      *
-     * @return array
+     * @return array{past_hold_minutes: int, managers_can_create: bool, manager_lead_hours: int, approval_rule: string}
      */
     public function getEventSettings(): array
     {
-        return config('mining-manager.events', []);
+        $rule = (string) $this->getSetting('events.approval_rule', '100');
+
+        return [
+            // Minutes an event for days that have passed waits before it applies.
+            'past_hold_minutes' => max(0, (int) $this->getSetting('events.past_hold_minutes', 60)),
+            'managers_can_create' => (bool) $this->getSetting('events.managers_can_create', true),
+            // How far ahead of saving a moon manager's event has to start.
+            'manager_lead_hours' => max(1, (int) $this->getSetting('events.manager_lead_hours', 24)),
+            // never, 25, 50, 75, 100 (tax free) or always: which of a moon
+            // manager's events wait for a director.
+            'approval_rule' => in_array($rule, ['never', '25', '50', '75', '100', 'always'], true) ? $rule : '100',
+        ];
     }
 
     /**
@@ -1171,8 +1214,6 @@ class SettingsManagerService
     {
         return [
             'estimated_chunk_size' => $this->getSetting('moon.estimated_chunk_size', config('mining-manager.moon.estimated_chunk_size', 150000)),
-            'auto_calculate_values' => $this->getSetting('moon.auto_calculate_values', config('mining-manager.moon.auto_calculate_values', true)),
-            'show_unscanned_moons' => $this->getSetting('moon.show_unscanned_moons', config('mining-manager.moon.show_unscanned_moons', true)),
         ];
     }
 
@@ -1196,7 +1237,7 @@ class SettingsManagerService
         // Tax
         'tax_generated', 'tax_announcement', 'tax_reminder', 'tax_invoice', 'tax_overdue', 'tax_outstanding_digest',
         // Events
-        'event_created', 'event_started', 'event_completed',
+        'event_created', 'event_started', 'event_completed', 'event_review',
         // Moon
         'moon_ready', 'jackpot_detected', 'moon_chunk_unstable',
         // Moon, from Structure Manager's alerts through Manager Core
@@ -1223,7 +1264,7 @@ class SettingsManagerService
         // Tax
         'tax_generated', 'tax_announcement', 'tax_reminder', 'tax_invoice', 'tax_overdue',
         // Events
-        'event_created', 'event_started', 'event_completed',
+        'event_created', 'event_started', 'event_completed', 'event_review',
         // Moon
         'moon_ready', 'jackpot_detected', 'moon_chunk_unstable', 'extraction_started',
         'extraction_at_risk', 'extraction_lost', 'metenox_cargo_full',
@@ -1280,10 +1321,6 @@ class SettingsManagerService
             'slack_legacy_last_success_at' => $this->getSetting('notifications.slack_legacy_last_success_at', null),
             'slack_legacy_last_failure_at' => $this->getSetting('notifications.slack_legacy_last_failure_at', null),
             'slack_legacy_last_error' => $this->getSetting('notifications.slack_legacy_last_error', ''),
-
-            // Legacy discord pinging (kept for backward compat during transition)
-            'discord_pinging_enabled' => (bool) $this->getSetting('notifications.discord_pinging_enabled', false),
-            'discord_ping_show_amount' => (bool) $this->getSetting('notifications.discord_ping_show_amount', true),
 
             // Metenox cargo-full notification threshold (default 85%, clamped
             // [50, 99] both client-side via the UI input + server-side in the
@@ -1440,8 +1477,11 @@ class SettingsManagerService
             // Moon mining
             'enable_moon_tracking' => (bool) $this->getSetting('features.enable_moon_tracking', true),
 
+            // Theft detection. Global, as the scan runs once for the moon owner.
+            'allow_guest_mining' => (bool) $this->getSettingForCorporation('features.allow_guest_mining', null, true),
+            'theft_overdue_days' => (int) $this->getSettingForCorporation('features.theft_overdue_days', null, 15),
+
             // Permissions & access
-            'allow_public_stats' => (bool) $this->getSetting('features.allow_public_stats', false),
             'allow_member_leaderboard' => (bool) $this->getSetting('features.allow_member_leaderboard', true),
             'show_character_names' => (bool) $this->getSetting('features.show_character_names', true),
             'allow_export_data' => (bool) $this->getSetting('features.allow_export_data', true),
@@ -1455,7 +1495,6 @@ class SettingsManagerService
 
             // Data retention
             'ledger_retention_days' => (int) $this->getSetting('features.ledger_retention_days', 365),
-            'tax_record_retention_days' => (int) $this->getSetting('features.tax_record_retention_days', 730),
             'auto_cleanup_old_data' => (bool) $this->getSetting('features.auto_cleanup_old_data', false),
         ];
     }
@@ -1477,8 +1516,10 @@ class SettingsManagerService
                 // Upfront payments is global, for the same reason the keyword
                 // is. The wallet matcher runs as one corporation, the moon
                 // owner, so a flag saved against any other corporation is never
-                // consulted: the box would tick and nothing would change.
-                if ($key === 'enable_upfront_payments') {
+                // consulted: the box would tick and nothing would change. The
+                // theft settings are global for the same reason: one scan, run
+                // for the moon owner.
+                if (in_array($key, ['enable_upfront_payments', 'allow_guest_mining', 'theft_overdue_days'], true)) {
                     $savedContext = $this->activeCorporationId;
                     $this->activeCorporationId = null;
                     $this->updateSetting("features.{$key}", $value, $type);
@@ -1507,14 +1548,22 @@ class SettingsManagerService
         DB::beginTransaction();
 
         try {
-            // Get all setting keys before truncating so we can clear their cache entries
-            $settingKeys = Setting::pluck('key')->toArray();
+            // The plugin's own records are not settings: cutover dates, the
+            // record of the move into tax profiles, when an alert last went
+            // out. Losing them would reopen questions the plugin has already
+            // settled, such as which bills follow the old rules, so a reset
+            // leaves them alone.
+            $records = SettingsRegistry::keys(SettingsRegistry::STATE);
+
+            $settingKeys = Setting::whereNotIn('key', $records)->pluck('key')->unique()->toArray();
             $corporationIds = Setting::whereNotNull('corporation_id')
                 ->distinct()
                 ->pluck('corporation_id')
                 ->toArray();
 
-            Setting::truncate();
+            Setting::whereNotIn('key', $records)->delete();
+            $this->homeCorporations = null;
+            $this->takenOff = null;
 
             // Clear only mining-manager cache keys (not the entire application cache)
             foreach ($settingKeys as $key) {
@@ -1541,11 +1590,6 @@ class SettingsManagerService
     }
 
     /**
-     * Export all settings as array
-     *
-     * @return array
-     */
-    /**
      * Export settings for moving a configuration between installs.
      *
      * Every row carries its own corporation_id. A flat key => value map cannot
@@ -1553,19 +1597,33 @@ class SettingsManagerService
      * once per configured corporation, and flattening them silently keeps
      * whichever row the database happened to return last.
      *
-     * Webhooks are opt-in because webhook_url is a credential. Anyone holding
-     * the exported file can post to those channels, so putting them in by
-     * default would turn a settings backup into a secret people email around.
+     * A file with tax profiles imports only on an install that has them; see
+     * importableRows() for what an import refuses.
      *
-     * @param bool $includeWebhooks
+     * Webhooks and API keys let whoever holds them act as this install, and a
+     * settings backup is the kind of file people email around. So they go in
+     * only when a passphrase is given, locked with it, and the webhooks with
+     * them.
+     *
+     * @param string|null $passphrase locks the webhooks and API keys into the file; without one they stay out
      * @return array
      */
-    public function exportSettings(bool $includeWebhooks = false): array
+    public function exportSettings(?string $passphrase = null): array
     {
+        $profiles = $this->usesTaxProfiles();
+        $withCredentials = $passphrase !== null && $passphrase !== '';
+
         $settings = Setting::query()
             ->orderBy('corporation_id')
             ->orderBy('key')
             ->get()
+            // The plugin's own records, such as cutover dates, belong to the
+            // install that wrote them, and a copy of an install-wide setting
+            // saved under a corporation is one nothing reads.
+            ->reject(fn ($setting) => $profiles && (
+                SettingsRegistry::scope($setting->key) === SettingsRegistry::STATE
+                || (SettingsRegistry::scope($setting->key) === SettingsRegistry::INSTALL && $setting->corporation_id !== null)
+            ))
             ->map(function ($setting) {
                 return [
                     'key' => $setting->key,
@@ -1578,28 +1636,43 @@ class SettingsManagerService
             ->values()
             ->all();
 
+        // An empty credential is nothing to carry, and on import it would
+        // only empty the other install's.
+        $credentials = array_values(array_filter($settings, fn (array $row) => SettingsRegistry::isCredential($row['key'])
+            && trim((string) $row['value']) !== ''));
+        $settings = array_values(array_filter($settings, fn (array $row) => !SettingsRegistry::isCredential($row['key'])));
+
         $export = [
+            'plugin' => self::EXPORT_PLUGIN,
             'exported_at' => now()->toDateTimeString(),
-            'version' => config('mining-manager.version', '1.0.0'),
-            'format' => 2,
-            'settings' => $settings,
+            'version' => app(VersionChecker::class)->installedVersion(),
+            'format' => $profiles ? self::EXPORT_FORMAT : 2,
         ];
 
-        if ($includeWebhooks) {
-            $export['webhooks'] = WebhookConfiguration::query()
+        // 2.x reads its rows from 'settings' and checks nothing else, so a
+        // file with tax profiles keeps them under a name of its own. 2.x then
+        // refuses the file instead of taking the Global profile for its own
+        // rates.
+        $export[$profiles ? 'rows' : 'settings'] = $settings;
+
+        if ($withCredentials) {
+            $hooks = WebhookConfiguration::query()
                 ->orderBy('corporation_id')
                 ->orderBy('name')
-                ->get()
+                ->get();
+
+            $export['webhooks'] = $hooks
                 ->map(function ($hook) {
                     $row = $hook->toArray();
 
                     // Delivery statistics belong to the install that produced
-                    // them, not to the configuration being moved.
-                    foreach ([
+                    // them, not to the configuration being moved, and what
+                    // lets the holder post goes in the locked part.
+                    foreach (array_merge([
                         'id', 'success_count', 'failure_count',
                         'last_success_at', 'last_failure_at', 'last_error',
                         'created_at', 'updated_at',
-                    ] as $drop) {
+                    ], self::WEBHOOK_CREDENTIALS) as $drop) {
                         unset($row[$drop]);
                     }
 
@@ -1607,6 +1680,17 @@ class SettingsManagerService
                 })
                 ->values()
                 ->all();
+
+            $export['credentials'] = SettingsCredentials::seal([
+                'settings' => $credentials,
+                'webhooks' => $hooks
+                    ->map(fn ($hook) => array_merge(
+                        ['name' => $hook->name, 'corporation_id' => $hook->corporation_id],
+                        $hook->only(self::WEBHOOK_CREDENTIALS)
+                    ))
+                    ->values()
+                    ->all(),
+            ], $passphrase);
         }
 
         return $export;
@@ -1615,31 +1699,97 @@ class SettingsManagerService
     /**
      * Import a settings export.
      *
-     * Understands both shapes: the current one, where settings are rows that
-     * each name their own corporation, and the original flat key => value map,
-     * which had no corporation information at all and is therefore treated as
-     * global. Files produced before this change still import exactly as they
-     * did before.
+     * Takes rows that each name their own corporation, and on an install not
+     * yet in tax profiles also the original flat key => value map, which had
+     * no corporation information at all and is therefore treated as global.
+     * importableRows() refuses a file this install cannot place.
      *
      * Additive. Nothing is deleted, so importing a partial file tops up a
-     * configuration rather than replacing it.
+     * configuration rather than replacing it. Billing periods change as they
+     * do on the Tax profiles page: today when that is safe, otherwise from
+     * the next safe day, listed under 'periods'.
+     *
+     * Webhooks and API keys come locked with the passphrase they were
+     * exported with. Without it the rest of the file imports and they are
+     * left out ('credentials' => 'locked'); with a wrong one nothing does. An
+     * import never empties a credential this install has.
      *
      * @param array $data
-     * @return array{settings:int,webhooks:int,skipped:int,legacy:bool}
+     * @param string|null $passphrase
+     * @return array{settings:int,webhooks:int,webhooks_without_url:int,skipped:int,legacy:bool,credentials:string,periods:array<int, array{profile: int|null, from: \Carbon\Carbon}>}
      */
-    public function importSettings(array $data): array
+    public function importSettings(array $data, ?string $passphrase = null): array
     {
-        if (!isset($data['settings'])) {
-            throw new \Exception('Invalid settings format');
+        $profiles = $this->usesTaxProfiles();
+        [$rows, $legacy] = $this->importableRows($data, $profiles);
+
+        // Opened before anything is written, so a wrong passphrase imports
+        // nothing rather than everything but the credentials.
+        $credentials = 'none';
+        $hookCredentials = [];
+        $hookIdentity = fn (array $hook) => (empty($hook['corporation_id']) ? '' : (int) $hook['corporation_id']) . '|' . $hook['name'];
+        if (isset($data['credentials'])) {
+            if ($passphrase === null || $passphrase === '') {
+                $credentials = 'locked';
+            } else {
+                $opened = SettingsCredentials::open((array) $data['credentials'], $passphrase);
+                if ($opened === null) {
+                    throw new \Exception('That passphrase does not open the webhook URLs and API keys in this file, so nothing was imported.');
+                }
+
+                $credentials = 'opened';
+                foreach ((array) ($opened['settings'] ?? []) as $row) {
+                    if (!$legacy && is_array($row) && SettingsRegistry::isCredential((string) ($row['key'] ?? ''))) {
+                        $rows[] = $row;
+                    }
+                }
+
+                foreach ((array) ($opened['webhooks'] ?? []) as $hook) {
+                    if (is_array($hook) && !empty($hook['name'])) {
+                        $hookCredentials[$hookIdentity($hook)] = array_intersect_key($hook, array_flip(self::WEBHOOK_CREDENTIALS));
+                    }
+                }
+            }
         }
 
-        $rows = $data['settings'];
-        $legacy = !array_is_list($rows);
+        // The corporations the file has configured: its list and its Moon
+        // Owner. Null for a file without the list, where a profile is all
+        // there is to go on.
+        $fileConfigured = null;
+        $fileMoonOwner = null;
+        if ($profiles && !$legacy) {
+            foreach ($rows as $row) {
+                if (!is_array($row) || !empty($row['corporation_id'])) {
+                    continue;
+                }
+
+                if (($row['key'] ?? null) === SettingsTransfer::CONFIGURED_KEY) {
+                    $list = is_array($row['value'] ?? null) ? $row['value'] : json_decode((string) ($row['value'] ?? ''), true);
+                    $fileConfigured = array_map('intval', (array) $list);
+                } elseif (($row['key'] ?? null) === 'general.moon_owner_corporation_id') {
+                    $fileMoonOwner = (int) ($row['value'] ?? 0) ?: null;
+                }
+            }
+
+            if ($fileConfigured !== null && $fileMoonOwner !== null) {
+                $fileConfigured[] = $fileMoonOwner;
+            }
+        }
 
         $imported = 0;
         $skipped = 0;
         $webhooks = 0;
+        $withoutUrl = 0;
         $savedContext = $this->activeCorporationId;
+        $configuredBefore = $profiles ? $this->getHomeCorporationIds() : [];
+        $periodRows = [];
+
+        // A corporation taken off the list this month and configured again by
+        // the file carries on with the period its members are billed on.
+        $billing = [];
+        foreach (array_keys($profiles ? $this->configuredUntil() : []) as $corporationId) {
+            $billing[$corporationId] = $this->billingThisMonth($corporationId);
+        }
 
         DB::beginTransaction();
 
@@ -1650,6 +1800,10 @@ class SettingsManagerService
                 $this->activeCorporationId = null;
 
                 foreach ($rows as $key => $value) {
+                    if (SettingsRegistry::isCredential((string) $key) && ($value === null || $value === '')) {
+                        continue;
+                    }
+
                     $this->updateSetting($key, $value);
                     $imported++;
                 }
@@ -1660,19 +1814,107 @@ class SettingsManagerService
                         continue;
                     }
 
+                    // An empty credential in the file leaves this install's
+                    // as it is, rather than emptying it.
+                    if (SettingsRegistry::isCredential($row['key']) && trim((string) ($row['value'] ?? '')) === '') {
+                        continue;
+                    }
+
+                    if ($profiles) {
+                        $scope = SettingsRegistry::scope($row['key']);
+
+                        if ($scope === SettingsRegistry::STATE
+                            || ($scope === SettingsRegistry::INSTALL && !empty($row['corporation_id']))) {
+                            $skipped++;
+                            continue;
+                        }
+
+                        // Adds to the corporations configured here rather
+                        // than replacing them, like the rest of an import.
+                        if ($row['key'] === SettingsTransfer::CONFIGURED_KEY) {
+                            $list = is_array($row['value'] ?? null) ? $row['value'] : json_decode((string) ($row['value'] ?? ''), true);
+                            foreach ((array) $list as $corporationId) {
+                                if ((int) $corporationId > 0) {
+                                    $this->addConfiguredCorporation((int) $corporationId);
+                                }
+                            }
+
+                            $imported++;
+                            continue;
+                        }
+
+                        // A corporation the file has configured is configured
+                        // here too. One taken off the list there still has the
+                        // profile it keeps for the month it left in, and
+                        // stays off the list here, so that profile is left out.
+                        if ($scope === SettingsRegistry::PROFILE && !empty($row['corporation_id'])) {
+                            if ($fileConfigured !== null && !in_array((int) $row['corporation_id'], $fileConfigured, true)) {
+                                $skipped++;
+                                continue;
+                            }
+
+                            $this->addConfiguredCorporation((int) $row['corporation_id']);
+                        }
+
+                        // A billing period this install already has changes
+                        // below, the way a change on the Tax profiles page does.
+                        $profile = empty($row['corporation_id']) ? null : (int) $row['corporation_id'];
+                        if (in_array($row['key'], self::PERIOD_KEYS, true) && ($profile === null || in_array($profile, $configuredBefore, true))) {
+                            $periodRows[$profile ?? 'global'][$row['key']] = $row['value'] ?? null;
+                            $imported++;
+                            continue;
+                        }
+                    }
+
                     // Write in the row's own context, not the caller's.
                     $this->activeCorporationId = isset($row['corporation_id'])
                         ? ($row['corporation_id'] === null ? null : (int) $row['corporation_id'])
                         : null;
 
-                    $this->updateSetting(
-                        $row['key'],
-                        $row['value'] ?? null,
-                        $row['type'] ?? null
-                    );
+                    $value = $row['value'] ?? null;
+                    $type = $row['type'] ?? null;
+
+                    // The export carries a json value as the text it was stored
+                    // as, and saving that text would encode it a second time.
+                    // Decoded without assoc, so {} and an object keyed 0..n
+                    // come back exactly as they were stored.
+                    if (in_array($type, ['json', 'array'], true) && is_string($value)) {
+                        $decoded = json_decode($value);
+                        if (json_last_error() === JSON_ERROR_NONE) {
+                            $value = $decoded;
+                        }
+                    }
+
+                    $this->updateSetting($row['key'], $value, $type);
 
                     $imported++;
                 }
+            }
+
+            // A billing period changes today only when that is safe, so an
+            // import part way through a month cannot leave part of it billed
+            // twice or not at all. A change queued in the file is queued again
+            // from this install's next safe day, not the file's.
+            $this->activeCorporationId = null;
+            foreach ($periodRows as $profile => $period) {
+                $profile = $profile === 'global' ? null : (int) $profile;
+                $active = $period['tax_rates.tax_calculation_period'] ?? null;
+                $pending = $period['tax_rates.tax_calculation_period_pending'] ?? null;
+
+                if (in_array($active, ['monthly', 'biweekly', 'weekly'], true)) {
+                    $this->setPeriodFor($profile, $active, true);
+                }
+
+                if (in_array($pending, ['monthly', 'biweekly', 'weekly'], true) && !empty($period['tax_rates.tax_calculation_period_effective_from'])) {
+                    $this->setPeriodFor($profile, $pending, false);
+                }
+            }
+
+            // A corporation the file configures starts on the period its
+            // members were on, as one added on the Setup page does.
+            $added = $profiles ? array_diff($this->getHomeCorporationIds(), $configuredBefore) : [];
+            foreach ($added as $corporationId) {
+                $this->startOnMembersPeriod($corporationId, ...($billing[$corporationId] ?? $this->billingThisMonth($corporationId)));
             }
 
             if (!empty($data['webhooks']) && is_array($data['webhooks'])) {
@@ -1682,15 +1924,33 @@ class SettingsManagerService
                         continue;
                     }
 
+                    $hook = array_merge($hook, $hookCredentials[$hookIdentity($hook)] ?? []);
+
                     // Name plus corporation identifies a webhook well enough to
                     // re-import over itself without piling up duplicates.
-                    WebhookConfiguration::updateOrCreate(
-                        [
-                            'name' => $hook['name'],
-                            'corporation_id' => $hook['corporation_id'] ?? null,
-                        ],
-                        $hook
-                    );
+                    $match = [
+                        'name' => $hook['name'],
+                        'corporation_id' => $hook['corporation_id'] ?? null,
+                    ];
+
+                    // Without its URL, in a file exported before webhooks
+                    // carried one or whose passphrase was not given, a webhook
+                    // can still update one this install has, which keeps its
+                    // own URL, but cannot set up a new one.
+                    if (empty($hook['webhook_url'])) {
+                        unset($hook['webhook_url']);
+                        $existing = WebhookConfiguration::where($match)->first();
+                        if ($existing === null) {
+                            $withoutUrl++;
+                            continue;
+                        }
+
+                        $existing->fill($hook)->save();
+                        $webhooks++;
+                        continue;
+                    }
+
+                    WebhookConfiguration::updateOrCreate($match, $hook);
 
                     $webhooks++;
                 }
@@ -1711,59 +1971,286 @@ class SettingsManagerService
         Log::info('Mining Manager: settings imported', [
             'settings' => $imported,
             'webhooks' => $webhooks,
+            'webhooks_without_url' => $withoutUrl,
             'skipped' => $skipped,
             'legacy_format' => $legacy,
+            'credentials' => $credentials,
         ]);
+
+        // The profiles whose billing period from the file is still to come.
+        $periods = app(\MiningManager\Services\Tax\TaxPeriodHelper::class);
+        $waiting = [];
+        foreach (array_merge(array_keys($periodRows), $added) as $profile) {
+            $profile = $profile === 'global' ? null : (int) $profile;
+            if ($change = $periods->pendingPeriodChangeFor($profile)) {
+                $waiting[] = ['profile' => $profile, 'from' => $change['effective_from']];
+            }
+        }
 
         return [
             'settings' => $imported,
             'webhooks' => $webhooks,
+            'webhooks_without_url' => $withoutUrl,
             'skipped' => $skipped,
             'legacy' => $legacy,
+            'credentials' => $credentials,
+            'periods' => $waiting,
         ];
     }
 
     /**
-     * Get all "home" corporation IDs — configured corporations + moon owner corp.
-     * Characters belonging to any of these are considered corp members.
-     * Characters from any other corporation are considered guest miners.
+     * The rows of a settings file, and whether they are the original flat
+     * map. Refuses, before anything is written, a file this install cannot
+     * place: another plugin's, one in a newer format than this version reads,
+     * and one from the other side of the move into tax profiles.
+     *
+     * @return array{0: array, 1: bool}
+     */
+    protected function importableRows(array $data, bool $profiles): array
+    {
+        // Only a plain name from the file goes into a message.
+        $said = fn ($value) => is_string($value) && preg_match('/^[\w.\/+-]{1,60}$/', $value) ? $value : null;
+
+        if (isset($data['plugin']) && $data['plugin'] !== self::EXPORT_PLUGIN) {
+            $from = $said($data['plugin']);
+            throw new \Exception('This is not a Mining Manager settings file' . ($from ? ": it comes from {$from}" : '') . '.');
+        }
+
+        $format = (int) ($data['format'] ?? 0);
+        if ($format > self::EXPORT_FORMAT) {
+            $from = $said($data['version'] ?? null);
+            throw new \Exception('This file was exported from ' . ($from ? "Mining Manager {$from}" : 'a newer Mining Manager')
+                . ', which saves settings in a way this version (' . app(VersionChecker::class)->installedVersion()
+                . ') cannot read. Update Mining Manager here, then import it again.');
+        }
+
+        // Builds of 3.0.0 from before its release kept the rows under
+        // 'settings', as 2.x does.
+        $rows = $data['rows'] ?? $data['settings'] ?? null;
+        if (!is_array($rows)) {
+            throw new \Exception('This file holds no Mining Manager settings.');
+        }
+
+        $legacy = !array_is_list($rows);
+
+        // In a file from before tax profiles the global moon rates are what
+        // members paid. Here they are what non-members pay, so importing one
+        // would quietly charge the wrong people.
+        if ($profiles && ($legacy || $format < 3)) {
+            throw new \Exception('This file comes from Mining Manager 2.x or earlier, before settings moved into tax profiles, so its values would land in the wrong places. Update the install it came from and export it again, or set the profiles by hand.');
+        }
+
+        // The other way round, profile rows would land where nothing reads
+        // them until this install has moved its own settings.
+        if (!$profiles && $format >= 3) {
+            throw new \Exception('This file comes from an install with tax profiles, and this one has not moved its settings into them yet. Settings Health on the Diagnostic page says why.');
+        }
+
+        return [$rows, $legacy];
+    }
+
+    /**
+     * The corporations whose members are members here: the configured
+     * corporations, and always the Moon Owner. Everyone else is a non-member,
+     * taxed by the Global profile.
+     *
+     * Once settings are in tax profiles the list is a setting of its own, so a
+     * corporation joins or leaves it only when someone adds or removes it.
+     * Before that, any corporation with a settings row counted, even one that
+     * only had a stray row written by a background job, and that is the list
+     * the transfer copied.
      *
      * @return array<int>
      */
     public function getHomeCorporationIds(): array
     {
-        // Get configured corporations (from "Switch Corporation Context" list)
-        $configuredCorpIds = DB::table('mining_manager_settings')
-            ->whereNotNull('corporation_id')
-            ->distinct()
-            ->pluck('corporation_id')
-            ->map(fn($id) => (int) $id)
-            ->toArray();
-
-        // Also include moon owner corporation (structure/moon holding corp)
-        $moonOwnerCorpId = $this->getSetting('general.moon_owner_corporation_id');
-        if ($moonOwnerCorpId) {
-            $configuredCorpIds[] = (int) $moonOwnerCorpId;
+        if ($this->homeCorporations !== null && $this->homeCorporations[0] > microtime(true)) {
+            return $this->homeCorporations[1];
         }
 
-        return array_values(array_unique($configuredCorpIds));
+        if ($this->usesTaxProfiles()) {
+            $configuredCorpIds = array_map('intval', (array) $this->getSettingForCorporation(SettingsTransfer::CONFIGURED_KEY, null, []));
+        } else {
+            $configuredCorpIds = DB::table('mining_manager_settings')
+                ->whereNotNull('corporation_id')
+                ->distinct()
+                ->pluck('corporation_id')
+                ->map(fn($id) => (int) $id)
+                ->toArray();
+        }
+
+        $moonOwnerCorpId = (int) $this->getSettingForCorporation('general.moon_owner_corporation_id', null);
+        if ($moonOwnerCorpId) {
+            $configuredCorpIds[] = $moonOwnerCorpId;
+        }
+
+        $configuredCorpIds = array_values(array_unique($configuredCorpIds));
+        $this->homeCorporations = [microtime(true) + 5, $configuredCorpIds];
+
+        return $configuredCorpIds;
     }
 
     /**
-     * Get all corporations that have settings configured
+     * Corporations taken off the configured list, each with the last day it
+     * was on it. See CONFIGURED_UNTIL_KEY.
+     *
+     * @return array<int, string> corporation_id => Y-m-d
+     */
+    public function configuredUntil(): array
+    {
+        if ($this->takenOff !== null && $this->takenOff[0] > microtime(true)) {
+            return $this->takenOff[1];
+        }
+
+        $days = [];
+        if ($this->usesTaxProfiles()) {
+            $stored = $this->getSettingForCorporation(self::CONFIGURED_UNTIL_KEY, null, []);
+            $stored = is_string($stored) ? json_decode($stored, true) : $stored;
+
+            foreach ((array) $stored as $corporationId => $day) {
+                if ((int) $corporationId > 0 && is_string($day) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $day)) {
+                    $days[(int) $corporationId] = $day;
+                }
+            }
+        }
+
+        $this->takenOff = [microtime(true) + 5, $days];
+
+        return $days;
+    }
+
+    /**
+     * The corporations whose members were members on a day: those configured
+     * now, and any taken off the list since, up to their last day on it.
+     *
+     * @param mixed $day
+     * @return array<int>
+     */
+    public function memberCorporationsOn($day): array
+    {
+        $members = $this->getHomeCorporationIds();
+        $date = Carbon::parse($day)->toDateString();
+
+        foreach ($this->configuredUntil() as $corporationId => $until) {
+            if ($date <= $until && !in_array($corporationId, $members, true)) {
+                $members[] = $corporationId;
+            }
+        }
+
+        return $members;
+    }
+
+    /**
+     * The tax profile for a corporation's members: its own when it is
+     * configured, Global (null) when it is not. A pilot whose corporation is
+     * not known yet counts as the Moon Owner's, rather than being charged the
+     * non-members' rates on the strength of a lookup that has not finished.
+     * With nothing configured at all there is only Global.
+     *
+     * Asked about a day, a corporation taken off the list since still counts
+     * up to its last day on it, so the days its members mined as members, and
+     * their bills for the month it left in, keep its profile.
+     *
+     * @param mixed $day
+     */
+    public function profileFor(?int $corporationId, $day = null): ?int
+    {
+        $home = $day === null ? $this->getHomeCorporationIds() : $this->memberCorporationsOn($day);
+
+        if (!$home) {
+            return null;
+        }
+
+        if ($corporationId === null) {
+            return (int) $this->getSettingForCorporation('general.moon_owner_corporation_id', null) ?: null;
+        }
+
+        return in_array($corporationId, $home, true) ? $corporationId : null;
+    }
+
+    /**
+     * Every tax profile: Global first, as null, then each configured
+     * corporation's.
+     *
+     * @return array<int, int|null>
+     */
+    public function taxProfiles(): array
+    {
+        return array_merge([null], $this->usesTaxProfiles() ? $this->getHomeCorporationIds() : []);
+    }
+
+    /**
+     * Every prefix a payment code can be made with. One per profile once
+     * settings are in tax profiles, so anything else matched against the
+     * same transfer reason has to stay clear of all of them.
+     *
+     * @return array<int, string>
+     */
+    public function taxCodePrefixes(): array
+    {
+        $prefixes = array_map(
+            fn (?int $profile) => trim((string) $this->getSettingForCorporation('tax_rates.tax_code_prefix', $profile, 'TAX-')),
+            $this->taxProfiles()
+        );
+
+        return array_values(array_unique(array_filter($prefixes)));
+    }
+
+    /**
+     * Whether a corporation's members are members here.
+     */
+    public function isConfiguredCorporation(int $corporationId): bool
+    {
+        return in_array($corporationId, $this->getHomeCorporationIds(), true);
+    }
+
+    /**
+     * Put a corporation on the configured list, so its members are members
+     * here and its own profile taxes them. Before settings are in tax
+     * profiles a corporation is configured by having settings, so there is
+     * nothing to add.
+     */
+    public function addConfiguredCorporation(int $corporationId): void
+    {
+        if (!$this->usesTaxProfiles() || $this->isConfiguredCorporation($corporationId)) {
+            return;
+        }
+
+        $ids = array_map('intval', (array) $this->getSettingForCorporation(SettingsTransfer::CONFIGURED_KEY, null, []));
+        $ids[] = $corporationId;
+        $ids = array_values(array_unique($ids));
+        sort($ids);
+
+        $this->updateGlobalSetting(SettingsTransfer::CONFIGURED_KEY, $ids, 'json');
+
+        $until = $this->configuredUntil();
+        if (isset($until[$corporationId])) {
+            unset($until[$corporationId]);
+            $this->updateGlobalSetting(self::CONFIGURED_UNTIL_KEY, $until, 'json');
+        }
+    }
+
+    /**
+     * The configured corporations, by name.
      *
      * @return \Illuminate\Support\Collection
      */
     public function getAllCorporations()
     {
-        return DB::table('corporation_infos')
-            ->whereIn('corporation_id', function($query) {
+        $query = DB::table('corporation_infos');
+
+        if ($this->usesTaxProfiles()) {
+            $query->whereIn('corporation_id', $this->getHomeCorporationIds());
+        } else {
+            $query->whereIn('corporation_id', function ($query) {
                 $query->select('corporation_id')
                     ->from('mining_manager_settings')
                     ->whereNotNull('corporation_id')
                     ->distinct();
-            })
-            ->select('corporation_id', 'name', 'ticker')
+            });
+        }
+
+        return $query->select('corporation_id', 'name', 'ticker')
             ->orderBy('name')
             ->get();
     }

@@ -158,11 +158,19 @@ class ImportCharacterMiningCommand extends Command
                     continue;
                 }
 
-                // Skip if observer data already exists for this entry (observer is authoritative)
+                // Once a refinery has reported this ore for the pilot and day,
+                // process-ledger has taken the report off the personal row in the
+                // refinery's own system, and the nightly clean-up keeps that row
+                // to what no refinery accounts for. SeAT's figure would put the
+                // report back. Mining in another system comes in as usual. A
+                // refinery SeAT has not placed in a system yet holds back every
+                // system's row, since process-ledger took its report off
+                // whichever row it found first.
                 $hasObserver = MiningLedger::where('character_id', $entry->character_id)
                     ->whereDate('date', $entry->date)
                     ->where('type_id', $entry->type_id)
                     ->whereNotNull('observer_id')
+                    ->where(fn ($query) => $query->where('solar_system_id', $entry->solar_system_id)->orWhereNull('solar_system_id'))
                     ->exists();
 
                 if ($hasObserver) {
@@ -198,13 +206,14 @@ class ImportCharacterMiningCommand extends Command
                             if ($billed) {
                                 $extraValues = $valuationService->calculateOreValue(
                                     $entry->type_id,
-                                    $entry->quantity - (int) $existing->quantity
+                                    $entry->quantity - (int) $existing->quantity,
+                                    ['mining_date' => $entry->date]
                                 );
                                 $existing->update(LateMining::growth($existing, $entry->quantity, $extraValues) + [
                                     'processed_at' => Carbon::now(),
                                 ]);
                             } else {
-                                $values = $valuationService->calculateOreValue($entry->type_id, $entry->quantity);
+                                $values = $valuationService->calculateOreValue($entry->type_id, $entry->quantity, ['mining_date' => $entry->date]);
                                 $existing->update([
                                     'quantity' => $entry->quantity,
                                     'unit_price' => $values['unit_price'] ?? 0,
@@ -234,7 +243,7 @@ class ImportCharacterMiningCommand extends Command
                 }
 
                 // Calculate values
-                $values = $valuationService->calculateOreValue($entry->type_id, $entry->quantity);
+                $values = $valuationService->calculateOreValue($entry->type_id, $entry->quantity, ['mining_date' => $entry->date]);
 
                 // Classify ore
                 $isMoonOre = TypeIdRegistry::isMoonOre($entry->type_id);
@@ -342,7 +351,7 @@ class ImportCharacterMiningCommand extends Command
             [
                 [$dryRun ? 'New entries it would create' : 'New entries created', $created],
                 [$dryRun ? 'Existing entries it would update' : 'Existing entries updated', $updated],
-                ['Skipped (observer data exists)', $skipped],
+                ['Skipped (no change, or a refinery report covers it)', $skipped],
                 ['Ignored (event ore, quest ore, Mutanite)', $ignored],
                 [$dryRun ? 'Would arrive after invoicing, not taxed' : 'Arrived after invoicing, not taxed', $lateArrivals],
                 ['Left alone (already invoiced)', $billedLeftAlone],

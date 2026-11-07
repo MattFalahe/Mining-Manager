@@ -7,7 +7,7 @@
     $bannerBill = $taxBanner['first'];
     $bannerDue = $bannerBill->effectiveDueDate()->format('M j');
     $bannerPeriod = $bannerBill->formatted_period;
-    $bannerLeft = number_format($taxBanner['remaining'], 0);
+    $bannerLeft = number_format($taxBanner['remaining'], 2);
 @endphp
 <div class="alert-mm alert-mm-{{ $taxBanner['late'] ? 'danger' : 'warning' }} d-flex align-items-center flex-wrap" role="alert">
     <div class="flex-grow-1 mr-3">
@@ -24,7 +24,7 @@
         </div>
         @if($taxBanner['paid'] > 0)
             <small class="d-block">
-                {{ trans('mining-manager::taxes.banner_part_paid', ['paid' => number_format($taxBanner['paid'], 0), 'owed' => number_format($taxBanner['billed'], 0)]) }}
+                {{ trans('mining-manager::taxes.banner_part_paid', ['paid' => number_format($taxBanner['paid'], 2), 'owed' => number_format($taxBanner['billed'], 2)]) }}
             </small>
         @endif
     </div>

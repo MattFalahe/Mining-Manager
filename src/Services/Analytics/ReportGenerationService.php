@@ -16,6 +16,12 @@ use Carbon\Carbon;
 class ReportGenerationService
 {
     /**
+     * The most rows a PDF export takes. 200 rows of ten columns peaked at
+     * 104 MB, inside the 128 MB SeAT's image gives PHP.
+     */
+    public const PDF_EXPORT_MAX_ROWS = 200;
+
+    /**
      * Mining analytics service
      *
      * @var MiningAnalyticsService
@@ -62,6 +68,8 @@ class ReportGenerationService
             $filePath = $this->generateReportFile($report, $reportData, $format);
             $report->update(['file_path' => $filePath]);
         }
+
+        \MiningManager\Integrations\ManagerCoreEvents::reportGenerated($report);
 
         // Auto-dispatch to subscribed webhooks. Callers that want to handle
         // dispatch themselves (e.g. the manual UI path that sends to a single
@@ -146,6 +154,25 @@ class ReportGenerationService
             })->toArray(),
             'total_count' => $this->analyticsService->getUniqueMinerCount($startDate, $endDate),
         ];
+    }
+
+    /**
+     * Every miner in the range, one row each, for the Miner Statistics export.
+     * The report's own miner data is a top list with a count beside it, which
+     * is no table.
+     */
+    private function getMinerExport(Carbon $startDate, Carbon $endDate): array
+    {
+        $count = $this->analyticsService->getUniqueMinerCount($startDate, $endDate);
+
+        return $this->analyticsService->getTopMiners($startDate, $endDate, max(1, $count))
+            ->map(fn ($miner) => [
+                'name' => $miner->name,
+                'quantity' => $miner->total_quantity,
+                'value' => $miner->total_value ?? 0,
+            ])
+            ->values()
+            ->toArray();
     }
 
     /**
@@ -364,7 +391,7 @@ class ReportGenerationService
      * @param string $exportType
      * @param Carbon $startDate
      * @param Carbon $endDate
-     * @param string $format csv|json
+     * @param string $format csv|json|pdf
      * @return array{id: int, url: string}
      */
     public function generateExport(string $exportType, Carbon $startDate, Carbon $endDate, string $format): array
@@ -373,12 +400,23 @@ class ReportGenerationService
         $rows = match ($exportType) {
             'mining_activity' => $this->getMiningActivityExport($startDate, $endDate),
             'tax_records'     => $this->getTaxRecordsExport($startDate, $endDate),
-            'miner_stats'     => $this->getMinerData($startDate, $endDate),
+            'miner_stats'     => $this->getMinerExport($startDate, $endDate),
             'system_stats'    => $this->getSystemData($startDate, $endDate),
             'ore_breakdown'   => $this->getOreTypeData($startDate, $endDate),
             'event_data'      => $this->getEventDataExport($startDate, $endDate),
             default           => throw new \InvalidArgumentException("Unknown export type: {$exportType}"),
         };
+
+        // A PDF table costs about a third of a megabyte a row to lay out, so a
+        // month of mining activity would need several times SeAT's 128 MB and
+        // end in a fatal error. Refused before anything is saved.
+        if ($format === 'pdf' && count($rows) > self::PDF_EXPORT_MAX_ROWS) {
+            throw new \RuntimeException(sprintf(
+                'a PDF holds up to %s rows and this export has %s. Choose CSV or JSON, or a shorter period.',
+                number_format(self::PDF_EXPORT_MAX_ROWS),
+                number_format(count($rows))
+            ));
+        }
 
         // Create a MiningReport record for tracking
         $report = MiningReport::create([

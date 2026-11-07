@@ -112,6 +112,15 @@
                         'has_user_ping' => false,
                         'has_show_amount' => false,
                     ],
+                    'event_review' => [
+                        'label' => 'Event Review',
+                        'icon' => 'fas fa-user-check text-warning',
+                        'desc' => 'For directors: an event waiting for approval, an event for past days held before it applies, and what was decided. Never by EVE mail',
+                        'scope' => 'general',
+                        'has_role_ping' => true,
+                        'has_user_ping' => false,
+                        'has_show_amount' => false,
+                    ],
                 ],
             ],
             'Moon Notifications' => [
@@ -649,7 +658,8 @@
                                         @if($wh->notify_event_created) <span class="badge badge-primary" title="Created"><i class="fas fa-calendar-plus"></i></span> @endif
                                         @if($wh->notify_event_started) <span class="badge badge-success" title="Started"><i class="fas fa-play"></i></span> @endif
                                         @if($wh->notify_event_completed) <span class="badge badge-secondary" title="Completed"><i class="fas fa-flag-checkered"></i></span> @endif
-                                        @if(!$wh->notify_event_created && !$wh->notify_event_started && !$wh->notify_event_completed)
+                                        @if($wh->notify_event_review ?? false) <span class="badge badge-warning" title="Review"><i class="fas fa-user-check"></i></span> @endif
+                                        @if(!$wh->notify_event_created && !$wh->notify_event_started && !$wh->notify_event_completed && !($wh->notify_event_review ?? false))
                                             <span class="text-muted">-</span>
                                         @endif
                                     </td>
@@ -725,6 +735,7 @@
                         'event_created' => ['label' => 'Event Created', 'icon' => 'fas fa-calendar-plus text-primary'],
                         'event_started' => ['label' => 'Event Started', 'icon' => 'fas fa-play text-success'],
                         'event_completed' => ['label' => 'Event Completed', 'icon' => 'fas fa-flag-checkered text-secondary'],
+                        'event_review' => ['label' => 'Event Review', 'icon' => 'fas fa-user-check text-warning'],
                         'moon_ready' => ['label' => 'Moon Chunk Ready', 'icon' => 'fas fa-moon text-warning'],
                         'jackpot_detected' => ['label' => 'Jackpot Detected', 'icon' => 'fas fa-star text-warning'],
                         'moon_chunk_unstable' => ['label' => 'Moon Chunk Unstable (capital safety)', 'icon' => 'fas fa-exclamation-triangle text-warning'],
@@ -813,238 +824,6 @@
                         <i class="fas fa-info-circle"></i>
                         Each Metenox crossing the threshold fires <strong>once</strong> per fill
                         cycle; the latch resets when cargo is pulled (fill drops below threshold).
-                    </small>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    {{-- ═══════════════════════════════════════════════════════════════ --}}
-    {{-- MOON EXTRACTION PLANNER — MINIMUM GAP                            --}}
-    {{-- ═══════════════════════════════════════════════════════════════ --}}
-    <div class="card bg-dark mb-3">
-        <div class="card-header" style="background: linear-gradient(135deg, #2d3748 0%, #4a5568 100%);">
-            <h5 class="card-title mb-0">
-                <i class="fas fa-calendar-check text-primary"></i>
-                Moon Planner — Minimum Arrival Gap
-            </h5>
-        </div>
-        <div class="card-body">
-            <small class="form-text text-muted mb-3 d-block">
-                Minimum gap (hours) between two chunk arrivals before the
-                <a href="{{ route('mining-manager.moon.planner') }}">Moon Extraction Planner</a>
-                warns about clustering. Default <strong>24h</strong>. Chunks not mined promptly can
-                be wasted, so smaller corps may prefer a wider gap (e.g. 36h) to give a small crew
-                time to clear each belt; larger groups can tighten it (e.g. 12h). Clamped to
-                <code>1-168</code> hours.
-            </small>
-            <div class="form-group row align-items-center mb-0">
-                <label for="min_extraction_gap_hours" class="col-md-4 col-form-label">
-                    Minimum gap between arrivals
-                </label>
-                <div class="col-md-3">
-                    <div class="input-group">
-                        <input type="number"
-                               class="form-control"
-                               id="min_extraction_gap_hours"
-                               name="min_extraction_gap_hours"
-                               min="1" max="168" step="1"
-                               value="{{ old('min_extraction_gap_hours', $notificationSettings['min_extraction_gap_hours'] ?? 24) }}">
-                        <div class="input-group-append">
-                            <span class="input-group-text">hours</span>
-                        </div>
-                    </div>
-                    @error('min_extraction_gap_hours')
-                        <small class="invalid-feedback d-block">{{ $message }}</small>
-                    @enderror
-                </div>
-                <div class="col-md-5">
-                    <small class="text-muted">
-                        <i class="fas fa-info-circle"></i>
-                        Placing or moving a pull within this window of another arrival prompts a
-                        confirmation. Auto-fill also uses it to spread projected pulls.
-                    </small>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    {{-- Moon Planner: time between pulls on one refinery. Kept in hours, shown in days. --}}
-    @php
-        $spacingHours = (int) ($notificationSettings['min_refinery_spacing_hours'] ?? \MiningManager\Services\Moon\MoonPlannerService::DEFAULT_REFINERY_SPACING_HOURS);
-        $spacingDays = rtrim(rtrim(number_format($spacingHours / 24, 2, '.', ''), '0'), '.');
-    @endphp
-    <div class="card bg-dark mb-3">
-        <div class="card-header" style="background: linear-gradient(135deg, #2d3748 0%, #4a5568 100%);">
-            <h5 class="card-title mb-0">
-                <i class="fas fa-ruler-horizontal text-primary"></i>
-                Moon Planner: Time Between Pulls on One Refinery
-            </h5>
-        </div>
-        <div class="card-body">
-            <small class="form-text text-muted mb-3 d-block">
-                How close two pulls on the same refinery can be, arrival to arrival, before the
-                <a href="{{ route('mining-manager.moon.planner') }}">Moon Extraction Planner</a> warns. An
-                extraction takes at least 6 days, and the next one can only be started once the chunk is in, so
-                the default of <strong>7 days</strong> leaves a day to start it. Anything closer is flagged when you
-                plan or move a pull, in the blueprint preview and on the planner, and Auto-fill leaves it out. It is
-                a warning, not a block. Between <code>6</code> and <code>56</code> days.
-            </small>
-            <div class="form-group row align-items-center mb-0">
-                <label for="min_refinery_spacing_days" class="col-md-4 col-form-label">
-                    Minimum time between pulls on one refinery
-                </label>
-                <div class="col-md-3">
-                    <div class="input-group">
-                        <input type="number"
-                               class="form-control"
-                               id="min_refinery_spacing_days"
-                               name="min_refinery_spacing_days"
-                               min="6" max="56" step="any"
-                               value="{{ old('min_refinery_spacing_days', $spacingDays) }}">
-                        <div class="input-group-append">
-                            <span class="input-group-text">days</span>
-                        </div>
-                    </div>
-                    @error('min_refinery_spacing_days')
-                        <small class="invalid-feedback d-block">{{ $message }}</small>
-                    @enderror
-                </div>
-                <div class="col-md-5">
-                    <small class="text-muted">
-                        <i class="fas fa-info-circle"></i>
-                        Counted in hours: at 7 days, a pull on the 1st at 17:00 leaves the 8th at 17:00 clear, and
-                        the 7th at 17:00 gets the warning.
-                    </small>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    {{-- ═══════════════════════════════════════════════════════════════ --}}
-    {{-- MOON PLANNER — REMINDERS                                          --}}
-    {{-- ═══════════════════════════════════════════════════════════════ --}}
-    <div class="card bg-dark mb-3">
-        <div class="card-header" style="background: linear-gradient(135deg, #2d3748 0%, #4a5568 100%);">
-            <h5 class="card-title mb-0">
-                <i class="fas fa-hourglass-half text-warning"></i>
-                Moon Planner Reminders
-            </h5>
-        </div>
-        <div class="card-body">
-            <div class="small text-muted mb-3">
-                Both reminders skip a refinery that cannot pull a chunk:
-                <ul class="mb-1 pl-3">
-                    <li>no moon drill fitted, or the drill has been unfitted</li>
-                    <li>unanchored, destroyed or handed over, so it is gone from your corporation's structures</li>
-                    <li>reported destroyed by the game, even before SeAT's structure list catches up</li>
-                    <li>unanchoring with no extraction running. While one is still running, it is treated as usual.</li>
-                </ul>
-                The full rules are in Help &amp; Documentation, under Moon Planner.
-            </div>
-            <small class="form-text text-muted mb-3 d-block">
-                <strong>Moon Not Rescheduled</strong> goes out when a refinery's chunk arrived this long ago and no
-                new extraction has been started on it since. It stops when an extraction starts, and waits while the
-                drill is offline, or while the next planned pull is more than 56 days ahead and cannot be set up yet.
-                Bind it to a webhook under Webhooks to receive it.
-            </small>
-            <div class="form-group row align-items-center">
-                <label for="moon_not_rescheduled_hours" class="col-md-4 col-form-label">
-                    Remind after the drill has been idle for
-                </label>
-                <div class="col-md-3">
-                    <div class="input-group">
-                        <input type="number"
-                               class="form-control"
-                               id="moon_not_rescheduled_hours"
-                               name="moon_not_rescheduled_hours"
-                               min="1" max="336" step="1"
-                               value="{{ old('moon_not_rescheduled_hours', $notificationSettings['moon_not_rescheduled_hours'] ?? 48) }}">
-                        <div class="input-group-append">
-                            <span class="input-group-text">hours</span>
-                        </div>
-                    </div>
-                    @error('moon_not_rescheduled_hours')
-                        <small class="invalid-feedback d-block">{{ $message }}</small>
-                    @enderror
-                </div>
-                <div class="col-md-5">
-                    <small class="text-muted">
-                        <i class="fas fa-info-circle"></i>
-                        Counted from the chunk's arrival, or from when the next planned pull can be started if it was
-                        more than 56 days ahead. Default 48 hours.
-                    </small>
-                </div>
-            </div>
-            <div class="form-group row align-items-center mb-0">
-                <div class="col-md-4 col-form-label">Repeat</div>
-                <div class="col-md-8">
-                    <div class="custom-control custom-switch">
-                        <input type="checkbox" class="custom-control-input"
-                               id="moon_not_rescheduled_repeat" name="moon_not_rescheduled_repeat" value="1"
-                               {{ old('moon_not_rescheduled_repeat', $notificationSettings['moon_not_rescheduled_repeat'] ?? true) ? 'checked' : '' }}>
-                        <label class="custom-control-label" for="moon_not_rescheduled_repeat">
-                            Remind again every that many hours until an extraction starts
-                        </label>
-                    </div>
-                </div>
-            </div>
-
-            <hr class="my-3">
-
-            <small class="form-text text-muted mb-3 d-block">
-                <strong>Moons Need Planning</strong> is one message listing every refinery with fewer pulls planned
-                ahead than the number below, counted the same way as the planner's "Not planned" badge, fewest planned
-                and richest moons first. A long list is cut short with a count of the rest, and always ends with the
-                total. It is only sent while something falls short. A refinery whose drill is offline stays on the
-                list, marked as such.
-            </small>
-            <div class="form-group row align-items-center">
-                <label for="planned_ahead_target" class="col-md-4 col-form-label">
-                    Pulls each refinery should have planned
-                </label>
-                <div class="col-md-3">
-                    <input type="number"
-                           class="form-control"
-                           id="planned_ahead_target"
-                           name="planned_ahead_target"
-                           min="1" max="10" step="1"
-                           value="{{ old('planned_ahead_target', $notificationSettings['planned_ahead_target'] ?? 1) }}">
-                    @error('planned_ahead_target')
-                        <small class="invalid-feedback d-block">{{ $message }}</small>
-                    @enderror
-                </div>
-                <div class="col-md-5">
-                    <small class="text-muted">
-                        <i class="fas fa-info-circle"></i>
-                        Default 1: every refinery has its next pull planned.
-                    </small>
-                </div>
-            </div>
-            <div class="form-group row align-items-center mb-0">
-                <label for="schedule_needs_filling_hours" class="col-md-4 col-form-label">
-                    Send the list at most every
-                </label>
-                <div class="col-md-3">
-                    <div class="input-group">
-                        <input type="number"
-                               class="form-control"
-                               id="schedule_needs_filling_hours"
-                               name="schedule_needs_filling_hours"
-                               min="1" max="336" step="1"
-                               value="{{ old('schedule_needs_filling_hours', $notificationSettings['schedule_needs_filling_hours'] ?? 24) }}">
-                        <div class="input-group-append">
-                            <span class="input-group-text">hours</span>
-                        </div>
-                    </div>
-                    @error('schedule_needs_filling_hours')
-                        <small class="invalid-feedback d-block">{{ $message }}</small>
-                    @enderror
-                </div>
-                <div class="col-md-5">
-                    <small class="text-muted">
-                        <i class="fas fa-info-circle"></i>
-                        Default 24 hours. Checked with every extraction import.
                     </small>
                 </div>
             </div>

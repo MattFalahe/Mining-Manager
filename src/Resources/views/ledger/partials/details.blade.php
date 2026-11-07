@@ -77,32 +77,32 @@
             <div class="row">
                 <div class="col-md-12">
                     <dl class="row">
-                        <dt class="col-sm-2">{{ trans('mining-manager::tax.month') }}:</dt>
+                        <dt class="col-sm-2">{{ trans('mining-manager::taxes.month') }}:</dt>
                         <dd class="col-sm-10">{{ \Carbon\Carbon::parse($taxRecord->month)->format('F Y') }}</dd>
 
-                        <dt class="col-sm-2">{{ trans('mining-manager::tax.amount') }}:</dt>
+                        <dt class="col-sm-2">{{ trans('mining-manager::taxes.amount') }}:</dt>
                         <dd class="col-sm-10">{{ number_format($taxRecord->amount, 2) }} ISK</dd>
 
-                        <dt class="col-sm-2">{{ trans('mining-manager::tax.status') }}:</dt>
+                        <dt class="col-sm-2">{{ trans('mining-manager::taxes.status') }}:</dt>
                         <dd class="col-sm-10">
                             @if($taxRecord->status === 'paid')
-                                <span class="badge badge-success">{{ trans('mining-manager::tax.paid') }}</span>
+                                <span class="badge badge-success">{{ trans('mining-manager::taxes.paid') }}</span>
                             @elseif($taxRecord->status === 'pending')
-                                <span class="badge badge-warning">{{ trans('mining-manager::tax.pending') }}</span>
+                                <span class="badge badge-warning">{{ trans('mining-manager::taxes.pending') }}</span>
                             @elseif($taxRecord->status === 'overdue')
-                                <span class="badge badge-danger">{{ trans('mining-manager::tax.overdue') }}</span>
+                                <span class="badge badge-danger">{{ trans('mining-manager::taxes.overdue') }}</span>
                             @else
                                 <span class="badge badge-secondary">{{ $taxRecord->status }}</span>
                             @endif
                         </dd>
 
                         @if($taxRecord->paid_at)
-                            <dt class="col-sm-2">{{ trans('mining-manager::tax.paid_at') }}:</dt>
+                            <dt class="col-sm-2">{{ trans('mining-manager::taxes.paid_on') }}:</dt>
                             <dd class="col-sm-10">{{ \Carbon\Carbon::parse($taxRecord->paid_at)->format('Y-m-d H:i:s') }}</dd>
                         @endif
 
                         @if($taxRecord->due_date)
-                            <dt class="col-sm-2">{{ trans('mining-manager::tax.due_date') }}:</dt>
+                            <dt class="col-sm-2">{{ trans('mining-manager::taxes.due_date') }}:</dt>
                             <dd class="col-sm-10">{{ \Carbon\Carbon::parse($taxRecord->due_date)->format('Y-m-d') }}</dd>
                         @endif
                     </dl>

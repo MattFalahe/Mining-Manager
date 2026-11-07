@@ -4,7 +4,7 @@
 @section('page_header', trans('mining-manager::dashboard.member_dashboard'))
 
 @push('head')
-<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=8">
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=10">
 <style>
 /* ULTRA-AGGRESSIVE CSS OVERRIDES - INLINE TO BEAT EVERYTHING */
 .mining-dashboard .tab-content {
@@ -51,14 +51,22 @@
 <div class="mining-dashboard member-dashboard">
     @include('mining-manager::dashboard.partials._tax_banner')
     
-    {{-- CURRENT MONTH STATISTICS --}}
+    {{-- CURRENT TAX PERIOD AND CURRENT MONTH STATISTICS: an account billed twice a month has each half billed on its own, so the half we are in comes first. A monthly account only sees the month. --}}
+    @php
+        $statSections = [];
+        if (!empty($currentPeriodStats)) {
+            $statSections[] = ['title' => trans('mining-manager::dashboard.current_period_stats') . ' - ' . $currentPeriodLabel, 'icon' => 'fa-hourglass-half', 'stats' => $currentPeriodStats];
+        }
+        $statSections[] = ['title' => trans('mining-manager::dashboard.current_month_stats') . ' - ' . now()->format('F Y'), 'icon' => 'fa-calendar-alt', 'stats' => $currentMonthStats];
+    @endphp
+    @foreach($statSections as $section)
     <div class="row">
         <div class="col-12">
             <div class="card card-dark">
                 <div class="card-header">
                     <h3 class="card-title">
-                        <i class="fas fa-calendar-alt"></i>
-                        {{ trans('mining-manager::dashboard.current_month_stats') }} - {{ now()->format('F Y') }}
+                        <i class="fas {{ $section['icon'] }}"></i>
+                        {{ $section['title'] }}
                     </h3>
                     <div class="card-tools">
                         <span class="badge badge-success">
@@ -76,7 +84,7 @@
                                 </span>
                                 <div class="info-box-content">
                                     <span class="info-box-text">{{ trans('mining-manager::dashboard.total_mined_quantity') }}</span>
-                                    <span class="info-box-number">{{ number_format($currentMonthStats['total_quantity'], 0) }}</span>
+                                    <span class="info-box-number">{{ number_format($section['stats']['total_quantity'], 0) }}</span>
                                     <small>{{ trans('mining-manager::dashboard.units') }}</small>
                                 </div>
                             </div>
@@ -90,7 +98,7 @@
                                 </span>
                                 <div class="info-box-content">
                                     <span class="info-box-text">{{ trans('mining-manager::dashboard.total_mined_volume') }}</span>
-                                    <span class="info-box-number">{{ number_format($currentMonthStats['total_volume'], 2) }}</span>
+                                    <span class="info-box-number">{{ number_format($section['stats']['total_volume'], 2) }}</span>
                                     <small>m³</small>
                                 </div>
                             </div>
@@ -104,7 +112,7 @@
                                 </span>
                                 <div class="info-box-content">
                                     <span class="info-box-text">{{ trans('mining-manager::dashboard.total_mined_isk') }}</span>
-                                    <span class="info-box-number">{{ number_format($currentMonthStats['total_isk'], 0) }}</span>
+                                    <span class="info-box-number">{{ number_format($section['stats']['total_isk'], 0) }}</span>
                                     <small>ISK</small>
                                 </div>
                             </div>
@@ -117,8 +125,8 @@
                                     <i class="fas fa-receipt"></i>
                                 </span>
                                 <div class="info-box-content">
-                                    <span class="info-box-text">{{ trans('mining-manager::dashboard.tax_isk') }}</span>
-                                    <span class="info-box-number">{{ number_format($currentMonthStats['tax_isk'], 0) }}</span>
+                                    <span class="info-box-text">{{ trans('mining-manager::dashboard.estimated_tax') }}</span>
+                                    <span class="info-box-number">{{ number_format($section['stats']['tax_isk'], 0) }}</span>
                                     <small>ISK</small>
                                 </div>
                             </div>
@@ -128,6 +136,7 @@
             </div>
         </div>
     </div>
+    @endforeach
 
     {{-- LAST 12 MONTHS STATISTICS --}}
     <div class="row">
@@ -366,7 +375,7 @@
         // H1 and H2 event discounts for each month — which is correct, but
         // worth flagging so miners don't wonder why a month has more than one
         // period's worth of savings.
-        $__chartPeriodType = app(\MiningManager\Services\Tax\TaxPeriodHelper::class)->getConfiguredPeriodType();
+        $__chartPeriodType = app(\MiningManager\Services\Tax\TaxPeriodHelper::class)->periodTypeForViewer();
     @endphp
     <div class="row">
         {{-- Mining Income Chart --}}

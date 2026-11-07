@@ -2,11 +2,11 @@
 
 namespace MiningManager\Services\Tax;
 
+use MiningManager\Integrations\ManagerCoreEvents;
 use MiningManager\Models\MiningLedger;
 use MiningManager\Models\MiningLedgerDailySummary;
 use MiningManager\Models\MiningTax;
 use MiningManager\Models\MiningPriceCache;
-use MiningManager\Models\MiningEvent;
 use MiningManager\Services\Configuration\SettingsManagerService;
 use MiningManager\Services\Ledger\LedgerSummaryService;
 use MiningManager\Services\TypeIdRegistry;
@@ -120,9 +120,11 @@ class TaxCalculationService
      * @param string $periodType 'monthly', 'biweekly', or 'weekly'
      * @param bool $recalculate
      * @param string|null $triggeredBy
+     * @param int|null $onlyAccountOf Work out just this character's account (its main and alts),
+     *                                exactly as the run over everyone would bill it
      * @return array
      */
-    public function calculateTaxes(Carbon $startDate, Carbon $endDate, string $periodType = 'monthly', bool $recalculate = false, ?string $triggeredBy = null): array
+    public function calculateTaxes(Carbon $startDate, Carbon $endDate, string $periodType = 'monthly', bool $recalculate = false, ?string $triggeredBy = null, ?int $onlyAccountOf = null): array
     {
         // Check if any corporation is configured for tax calculation
         if ($this->settingsService->getActiveCorporation() === null) {
@@ -136,7 +138,7 @@ class TaxCalculationService
                     'count' => 0,
                     'total' => 0,
                     'errors' => [],
-                    'message' => 'No corporation configured. Set moon_owner_corporation_id in General settings to enable tax calculation.',
+                    'message' => 'No corporation configured. Choose the Moon Owner Corporation under Settings, Setup to enable tax calculation.',
                 ];
             }
 
@@ -150,7 +152,7 @@ class TaxCalculationService
         $periodLabel = $periodHelper->formatPeriod($startDate, $endDate, $periodType);
         Log::info("Mining Manager: Starting {$periodType} tax calculation for {$periodLabel}" . ($triggeredBy ? " (triggered by: {$triggeredBy})" : ''));
 
-        return $this->calculateAccumulatedTaxes($startDate, $endDate, $periodType, $recalculate, $triggeredBy);
+        return $this->calculateAccumulatedTaxes($startDate, $endDate, $periodType, $recalculate, $triggeredBy, $onlyAccountOf);
     }
 
     /**
@@ -178,9 +180,10 @@ class TaxCalculationService
      * @param string $periodType
      * @param bool $recalculate
      * @param string|null $triggeredBy
+     * @param int|null $onlyAccountOf
      * @return array
      */
-    private function calculateAccumulatedTaxes(Carbon $startDate, Carbon $endDate, string $periodType = 'monthly', bool $recalculate = false, ?string $triggeredBy = null): array
+    private function calculateAccumulatedTaxes(Carbon $startDate, Carbon $endDate, string $periodType = 'monthly', bool $recalculate = false, ?string $triggeredBy = null, ?int $onlyAccountOf = null): array
     {
         // Get all characters who should be taxed this period:
         // 1. Characters with entries from Moon Owner Corp's observer (moon mining)
@@ -213,6 +216,26 @@ class TaxCalculationService
         $characters = $query->distinct('character_id')
             ->pluck('character_id');
 
+        // From the day mining is taxed by profiles, a member can owe tax on
+        // mining the selection above does not look at, such as another
+        // corporation's refinery under a profile that taxes all moon ore.
+        // The daily summaries say who owes tax on those days.
+        $profilesFrom = $this->settingsService->profilesTaxFrom();
+        if ($profilesFrom !== null && $profilesFrom->lte($endDate)) {
+            $characters = $characters->merge(
+                MiningLedgerDailySummary::whereBetween('date', [$startDate->copy()->max($profilesFrom)->toDateString(), $endDate->toDateString()])
+                    ->where('total_tax', '>', 0)
+                    ->distinct()
+                    ->pluck('character_id')
+            )->map(fn ($id) => (int) $id)->unique()->values();
+        }
+
+        // One account only: its characters still have to pass the selection
+        // above, so its bill comes out exactly as the run over everyone makes it.
+        if ($onlyAccountOf !== null) {
+            $characters = $characters->intersect($this->accountCharacterIds($onlyAccountOf))->values();
+        }
+
         // Group characters by main character (user)
         $groupedByMain = $this->groupCharactersByMain($characters);
 
@@ -227,9 +250,25 @@ class TaxCalculationService
         $totalTaxAmount = 0;
         $errors = [];
 
+        $profiles = $this->settingsService->usesTaxProfiles();
+
         foreach ($groupedByMain as $mainCharacterId => $characterIds) {
+            // Each account is billed on its own profile's period. A run for
+            // another period leaves it alone, so a monthly run can never fold
+            // a fortnightly account's first half into a month.
+            $accountProfile = $profiles ? $periodHelper->accountProfile((int) $mainCharacterId, $startDate) : null;
+            if ($profiles && $periodHelper->periodTypeFor($accountProfile) !== $periodType) {
+                continue;
+            }
+
+            // The profile the bill is made by, recorded on it. Nothing before
+            // tax profiles, or before the column for it exists.
+            $billedBy = $profiles && MiningTax::recordsTaxProfile()
+                ? ($accountProfile === null ? MiningTax::GLOBAL_PROFILE : (string) $accountProfile)
+                : null;
+
             try {
-                DB::transaction(function () use ($mainCharacterId, $characterIds, $startDate, $endDate, $calendarMonth, $periodType, $dueDate, $recalculate, $triggeredBy, &$calculated, &$totalTaxAmount) {
+                DB::transaction(function () use ($mainCharacterId, $characterIds, $startDate, $endDate, $calendarMonth, $periodType, $dueDate, $recalculate, $triggeredBy, $billedBy, &$calculated, &$totalTaxAmount) {
                     // Check if tax already exists for this character + period
                     // Use withTrashed() because soft-deleted records still hold the unique constraint
                     $existingTax = MiningTax::withTrashed()
@@ -259,7 +298,7 @@ class TaxCalculationService
                     $taxBreakdown = [];
 
                     foreach ($characterIds as $characterId) {
-                        $characterTax = $this->calculateCharacterTax($characterId, $startDate, $endDate, true);
+                        $characterTax = $this->calculateCharacterTax($characterId, $startDate, $endDate);
                         $combinedTaxAmount += $characterTax;
 
                         if ($characterTax > 0) {
@@ -315,8 +354,8 @@ class TaxCalculationService
                     }
 
                     if ($existingTax) {
-                        // Same rule as recalculateTax: once a payment code has
-                        // gone out or money has arrived, the invoice stands.
+                        // Once a payment code has gone out or money has
+                        // arrived, the invoice stands.
                         $frozenReason = $this->invoiceFreezeReason($existingTax);
 
                         if ($frozenReason !== null) {
@@ -331,7 +370,9 @@ class TaxCalculationService
                             return;
                         }
 
-                        // Update existing
+                        // Update existing. A bill from before tax profiles keeps
+                        // no profile, worked out again or not, and a recorded
+                        // profile is only ever replaced, never cleared.
                         $existingTax->update([
                             'amount_owed' => round($combinedTaxAmount, 2),
                             'calculated_at' => Carbon::now(),
@@ -341,7 +382,7 @@ class TaxCalculationService
                             'period_start' => $startDate->format('Y-m-d'),
                             'period_end' => $endDate->format('Y-m-d'),
                             'due_date' => $dueDate->format('Y-m-d'),
-                        ]);
+                        ] + ($existingTax->tax_profile !== null && $billedBy !== null ? ['tax_profile' => $billedBy] : []));
                         Log::info("Mining Manager: Recalculated accumulated tax for main character {$mainCharacterId}: " . number_format($combinedTaxAmount, 2) . " ISK (from " . count($characterIds) . " characters)");
                     } else {
                         // Create new tax record
@@ -358,7 +399,7 @@ class TaxCalculationService
                             'due_date' => $dueDate->format('Y-m-d'),
                             'notes' => $notes,
                             'triggered_by' => $triggeredBy,
-                        ]);
+                        ] + ($billedBy !== null ? ['tax_profile' => $billedBy] : []));
                         Log::info("Mining Manager: Calculated accumulated tax for main character {$mainCharacterId}: " . number_format($combinedTaxAmount, 2) . " ISK (from " . count($characterIds) . " characters)");
 
                         // Mint the payment code now, before anything can change
@@ -399,19 +440,28 @@ class TaxCalculationService
 
                         // B1a: announce on the cross-plugin event bus so other
                         // plugins (Discord Pings, HR Manager, etc.) can react.
-                        // Topics handles publisher attribution, idempotency-key
-                        // composition, and Discord sanitization. Standalone-safe:
-                        // when MC is not installed, the class_exists guard makes
-                        // this a complete no-op.
+                        // Topics handles publisher attribution and Discord
+                        // sanitization. Standalone-safe: when MC is not installed,
+                        // the class_exists guard makes this a complete no-op.
                         if (class_exists(\ManagerCore\Topics::class)) {
                             \ManagerCore\Topics::publish('mining.tax_created', [
+                                // One per bill. Manager Core's own key is the period and
+                                // the character, which two bills of a twice-monthly or
+                                // weekly month share, so the second could be taken for
+                                // a repeat of the first.
+                                'idempotency_key' => "tax_created:{$newTax->id}",
                                 'tax_id'         => $newTax->id,
                                 'character_id'   => $mainCharacterId,
-                                'period'         => $calendarMonth,            // template uses {period}
+                                'period'         => $calendarMonth,            // calendar month the period starts in
                                 'period_type'    => $periodType,
                                 'period_start'   => $startDate->format('Y-m-d'),
                                 'period_end'     => $endDate->format('Y-m-d'),
                                 'amount_owed'    => round($combinedTaxAmount, 2),
+                                // Held credit can settle some or all of a bill as it is
+                                // raised, so what is left to pay is not always the bill.
+                                'amount_paid'    => round((float) $newTax->amount_paid, 2),
+                                'outstanding'    => $newTax->getRemainingBalance(),
+                                'status'         => $newTax->status,
                                 'due_date'       => $dueDate->format('Y-m-d'),
                                 'corporation_id' => null, // visibility scoping (subscriber may filter)
                                 'role_id'        => null,
@@ -519,54 +569,40 @@ class TaxCalculationService
     }
 
     /**
-     * Calculate tax for a single character using daily summaries as source of truth.
+     * One character's share of a period's tax, from the daily summaries.
+     *
+     * A bill covers an account, so the exemption threshold and the minimum
+     * are not applied here: calculateAccumulatedTaxes() applies both to the
+     * account's combined total.
      *
      * @param int $characterId
      * @param Carbon $startDate
      * @param Carbon $endDate
-     * @param bool $accumulating When true, this character is one part of an account's bill: the
-     *                           exemption threshold and the minimum are left to calculateTaxes(),
-     *                           which applies both to the combined total
      * @return float
      */
-    private function calculateCharacterTax(int $characterId, Carbon $startDate, Carbon $endDate, bool $accumulating = false): float
+    private function calculateCharacterTax(int $characterId, Carbon $startDate, Carbon $endDate): float
     {
         // Read from daily summaries — the single source of truth for tax
         $totalTax = (float) MiningLedgerDailySummary::where('character_id', $characterId)
             ->whereBetween('date', [$startDate, $endDate])
             ->sum('total_tax');
 
-        if ($totalTax <= 0) {
-            return 0;
-        }
+        return $totalTax > 0 ? round($totalTax, 2) : 0;
+    }
 
-        if ($accumulating) {
-            return round($totalTax, 2);
-        }
+    /**
+     * Every character on the account a character belongs to: its SeAT user's
+     * characters, or the character alone when it has no user.
+     *
+     * @return \Illuminate\Support\Collection
+     */
+    private function accountCharacterIds(int $characterId)
+    {
+        $userId = DB::table('refresh_tokens')->where('character_id', $characterId)->value('user_id');
 
-        // Check exemption threshold FIRST (before minimum tax)
-        $exemptions = $this->settingsService->getExemptions();
-        if ($exemptions['enabled'] && $totalTax < $exemptions['threshold']) {
-            Log::debug("Mining Manager: Character {$characterId} exempt from tax (tax below threshold: {$totalTax} < {$exemptions['threshold']})");
-            return 0;
-        }
-
-        $paymentSettings = $this->settingsService->getPaymentSettings();
-        $minimumAmount = (float) ($paymentSettings['minimum_tax_amount'] ?? config('mining-manager.tax_payment.minimum_tax_amount', 1000000));
-        $minimumBehavior = $this->settingsService->getSetting('payment.minimum_tax_behavior', 'exempt');
-
-        if ($minimumAmount > 0 && $totalTax > 0 && $totalTax < $minimumAmount) {
-            if ($minimumBehavior === 'enforce') {
-                Log::debug("Mining Manager: Raising tax for character {$characterId} to minimum ({$totalTax} -> {$minimumAmount})");
-                $totalTax = $minimumAmount;
-            } else {
-                // 'exempt' — no tax below minimum
-                Log::debug("Mining Manager: Character {$characterId} tax below minimum ({$totalTax} < {$minimumAmount}), exempting");
-                $totalTax = 0;
-            }
-        }
-
-        return round($totalTax, 2);
+        return $userId
+            ? DB::table('refresh_tokens')->where('user_id', $userId)->pluck('character_id')
+            : collect([$characterId]);
     }
 
     /**
@@ -581,15 +617,9 @@ class TaxCalculationService
      */
     public function accountTaxBeforeThresholds(int $characterId, Carbon $startDate, Carbon $endDate): array
     {
-        $userId = DB::table('refresh_tokens')->where('character_id', $characterId)->value('user_id');
-
-        $accountCharacterIds = $userId
-            ? DB::table('refresh_tokens')->where('user_id', $userId)->pluck('character_id')
-            : collect([$characterId]);
-
         $group = [$characterId];
 
-        foreach ($this->groupCharactersByMain($accountCharacterIds) as $members) {
+        foreach ($this->groupCharactersByMain($this->accountCharacterIds($characterId)) as $members) {
             if (in_array($characterId, $members)) {
                 $group = $members;
                 break;
@@ -599,99 +629,14 @@ class TaxCalculationService
         $accountTax = 0.0;
 
         foreach ($group as $memberId) {
-            $accountTax += $this->calculateCharacterTax((int) $memberId, $startDate, $endDate, true);
+            $accountTax += $this->calculateCharacterTax((int) $memberId, $startDate, $endDate);
         }
 
         return [
-            'character_tax' => $this->calculateCharacterTax($characterId, $startDate, $endDate, true),
+            'character_tax' => $this->calculateCharacterTax($characterId, $startDate, $endDate),
             'account_tax' => round($accountTax, 2),
             'account_characters' => count($group),
         ];
-    }
-
-    /**
-     * Get the event tax modifier for a specific mining entry.
-     * Checks if the character is participating in any active events during this mining entry.
-     *
-     * When multiple events overlap (same date, same location), the MOST BENEFICIAL
-     * modifier for the miner is used (lowest value = most tax discount).
-     *
-     * Events can be:
-     * - Global (corporation_id = null): Applies to all corporations
-     * - Corp-specific (corporation_id set): Only applies to that corporation's miners
-     *
-     * @param int $characterId
-     * @param object $entry Mining ledger entry
-     * @param int|null $characterCorpId The character's corporation ID for filtering corp-specific events
-     * @return int Tax modifier (-100 to +100)
-     */
-    private function getEventTaxModifier(int $characterId, $entry, ?int $characterCorpId = null): int
-    {
-        // Find active events during this mining entry's date
-        // Order by tax_modifier ASC (best for miner first) and id ASC (tie-breaker)
-        $events = MiningEvent::where('status', 'active')
-            ->where('start_time', '<=', $entry->date)
-            ->where(function ($query) use ($entry) {
-                $query->whereNull('end_time')
-                      ->orWhere('end_time', '>=', $entry->date);
-            })
-            ->whereHas('participants', function ($query) use ($characterId) {
-                $query->where('character_id', $characterId);
-            })
-            // Filter by corporation: global events (null) OR character's corporation
-            ->where(function ($query) use ($characterCorpId) {
-                $query->whereNull('corporation_id')  // Global events
-                      ->orWhere('corporation_id', $characterCorpId);  // Corp-specific events
-            })
-            ->orderBy('tax_modifier', 'asc')  // Best benefit first (lowest = most discount)
-            ->orderBy('id', 'asc')            // Tie-breaker: earliest created
-            ->get();
-
-        if ($events->isEmpty()) {
-            return 0;
-        }
-
-        // Find the best (most beneficial) modifier among applicable events
-        // Lower modifier = more tax discount for miner (-100 = tax-free, 0 = normal, +100 = double)
-        $bestModifier = 0;
-        $appliedEvent = null;
-
-        foreach ($events as $event) {
-            // Check if the mining entry's system falls within the event's location scope.
-            // Resolves constellation/region scopes to system ID lists via mapDenormalize.
-            if (!$event->matchesSystem($entry->solar_system_id)) {
-                continue;
-            }
-
-            // Check if the event's type applies to this ore category.
-            // "special" events apply to everything; mining_op → ore,
-            // moon_extraction → moon_*, ice_mining → ice, gas_huffing → gas.
-            // $entry->ore_category is set by ProcessMiningLedgerCommand
-            // (corp observer path) and ImportCharacterMiningCommand
-            // (personal character mining path) at ingestion time.
-            $oreCategory = $entry->ore_category ?? null;
-            if ($oreCategory && !$event->appliesToOreCategory($oreCategory)) {
-                continue;
-            }
-
-            // Take the most beneficial modifier (lowest value = most tax discount)
-            if ($appliedEvent === null || $event->tax_modifier < $bestModifier) {
-                $bestModifier = $event->tax_modifier;
-                $appliedEvent = $event;
-            }
-        }
-
-        if ($appliedEvent) {
-            Log::debug("Mining Manager: Applying event '{$appliedEvent->name}' tax modifier ({$bestModifier}%) for character {$characterId}", [
-                'event_id' => $appliedEvent->id,
-                'character_id' => $characterId,
-                'mining_date' => $entry->date,
-                'solar_system_id' => $entry->solar_system_id ?? null,
-            ]);
-            return $bestModifier;
-        }
-
-        return 0;
     }
 
     /**
@@ -756,8 +701,8 @@ class TaxCalculationService
     }
 
     /**
-     * Get tax rate for specific ore type.
-     * Now supports per-corporation tax rates (guest miner multiplier).
+     * Get tax rate for specific ore type, at non-members' rates for a
+     * character outside the configured corporations.
      *
      * @param int $typeId
      * @param int|null $characterCorpId Corporation ID of the character being taxed
@@ -1057,9 +1002,9 @@ class TaxCalculationService
      *    visible in ESI for up to 24h. Flipping status before the buffer
      *    elapses would cause false "overdue" notifications to legitimate
      *    payers.
-     *  - `grace_period_days` (default 7) is a DIFFERENT concern used by
-     *    TheftDetectionService — it controls when an unpaid/overdue tax
-     *    escalates to a theft incident. Applying it here made the UI
+     *  - `grace_period_days` (default 7) is a DIFFERENT concern: it
+     *    lengthens how long payment codes stay valid, and dates bills saved
+     *    before due dates were stored. Applying it here made the UI
      *    show "UNPAID" for a week past the due date, contradicting the
      *    red "N days ago" display next to the due date on the same page.
      *  - Historical behaviour subtracted BOTH buffers, so a tax due
@@ -1077,7 +1022,7 @@ class TaxCalculationService
         // must not make a bill late before its due date is over.
         $overdueThreshold = Carbon::now()->subHours($esiGraceHours)->min(Carbon::today());
 
-        $updated = MiningTax::where('status', 'unpaid')
+        $turningOverdue = MiningTax::where('status', 'unpaid')
             ->where(function ($q) use ($overdueThreshold) {
                 // Prefer due_date. Fall back to period_end or month for
                 // historical records that don't have it populated.
@@ -1093,8 +1038,17 @@ class TaxCalculationService
                           ->whereNull('period_end')
                           ->where('month', '<', $overdueThreshold->copy()->startOfMonth());
                 });
-            })
-            ->update(['status' => 'overdue']);
+            });
+
+        // Read before the update, which saves no model, so each bill turning
+        // overdue can be announced to Manager Core once, as it turns.
+        $bills = (clone $turningOverdue)->get();
+        $updated = $turningOverdue->update(['status' => 'overdue']);
+
+        foreach ($bills as $bill) {
+            $bill->status = 'overdue';
+            ManagerCoreEvents::taxOverdue($bill);
+        }
 
         if ($updated > 0) {
             Log::info("Mining Manager: Marked {$updated} taxes as overdue (ESI lag buffer: {$esiGraceHours}h)");
@@ -1139,52 +1093,6 @@ class TaxCalculationService
         return $hasCode ? 'tax code issued' : null;
     }
 
-    public function recalculateTax(int $characterId, Carbon $month): float
-    {
-        $startDate = $month->copy()->startOfMonth();
-        $endDate = $month->copy()->endOfMonth();
-
-        $taxAmount = $this->calculateCharacterTax($characterId, $startDate, $endDate);
-
-        // Try period_start first, fall back to month for pre-migration records
-        $tax = MiningTax::where('character_id', $characterId)
-            ->where('period_start', $startDate->format('Y-m-d'))
-            ->first();
-
-        if (!$tax) {
-            $tax = MiningTax::where('character_id', $characterId)
-                ->where('month', $startDate->format('Y-m-01'))
-                ->first();
-        }
-
-        if ($tax) {
-            // An invoice that has been issued is a record of what somebody was
-            // asked to pay. Once a payment code exists, or money has landed
-            // against it, the amount stops being a derived figure and becomes a
-            // fact, so recalculation reports the new number without writing it.
-            $frozenReason = $this->invoiceFreezeReason($tax);
-
-            if ($frozenReason !== null) {
-                Log::info('Mining Manager: skipped recalculating an issued tax record', [
-                    'mining_tax_id' => $tax->id,
-                    'character_id'  => $characterId,
-                    'reason'        => $frozenReason,
-                    'stored'        => (float) $tax->amount_owed,
-                    'recalculated'  => round($taxAmount),
-                ]);
-
-                return (float) $tax->amount_owed;
-            }
-
-            $tax->update([
-                'amount_owed' => round($taxAmount),
-                'calculated_at' => Carbon::now(),
-            ]);
-        }
-
-        return $taxAmount;
-    }
-
     /**
      * Get tax breakdown for a character.
      *
@@ -1207,21 +1115,30 @@ class TaxCalculationService
 
         foreach ($summaries as $summary) {
             foreach ($summary->ore_types ?? [] as $ore) {
-                $key = $ore['ore_name'] ?? "Type {$ore['type_id']}";
+                $name = $ore['ore_name'] ?? "Type {$ore['type_id']}";
+
+                // A line per ore and rate it was taxed at, and one for the
+                // ore's untaxed mining. Keyed on the name alone, taxed and
+                // untaxed mining of one ore shared a line at the rate of
+                // whichever came first, so a taxed ore could read 0%. Keyed
+                // on the type, not the name, which can differ between days.
+                $taxable = !empty($ore['is_taxable']);
+                $rate = $taxable ? (float) ($ore['tax_rate'] ?? 0) : 0.0;
+                $key = ($ore['type_id'] ?? $name) . '|' . ($taxable ? $rate : 'untaxed');
 
                 if (!isset($breakdown[$key])) {
                     $breakdown[$key] = [
                         'type_id' => $ore['type_id'],
-                        'name' => $key,
+                        'name' => $name,
                         'category' => $ore['category'] ?? 'ore',
                         'rarity' => $ore['moon_rarity'] ?? null,
                         'quantity' => 0,
                         'value' => 0,
-                        'tax_rate' => $ore['tax_rate'] ?? 0,
+                        'tax_rate' => $rate,
                         'event_modifier' => $ore['event_modifier'] ?? 0,
                         'event_qualified_value' => 0,
                         'event_discount_amount' => 0,
-                        'effective_rate' => $ore['effective_rate'] ?? $ore['tax_rate'] ?? 0,
+                        'effective_rate' => $rate,
                         'tax' => 0,
                     ];
                 }
@@ -1252,12 +1169,142 @@ class TaxCalculationService
             }
         }
 
+        // The rate shown is what the line was charged on average, events
+        // included, not the first day's. The name is what SeAT's static data
+        // calls the ore now, not what a day was saved with.
+        $names = LedgerSummaryService::currentOreNames(array_column($breakdown, 'type_id'));
+        foreach ($breakdown as &$line) {
+            if ($line['value'] > 0) {
+                $line['effective_rate'] = round($line['tax'] / $line['value'] * 100, 2);
+            }
+            $line['name'] = $names[(int) $line['type_id']] ?? $line['name'];
+        }
+        unset($line);
+
         return [
             'breakdown' => array_values($breakdown),
             'total_value' => $totalValue,
             'total_tax' => $totalTax,
             'event_discount_total' => $totalEventDiscount,
             'calculation_method' => 'daily_summaries',
+        ];
+    }
+
+    /**
+     * What a bill taxed, from the daily summaries it was worked out from:
+     * each character's taxed ores, and the same mining by kind of ore with
+     * moon ore by rarity.
+     *
+     * Only entries that carried tax count, at the rate they were taxed at,
+     * with any event discount beside them. A day already billed keeps its
+     * billed total while its per-ore figures follow the rates of the last
+     * time it was built, so both totals are returned for the page to compare.
+     *
+     * @param array<int, int|string> $characterIds
+     * @return array{rows: array, kinds: array, taxed_value: float, tax: float, discount: float, mined_value: float, daily_tax: float}
+     */
+    public function taxedBreakdown(array $characterIds, Carbon $startDate, Carbon $endDate): array
+    {
+        $rows = [];
+        $kinds = [];
+        $minedValue = 0.0;
+        $dailyTax = 0.0;
+
+        $summaries = MiningLedgerDailySummary::whereIn('character_id', $characterIds)
+            ->whereBetween('date', [$startDate->toDateString(), $endDate->toDateString()])
+            ->get(['character_id', 'total_value', 'total_tax', 'ore_types']);
+
+        foreach ($summaries as $summary) {
+            $minedValue += (float) $summary->total_value;
+            $dailyTax += (float) $summary->total_tax;
+
+            foreach ((array) $summary->ore_types as $ore) {
+                $tax = (float) ($ore['estimated_tax'] ?? 0);
+                if (empty($ore['is_taxable']) || $tax <= 0) {
+                    continue;
+                }
+
+                $typeId = (int) ($ore['type_id'] ?? 0);
+                $class = $typeId > 0 ? OreClassifier::category($typeId) : (string) ($ore['category'] ?? 'ore');
+                $kind = str_starts_with($class, 'moon') ? 'moon' : $class;
+                $rate = (float) ($ore['tax_rate'] ?? 0);
+                $value = (float) ($ore['total_value'] ?? 0);
+                $discount = (float) ($ore['event_discount_amount'] ?? 0);
+                $name = $ore['ore_name'] ?? "Type {$typeId}";
+
+                $rowKey = $summary->character_id . '|' . $typeId . '|' . $rate;
+                $rows[$rowKey] ??= [
+                    'character_id' => (int) $summary->character_id,
+                    'type_id' => $typeId,
+                    'name' => $name,
+                    'class' => $class,
+                    'rate' => $rate,
+                    'quantity' => 0.0,
+                    'value' => 0.0,
+                    'tax' => 0.0,
+                    'discount' => 0.0,
+                ];
+                $rows[$rowKey]['quantity'] += (float) ($ore['quantity'] ?? 0);
+                $rows[$rowKey]['value'] += $value;
+                $rows[$rowKey]['tax'] += $tax;
+                $rows[$rowKey]['discount'] += $discount;
+
+                $classKey = $class . '|' . $rate;
+                $kinds[$kind][$classKey] ??= ['class' => $class, 'rate' => $rate, 'value' => 0.0, 'tax' => 0.0, 'discount' => 0.0, 'ores' => []];
+                $kinds[$kind][$classKey]['value'] += $value;
+                $kinds[$kind][$classKey]['tax'] += $tax;
+                $kinds[$kind][$classKey]['discount'] += $discount;
+                $kinds[$kind][$classKey]['ores'][$typeId] = $name;
+            }
+        }
+
+        // Each ore under the name SeAT's static data has now, not the one a
+        // day was saved with: ore it did not know then shows as "Unknown Ore".
+        $names = LedgerSummaryService::currentOreNames(array_column($rows, 'type_id'));
+        foreach ($rows as &$row) {
+            $row['name'] = $names[$row['type_id']] ?? $row['name'];
+        }
+        unset($row);
+        foreach ($kinds as &$classes) {
+            foreach ($classes as &$class) {
+                foreach ($class['ores'] as $typeId => $oreName) {
+                    $class['ores'][$typeId] = $names[$typeId] ?? $oreName;
+                }
+            }
+            unset($class);
+        }
+        unset($classes);
+
+        // Moon ore first, by rarity, then the rest in the order the tax
+        // settings list them.
+        $kindOrder = array_flip(['moon', 'ore', 'ice', 'gas', 'abyssal', 'triglavian']);
+        $classOrder = array_flip(['moon_r4', 'moon_r8', 'moon_r16', 'moon_r32', 'moon_r64', 'moon']);
+        uksort($kinds, fn ($a, $b) => ($kindOrder[$a] ?? 99) <=> ($kindOrder[$b] ?? 99));
+
+        $grouped = [];
+        foreach ($kinds as $kind => $classes) {
+            $classes = array_values($classes);
+            usort($classes, fn ($a, $b) => [$classOrder[$a['class']] ?? 99, $a['rate']] <=> [$classOrder[$b['class']] ?? 99, $b['rate']]);
+            $grouped[] = [
+                'kind' => $kind,
+                'value' => array_sum(array_column($classes, 'value')),
+                'tax' => array_sum(array_column($classes, 'tax')),
+                'discount' => array_sum(array_column($classes, 'discount')),
+                'classes' => $classes,
+            ];
+        }
+
+        $rows = array_values($rows);
+        usort($rows, fn ($a, $b) => $b['tax'] <=> $a['tax']);
+
+        return [
+            'rows' => $rows,
+            'kinds' => $grouped,
+            'taxed_value' => array_sum(array_column($rows, 'value')),
+            'tax' => array_sum(array_column($rows, 'tax')),
+            'discount' => array_sum(array_column($rows, 'discount')),
+            'mined_value' => $minedValue,
+            'daily_tax' => $dailyTax,
         ];
     }
 

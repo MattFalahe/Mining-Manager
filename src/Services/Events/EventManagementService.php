@@ -2,13 +2,12 @@
 
 namespace MiningManager\Services\Events;
 
+use MiningManager\Integrations\ManagerCoreEvents;
+use MiningManager\Models\EventHistory;
 use MiningManager\Models\MiningEvent;
-use MiningManager\Models\EventParticipant;
-use MiningManager\Models\MiningLedger;
 use MiningManager\Services\Configuration\SettingsManagerService;
 use MiningManager\Services\Notification\NotificationService;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
 
 class EventManagementService
@@ -42,19 +41,23 @@ class EventManagementService
     /**
      * Automatically transition event statuses and dispatch webhook notifications.
      *
-     * Called by the `mining-manager:update-events` cron every 2 hours.
+     * Called by the `mining-manager:update-events` command on every run.
      *
      * Transitions:
-     *   planned → active   when start_time <= now  (fires 'event_started' notification)
-     *   active  → completed when end_time  <= now  (fires 'event_completed' notification)
+     *   held              → completed when applies_at <= now (fires 'event_completed', with its figures, and locks it)
+     *   awaiting_approval → declined  when start_time <= now (tells the Event Review webhooks)
+     *   planned           → active    when start_time <= now (fires 'event_started' notification)
+     *   active            → completed when end_time   <= now (fires 'event_completed' notification)
      *
      * Cancelled events are never touched.
      *
-     * @return array ['started' => int, 'completed' => int]
+     * @return array ['applied' => int, 'lapsed' => int, 'started' => int, 'completed' => int]
      */
     public function updateEventStatuses(): array
     {
         $now = Carbon::now();
+        $applied = $this->applyHeldEvents($now);
+        $lapsed = $this->lapseUnapproved($now);
         $started = 0;
         $completed = 0;
 
@@ -86,13 +89,20 @@ class EventManagementService
                 }
 
                 Log::info("Mining Manager: Event '{$event->name}' (id={$event->id}) auto-started");
+                EventHistory::record($event, EventHistory::STARTED);
 
-                // Dispatch 'event_started' notification
-                try {
-                    $participantIds = $event->participants()->pluck('character_id')->toArray();
-                    app(NotificationService::class)->sendEventStarted($event->fresh(), $participantIds);
-                } catch (\Exception $e) {
-                    Log::warning("Mining Manager: Failed to send event_started notification for event {$event->id}: " . $e->getMessage());
+                // Dispatch 'event_started' notification, unless the event is
+                // already over: one set up after its days completes below in
+                // this same run, and a start announced now would send people
+                // to mine for days that have passed.
+                if ($event->end_time === null || $event->end_time->gt($now)) {
+                    try {
+                        $participantIds = $event->participants()->pluck('character_id')->toArray();
+                        app(NotificationService::class)->sendEventStarted($event->fresh(), $participantIds);
+                    } catch (\Exception $e) {
+                        Log::warning("Mining Manager: Failed to send event_started notification for event {$event->id}: " . $e->getMessage());
+                    }
+                    ManagerCoreEvents::eventStarted($event->fresh());
                 }
 
                 $started++;
@@ -113,11 +123,16 @@ class EventManagementService
 
         foreach ($shouldComplete as $event) {
             try {
-                // Final participant tracking update before closing
+                // Gather and track once more before closing, so Event
+                // Completed carries the figures. This is also where an event
+                // set up after its days gets gathered: the tracking run stamps
+                // it, so the update that follows no longer sees it as never
+                // gathered.
                 try {
+                    app(EventMiningAggregator::class)->aggregate($event);
                     $this->trackingService->updateEventTracking($event);
                 } catch (\Exception $e) {
-                    Log::warning("Mining Manager: Final tracking update failed for event {$event->id}: " . $e->getMessage());
+                    Log::warning("Mining Manager: Final gathering failed for event {$event->id}: " . $e->getMessage());
                 }
 
                 $claimed = MiningEvent::where('id', $event->id)
@@ -130,6 +145,7 @@ class EventManagementService
                 }
 
                 Log::info("Mining Manager: Event '{$event->name}' (id={$event->id}) auto-completed");
+                EventHistory::record($event, EventHistory::COMPLETED);
 
                 // Dispatch 'event_completed' notification
                 try {
@@ -138,6 +154,7 @@ class EventManagementService
                 } catch (\Exception $e) {
                     Log::warning("Mining Manager: Failed to send event_completed notification for event {$event->id}: " . $e->getMessage());
                 }
+                ManagerCoreEvents::eventCompleted($event->fresh());
 
                 $completed++;
             } catch (\Exception $e) {
@@ -145,167 +162,116 @@ class EventManagementService
             }
         }
 
-        return ['started' => $started, 'completed' => $completed];
+        return ['applied' => $applied, 'lapsed' => $lapsed, 'started' => $started, 'completed' => $completed];
     }
 
     /**
-     * Create a new mining event.
+     * Decline the moon managers' events nobody approved before they were due
+     * to start. They do not run, and the directors' channel hears so: an
+     * approval that comes too late is not taken as one.
      *
-     * @param array $data
-     * @return MiningEvent
+     * @return int events declined
      */
-    public function createEvent(array $data): MiningEvent
+    private function lapseUnapproved(Carbon $now): int
     {
-        Log::info("Mining Manager: Creating new mining event: {$data['name']}");
-
-        $event = MiningEvent::create([
-            'name' => $data['name'],
-            'description' => $data['description'] ?? null,
-            'start_time' => $data['start_time'],
-            'end_time' => $data['end_time'] ?? null,
-            'solar_system_id' => $data['solar_system_id'] ?? null,
-            'tax_modifier' => $data['tax_modifier'] ?? 0,
-            'corporation_id' => $data['corporation_id'] ?? null,
-            'status' => $data['status'] ?? 'planned',
-            'created_by' => $data['created_by'] ?? auth()->id(),
-        ]);
-
-        Log::info("Mining Manager: Created mining event {$event->id}: {$event->name} (Tax Modifier: {$event->tax_modifier}%)");
-
-        return $event;
-    }
-
-    /**
-     * Update an existing event.
-     *
-     * @param int $eventId
-     * @param array $data
-     * @return MiningEvent
-     */
-    public function updateEvent(int $eventId, array $data): MiningEvent
-    {
-        $event = MiningEvent::findOrFail($eventId);
-
-        Log::info("Mining Manager: Updating event {$eventId}: {$event->name}");
-
-        $event->update($data);
-
-        return $event->fresh();
-    }
-
-    /**
-     * Delete an event.
-     *
-     * @param int $eventId
-     * @return bool
-     */
-    public function deleteEvent(int $eventId): bool
-    {
-        try {
-            $event = MiningEvent::findOrFail($eventId);
-
-            Log::info("Mining Manager: Deleting event {$eventId}: {$event->name}");
-
-            $event->delete();
-
-            return true;
-
-        } catch (\Exception $e) {
-            Log::error("Mining Manager: Error deleting event {$eventId}: " . $e->getMessage());
-            return false;
-        }
-    }
-
-    /**
-     * Start a mining event.
-     *
-     * @param int $eventId
-     * @return MiningEvent
-     */
-    public function startEvent(int $eventId): MiningEvent
-    {
-        $event = MiningEvent::findOrFail($eventId);
-
-        Log::info("Mining Manager: Starting event {$eventId}: {$event->name}");
-
-        $event->update([
-            'status' => 'active',
-            'start_time' => Carbon::now(),
-        ]);
-
-        $event = $event->fresh();
-
-        // Dispatch 'event_started' webhook notification
-        try {
-            $participantIds = $event->participants()->pluck('character_id')->toArray();
-            app(NotificationService::class)->sendEventStarted($event, $participantIds);
-        } catch (\Exception $e) {
-            Log::warning("Mining Manager: Failed to send event_started notification for event {$eventId}: " . $e->getMessage());
+        if (!MiningEvent::hasGovernance()) {
+            return 0;
         }
 
-        return $event;
-    }
+        $lapsed = 0;
+        $due = MiningEvent::where('status', MiningEvent::STATUS_AWAITING_APPROVAL)
+            ->where('start_time', '<=', $now)
+            ->get();
 
-    /**
-     * Complete a mining event.
-     *
-     * @param int $eventId
-     * @return MiningEvent
-     */
-    public function completeEvent(int $eventId): MiningEvent
-    {
-        $event = MiningEvent::findOrFail($eventId);
+        foreach ($due as $event) {
+            try {
+                $claimed = MiningEvent::where('id', $event->id)
+                    ->where('status', MiningEvent::STATUS_AWAITING_APPROVAL)
+                    ->update(['status' => MiningEvent::STATUS_DECLINED]);
 
-        Log::info("Mining Manager: Completing event {$eventId}: {$event->name}");
+                if ($claimed === 0) {
+                    continue;
+                }
 
-        DB::transaction(function () use ($event) {
-            // Update event data one final time
-            $this->updateEventData($event);
+                EventHistory::record($event, EventHistory::LAPSED);
+                Log::info("Mining Manager: Event '{$event->name}' (id={$event->id}) was not approved before its start and does not run");
 
-            $event->update([
-                'status' => 'completed',
-                'end_time' => Carbon::now(),
-            ]);
-        });
+                try {
+                    app(NotificationService::class)->sendEventReview($event->fresh(), 'lapsed');
+                } catch (\Exception $e) {
+                    Log::warning("Mining Manager: Failed to send the Event Review message for event {$event->id}: " . $e->getMessage());
+                }
 
-        $event = $event->fresh();
-
-        Log::info("Mining Manager: Event {$eventId} completed. Total mined: " . number_format($event->total_mined) . ", Participants: {$event->participant_count}, Tax Modifier: {$event->tax_modifier}%");
-
-        // Dispatch 'event_completed' webhook notification
-        try {
-            $participantIds = $event->participants()->pluck('character_id')->toArray();
-            app(NotificationService::class)->sendEventCompleted($event, $participantIds);
-        } catch (\Exception $e) {
-            Log::warning("Mining Manager: Failed to send event_completed notification for event {$eventId}: " . $e->getMessage());
+                $lapsed++;
+            } catch (\Exception $e) {
+                Log::error("Mining Manager: Failed to decline unapproved event {$event->id}: " . $e->getMessage());
+            }
         }
 
-        return $event;
+        return $lapsed;
     }
 
     /**
-     * Cancel a mining event.
+     * Apply the events set up for days that had passed whose hold is over:
+     * gather what arrived since the preview, put the discount on their days
+     * not billed yet, announce them with their figures, and lock them.
      *
-     * @param int $eventId
-     * @param string $reason
-     * @return MiningEvent
+     * @return int events applied
      */
-    public function cancelEvent(int $eventId, string $reason = ''): MiningEvent
+    private function applyHeldEvents(Carbon $now): int
     {
-        $event = MiningEvent::findOrFail($eventId);
+        if (!MiningEvent::hasGovernance()) {
+            return 0;
+        }
 
-        Log::info("Mining Manager: Cancelling event {$eventId}: {$event->name}. Reason: {$reason}");
+        $applied = 0;
+        $due = MiningEvent::where('status', MiningEvent::STATUS_HELD)
+            ->where('applies_at', '<=', $now)
+            ->get();
 
-        $event->update([
-            'status' => 'cancelled',
-            'description' => $event->description . "\n\nCancelled: " . Carbon::now()->toDateTimeString() . " - {$reason}",
-        ]);
+        foreach ($due as $event) {
+            try {
+                // Claimed first, so a run that overlaps this one cannot apply
+                // and announce it again.
+                $claimed = MiningEvent::where('id', $event->id)
+                    ->where('status', MiningEvent::STATUS_HELD)
+                    ->update(['status' => MiningEvent::STATUS_COMPLETED, 'locked_at' => $now]);
 
-        return $event->fresh();
+                if ($claimed === 0) {
+                    continue;
+                }
+
+                $event = $event->fresh();
+                $aggregator = app(EventMiningAggregator::class);
+                $aggregator->aggregate($event);
+                // The claim changes no row through the model, so its days
+                // are worked out here, now that the rate applies.
+                $aggregator->rebuildDays($event);
+                $this->trackingService->updateEventTracking($event);
+                EventHistory::record($event, EventHistory::APPLIED);
+                Log::info("Mining Manager: Event '{$event->name}' (id={$event->id}) applied to the days that had passed");
+
+                try {
+                    $participantIds = $event->participants()->pluck('character_id')->toArray();
+                    app(NotificationService::class)->sendEventCompleted($event->fresh(), $participantIds);
+                } catch (\Exception $e) {
+                    Log::warning("Mining Manager: Failed to send event_completed notification for event {$event->id}: " . $e->getMessage());
+                }
+                ManagerCoreEvents::eventCompleted($event->fresh());
+
+                $applied++;
+            } catch (\Exception $e) {
+                Log::error("Mining Manager: Failed to apply held event {$event->id}: " . $e->getMessage());
+            }
+        }
+
+        return $applied;
     }
 
     /**
-     * Update event data (participants and statistics).
+     * Gather the event's mining again from scratch and roll it up into its
+     * participants, by the same rules the every-minute update uses, so the
+     * Update Data button cannot count mining the event does not.
      *
      * @param MiningEvent $event
      * @return array
@@ -314,149 +280,14 @@ class EventManagementService
     {
         Log::debug("Mining Manager: Updating data for event {$event->id}");
 
-        // Get mining activity during event period
-        $query = MiningLedger::whereBetween('date', [
-            $event->start_time,
-            $event->end_time ?? Carbon::now()
-        ]);
-
-        // Filter by location if specified
-        if ($event->solar_system_id) {
-            $query->where('solar_system_id', $event->solar_system_id);
-        }
-
-        $miningActivity = $query->get();
-
-        if ($miningActivity->isEmpty()) {
-            Log::debug("Mining Manager: No mining activity found for event {$event->id}");
-            return [
-                'participants' => 0,
-                'total_mined' => 0,
-            ];
-        }
-
-        // Update or create participant records
-        $participantCount = 0;
-        $totalMined = 0;
-
-        DB::transaction(function () use ($event, $miningActivity, &$participantCount, &$totalMined) {
-            foreach ($miningActivity->groupBy('character_id') as $characterId => $records) {
-                $quantity = $records->sum('quantity');
-                $totalMined += $quantity;
-
-                EventParticipant::updateOrCreate(
-                    [
-                        'event_id' => $event->id,
-                        'character_id' => $characterId,
-                    ],
-                    [
-                        'quantity_mined' => $quantity,
-                        'last_updated' => Carbon::now(),
-                        'joined_at' => $records->min('date'),
-                    ]
-                );
-
-                $participantCount++;
-            }
-
-            // Update event statistics
-            $event->update([
-                'participant_count' => $participantCount,
-                'total_mined' => $totalMined,
-                'last_updated' => Carbon::now(),
-            ]);
-        });
-
-        Log::info("Mining Manager: Updated event {$event->id} data: {$participantCount} participants, " . number_format($totalMined) . " ore mined");
+        app(EventMiningAggregator::class)->aggregate($event, true);
+        $this->trackingService->updateEventTracking($event);
+        $event->refresh();
 
         return [
-            'participants' => $participantCount,
-            'total_mined' => $totalMined,
+            'participants' => (int) $event->participant_count,
+            'total_mined' => (int) $event->total_mined,
         ];
-    }
-
-    /**
-     * Add participant to event.
-     *
-     * @param int $eventId
-     * @param int $characterId
-     * @return EventParticipant
-     */
-    public function addParticipant(int $eventId, int $characterId): EventParticipant
-    {
-        $event = MiningEvent::findOrFail($eventId);
-
-        Log::info("Mining Manager: Adding character {$characterId} to event {$eventId}");
-
-        $participant = EventParticipant::firstOrCreate(
-            [
-                'event_id' => $eventId,
-                'character_id' => $characterId,
-            ],
-            [
-                'quantity_mined' => 0,
-                'joined_at' => Carbon::now(),
-            ]
-        );
-
-        return $participant;
-    }
-
-    /**
-     * Remove participant from event.
-     *
-     * @param int $eventId
-     * @param int $characterId
-     * @return bool
-     */
-    public function removeParticipant(int $eventId, int $characterId): bool
-    {
-        try {
-            Log::info("Mining Manager: Removing character {$characterId} from event {$eventId}");
-
-            $deleted = EventParticipant::where('event_id', $eventId)
-                ->where('character_id', $characterId)
-                ->delete();
-
-            return $deleted > 0;
-
-        } catch (\Exception $e) {
-            Log::error("Mining Manager: Error removing participant: " . $e->getMessage());
-            return false;
-        }
-    }
-
-    /**
-     * Update participant data.
-     *
-     * @param int $participantId
-     * @param array $data
-     * @return EventParticipant
-     */
-    public function updateParticipant(int $participantId, array $data): EventParticipant
-    {
-        $participant = EventParticipant::findOrFail($participantId);
-
-        Log::debug("Mining Manager: Updating participant {$participantId}");
-
-        $participant->update($data);
-
-        return $participant->fresh();
-    }
-
-    /**
-     * Get event leaderboard.
-     *
-     * @param int $eventId
-     * @param int $limit
-     * @return \Illuminate\Support\Collection
-     */
-    public function getEventLeaderboard(int $eventId, int $limit = 10)
-    {
-        return EventParticipant::where('event_id', $eventId)
-            ->orderByDesc('quantity_mined')
-            ->limit($limit)
-            ->get();
     }
 
     /**
@@ -484,71 +315,6 @@ class EventManagementService
                 ? $event->start_time->diffInHours($event->end_time)
                 : null,
         ];
-    }
-
-    /**
-     * Auto-close inactive events.
-     *
-     * @return int Number of events closed
-     */
-    public function autoCloseInactiveEvents(): int
-    {
-        $autoCloseHours = config('mining-manager.events.auto_close_after_hours', 24);
-        $cutoffTime = Carbon::now()->subHours($autoCloseHours);
-
-        $inactiveEvents = MiningEvent::where('status', 'active')
-            ->where('last_updated', '<', $cutoffTime)
-            ->get();
-
-        $closed = 0;
-
-        foreach ($inactiveEvents as $event) {
-            try {
-                $this->completeEvent($event->id);
-                $closed++;
-                Log::info("Mining Manager: Auto-closed inactive event {$event->id}: {$event->name}");
-            } catch (\Exception $e) {
-                Log::error("Mining Manager: Error auto-closing event {$event->id}: " . $e->getMessage());
-            }
-        }
-
-        if ($closed > 0) {
-            Log::info("Mining Manager: Auto-closed {$closed} inactive events");
-        }
-
-        return $closed;
-    }
-
-    /**
-     * Clone an event.
-     *
-     * @param int $eventId
-     * @param array $overrides
-     * @return MiningEvent
-     */
-    public function cloneEvent(int $eventId, array $overrides = []): MiningEvent
-    {
-        $originalEvent = MiningEvent::findOrFail($eventId);
-
-        Log::info("Mining Manager: Cloning event {$eventId}: {$originalEvent->name}");
-
-        $newEvent = $originalEvent->replicate();
-        $newEvent->status = 'planned';
-        $newEvent->participant_count = 0;
-        $newEvent->total_mined = 0;
-        $newEvent->created_by = auth()->id() ?? $originalEvent->created_by;
-        $newEvent->name = ($overrides['name'] ?? $originalEvent->name) . ' (Copy)';
-
-        // Apply overrides
-        foreach ($overrides as $key => $value) {
-            $newEvent->$key = $value;
-        }
-
-        $newEvent->save();
-
-        Log::info("Mining Manager: Cloned event to new event {$newEvent->id}");
-
-        return $newEvent;
     }
 
     /**
@@ -589,80 +355,5 @@ class EventManagementService
         }
 
         return $query->get();
-    }
-
-    /**
-     * Validate event constraints.
-     *
-     * @param array $data
-     * @return array Validation errors
-     */
-    public function validateEventConstraints(array $data): array
-    {
-        $errors = [];
-
-        // Check minimum participants if starting
-        if (isset($data['status']) && $data['status'] === 'active') {
-            $minimumParticipants = config('mining-manager.events.minimum_participants', 3);
-
-            if (isset($data['id'])) {
-                $event = MiningEvent::find($data['id']);
-                if ($event && $event->participant_count < $minimumParticipants) {
-                    $errors[] = "Event requires at least {$minimumParticipants} participants";
-                }
-            }
-        }
-
-        // Check date logic
-        if (isset($data['start_time']) && isset($data['end_time'])) {
-            $startTime = Carbon::parse($data['start_time']);
-            $endTime = Carbon::parse($data['end_time']);
-
-            if ($endTime->lessThanOrEqualTo($startTime)) {
-                $errors[] = "End time must be after start time";
-            }
-        }
-
-        // Check tax modifier range
-        if (isset($data['tax_modifier'])) {
-            if ($data['tax_modifier'] < -100 || $data['tax_modifier'] > 100) {
-                $errors[] = "Tax modifier must be between -100 and +100";
-            }
-        }
-
-        return $errors;
-    }
-
-    /**
-     * Export event data.
-     *
-     * @param int $eventId
-     * @return array
-     */
-    public function exportEventData(int $eventId): array
-    {
-        $event = MiningEvent::with(['participants.character', 'solarSystem', 'corporation'])->findOrFail($eventId);
-
-        return [
-            'event' => [
-                'name' => $event->name,
-                'description' => $event->description,
-                'start_time' => $event->start_time->toIso8601String(),
-                'end_time' => $event->end_time?->toIso8601String(),
-                'system' => $event->solarSystem?->name,
-                'corporation' => $event->corporation?->name,
-                'status' => $event->status,
-                'tax_modifier' => $event->tax_modifier,
-                'tax_modifier_label' => $event->getTaxModifierLabel(),
-            ],
-            'statistics' => $this->getEventStatistics($eventId),
-            'participants' => $event->participants->map(function ($participant) {
-                return [
-                    'character' => $participant->character_name,
-                    'quantity_mined' => $participant->quantity_mined,
-                    'joined_at' => $participant->joined_at?->toIso8601String(),
-                ];
-            })->toArray(),
-        ];
     }
 }

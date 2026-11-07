@@ -5,10 +5,18 @@ namespace MiningManager\Http\Controllers;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Seat\Web\Http\Controllers\Controller;
+use MiningManager\Integrations\ManagerCoreEvents;
 use MiningManager\Services\Events\EventManagementService;
 use MiningManager\Services\Notification\NotificationService;
 use MiningManager\Models\MiningEvent;
+use MiningManager\Models\EventHistory;
+use MiningManager\Models\EventMoon;
 use MiningManager\Models\EventParticipant;
+use MiningManager\Models\EventSignup;
+use MiningManager\Services\Events\EventAccess;
+use MiningManager\Services\Events\EventMiningAggregator;
+use MiningManager\Services\Events\EventPeople;
+use MiningManager\Services\Events\EventRefineries;
 use Seat\Eveapi\Models\Character\CharacterInfo;
 use Seat\Eveapi\Models\Sde\MapDenormalize;
 use Carbon\Carbon;
@@ -30,17 +38,27 @@ class EventController extends Controller
     protected $notificationService;
 
     /**
+     * Who may do what to an event.
+     *
+     * @var EventAccess
+     */
+    protected $access;
+
+    /**
      * Constructor
      *
      * @param EventManagementService $eventService
      * @param NotificationService $notificationService
+     * @param EventAccess $access
      */
     public function __construct(
         EventManagementService $eventService,
-        NotificationService $notificationService
+        NotificationService $notificationService,
+        EventAccess $access
     ) {
         $this->eventService = $eventService;
         $this->notificationService = $notificationService;
+        $this->access = $access;
     }
 
     /**
@@ -53,18 +71,33 @@ class EventController extends Controller
     {
         $features = app(\MiningManager\Services\Configuration\SettingsManagerService::class)->getFeatureFlags();
         if (!($features['enable_events'] ?? true)) {
-            return redirect()->route('mining-manager.dashboard.index')
+            return redirect()->route('mining-manager.dashboard')
                 ->with('warning', 'This feature is currently disabled. Enable it in Settings > Features.');
         }
 
-        $status = $request->input('status', 'all');
+        // The filter's "all" option sends an empty status.
+        $status = $request->input('status') ?: 'all';
         $corporationId = $request->input('corporation_id');
+        $user = auth()->user();
 
         $query = MiningEvent::with('creator');
 
         if ($status !== 'all') {
             $query->where('status', $status);
         }
+
+        // Members see what has been announced, and anything they set up
+        // themselves; directors see everything.
+        if (!$this->access->isDirector($user)) {
+            $query->where(function ($visible) use ($user) {
+                $visible->whereNotIn('status', MiningEvent::UNANNOUNCED_STATUSES)
+                    ->orWhere('created_by', $user->id);
+            });
+        }
+
+        $awaitingApproval = $this->access->isDirector($user) && MiningEvent::hasGovernance()
+            ? MiningEvent::where('status', MiningEvent::STATUS_AWAITING_APPROVAL)->count()
+            : 0;
 
         // Corporation filter - filter events by participants' corporation
         if ($corporationId) {
@@ -78,6 +111,21 @@ class EventController extends Controller
         }
 
         $events = $query->orderBy('start_time', 'desc')->paginate(20);
+
+        // Who cancelled each cancelled event on the page, from its history.
+        $cancelledBy = [];
+        $cancelledIds = $events->getCollection()->where('status', MiningEvent::STATUS_CANCELLED)->pluck('id')->all();
+        if ($cancelledIds && MiningEvent::hasGovernance()) {
+            $cancelledBy = EventHistory::with('user')
+                ->whereIn('event_id', $cancelledIds)
+                ->where('action', EventHistory::CANCELLED)
+                ->orderByDesc('id')
+                ->get()
+                ->unique('event_id')
+                ->mapWithKeys(fn ($entry) => [$entry->event_id => $entry->user->name ?? null])
+                ->all();
+        }
+        $access = $this->access;
 
         // Get corporations with event participation
         $corporationIds = DB::table('character_affiliations')
@@ -111,7 +159,7 @@ class EventController extends Controller
                 ->sum('total_mined_value'),
         ];
 
-        return view('mining-manager::events.index', compact('events', 'status', 'corporationId', 'corporations', 'stats'));
+        return view('mining-manager::events.index', compact('events', 'status', 'corporationId', 'corporations', 'stats', 'cancelledBy', 'access', 'awaitingApproval'));
     }
 
     /**
@@ -119,12 +167,17 @@ class EventController extends Controller
      *
      * @return \Illuminate\View\View
      */
-    public function create()
+    public function create(Request $request)
     {
         $features = app(\MiningManager\Services\Configuration\SettingsManagerService::class)->getFeatureFlags();
         if (!($features['enable_events'] ?? true) || !($features['allow_event_creation'] ?? true)) {
-            return redirect()->route('mining-manager.dashboard.index')
+            return redirect()->route('mining-manager.dashboard')
                 ->with('warning', 'Event creation is currently disabled. Enable it in Settings > Features.');
+        }
+
+        if (!$this->access->canCreate(auth()->user())) {
+            return redirect()->route('mining-manager.events.index')
+                ->with('error', trans('mining-manager::events.cannot_create'));
         }
 
         // Get the dropdown corp set: corps with MM settings + the moon
@@ -137,8 +190,311 @@ class EventController extends Controller
         $corporations = $this->getEventDropdownCorporations();
 
         $taxCompat = $this->buildTaxCompatibilityMap();
+        $refineries = app(EventRefineries::class)->choices();
+        $prefill = $this->prefillFromChunk($request, $refineries);
 
-        return view('mining-manager::events.create', compact('corporations', 'taxCompat'));
+        $limits = $this->formLimits();
+
+        return view('mining-manager::events.create', compact('corporations', 'taxCompat', 'refineries', 'prefill', 'limits'));
+    }
+
+    /**
+     * What the form starts with when it is opened from a chunk: a moon event
+     * on that refinery, over the days its belt can last.
+     *
+     * @param array<int, array<string, mixed>> $refineries
+     * @return array<string, mixed>
+     */
+    private function prefillFromChunk(Request $request, array $refineries): array
+    {
+        $structureId = (int) $request->query('refinery');
+        $refinery = collect($refineries)->firstWhere('structure_id', $structureId);
+
+        if (!$structureId || !$refinery) {
+            return [];
+        }
+
+        $chunks = collect($refinery['chunks']);
+        $chunk = $chunks->firstWhere('arrival_day', (string) $request->query('arrival'))
+            ?? $chunks->first(fn ($chunk) => $chunk['gone'] >= Carbon::now()->toIso8601String());
+
+        return [
+            'type' => 'moon_extraction',
+            'name' => ($refinery['moon'] ?? $refinery['name']) . ' chunk',
+            'refineries' => [$structureId],
+            'start_day' => $chunk['arrival_day'] ?? null,
+            'end_day' => $chunk['gone_day'] ?? null,
+        ];
+    }
+
+    /**
+     * Check the event form and turn it into the event's attributes and the
+     * refineries it is narrowed to.
+     *
+     * @return array{0: array<string, mixed>, 1: array<int, int>}
+     */
+    private function eventFromForm(Request $request, ?MiningEvent $event = null): array
+    {
+        $type = (string) $request->input('type');
+        $moon = $type === 'moon_extraction';
+
+        $request->validate([
+            'name' => 'required|string|max:255',
+            'description' => 'nullable|string',
+            'type' => 'required|string|in:' . implode(',', array_keys(MiningEvent::EVENT_TYPES)),
+            'start_day' => $moon ? 'required|date_format:Y-m-d' : 'nullable',
+            'end_day' => $moon ? 'nullable|date_format:Y-m-d|after_or_equal:start_day' : 'nullable',
+            'start_time' => $moon ? 'nullable' : 'required|date',
+            'end_time' => $moon ? 'nullable' : 'nullable|date|after:start_time',
+            // Not sent when refineries narrow the event, which leaves its
+            // location fields off.
+            'location_scope' => 'nullable|string|in:any,system,constellation,region',
+            'solar_system_id' => 'nullable|integer',
+            'refineries' => 'nullable|array',
+            'refineries.*' => 'integer',
+            'ore_categories' => 'nullable|array',
+            'ore_categories.*' => 'string',
+            'audience' => 'required|string',
+            'participation' => 'required|in:' . MiningEvent::PARTICIPATION_EVERYONE . ',' . MiningEvent::PARTICIPATION_SIGNED_UP,
+            'tax_modifier' => 'required|integer|min:-100|max:100',
+            'reason' => 'nullable|string|max:500',
+        ]);
+
+        $errors = [];
+
+        // Narrowed to refineries, a moon event ignores its location.
+        $refineries = $moon ? array_values(array_unique(array_map('intval', (array) $request->input('refineries', [])))) : [];
+        if ($refineries) {
+            $known = array_column(app(EventRefineries::class)->choices($event ? $event->refineryIds() : []), 'structure_id');
+            if (array_diff($refineries, $known)) {
+                $errors['refineries'] = 'Pick refineries from the list. Only our own refineries can be counted.';
+            }
+        }
+
+        // The location must be the kind of place the scope says: a
+        // constellation or region id is not a solar system.
+        $scope = $refineries ? 'any' : (string) $request->input('location_scope', 'any');
+        $locationId = $scope !== 'any' ? (int) $request->input('solar_system_id') : null;
+        if ($scope !== 'any') {
+            $group = ['system' => 5, 'constellation' => 4, 'region' => 3][$scope];
+            if (!$locationId || !MapDenormalize::where('itemID', $locationId)->where('groupID', $group)->exists()) {
+                $errors['solar_system_id'] = "Pick a {$scope} from the list.";
+            }
+        }
+
+        $audience = (string) $request->input('audience');
+        $corporationId = null;
+        if (ctype_digit($audience)) {
+            $corporationId = (int) $audience;
+            $allowed = $this->getEventDropdownCorporations((int) ($event->corporation_id ?? 0))->pluck('corporation_id')->map(fn ($id) => (int) $id)->all();
+            if (!in_array($corporationId, $allowed, true)) {
+                $errors['audience'] = 'Pick one of the corporations on the list.';
+            }
+        } elseif (!in_array($audience, ['everyone', 'members'], true)) {
+            $errors['audience'] = 'Pick who the event is for.';
+        }
+
+        // Ore narrowed within what the type covers; all of it, or a type
+        // with no choice, is stored as no narrowing.
+        $covered = MiningEvent::EVENT_TYPE_ORE_CATEGORIES[$type] ?? [];
+        $categories = null;
+        if (in_array($type, ['moon_extraction', 'special'], true) && $request->boolean('ore_categories_shown')) {
+            $picked = array_values(array_intersect($covered, (array) $request->input('ore_categories', [])));
+            if ($picked === []) {
+                $errors['ore_categories'] = 'Pick at least one kind of ore for the event to count.';
+            } elseif (count($picked) < count($covered)) {
+                $categories = $picked;
+            }
+        }
+
+        if ($moon) {
+            $start = Carbon::createFromFormat('Y-m-d', $request->input('start_day'))->startOfDay();
+            $end = $request->filled('end_day') ? Carbon::createFromFormat('Y-m-d', $request->input('end_day'))->endOfDay() : null;
+        } else {
+            $start = Carbon::parse($request->input('start_time'));
+            $end = $request->filled('end_time') ? Carbon::parse($request->input('end_time')) : null;
+        }
+
+        $errors += $this->checkWhen($request, $event, $start, $end, $moon);
+
+        if ($errors) {
+            throw \Illuminate\Validation\ValidationException::withMessages($errors);
+        }
+
+        $attributes = [
+            'name' => $request->input('name'),
+            'description' => $request->input('description'),
+            'type' => $type,
+            'start_time' => $start,
+            'end_time' => $end,
+            'location_scope' => $scope,
+            'solar_system_id' => $locationId,
+            'tax_modifier' => (int) $request->input('tax_modifier'),
+            'corporation_id' => $corporationId,
+        ];
+
+        if (MiningEvent::hasRules()) {
+            $attributes += [
+                'participation' => $request->input('participation'),
+                'members_only' => $audience === 'members',
+                'ore_categories' => $categories,
+            ];
+        }
+
+        return [$attributes, $refineries];
+    }
+
+    /**
+     * What the event's days allow. Nothing already billed: a day on an issued
+     * bill keeps what it was billed. Days that have passed only from a
+     * director or an admin, for everyone who mined, with a reason, and not
+     * so close to a bill run that the event could not apply before it.
+     *
+     * @return array<string, string> errors by field
+     */
+    private function checkWhen(Request $request, ?MiningEvent $event, Carbon $start, ?Carbon $end, bool $moon): array
+    {
+        if (!MiningEvent::hasGovernance()) {
+            return [];
+        }
+
+        $errors = [];
+        $startField = $moon ? 'start_day' : 'start_time';
+        $endField = $moon ? 'end_day' : 'end_time';
+        $past = $end !== null && $end->lte(Carbon::now());
+        $pastEvent = $past && ($event === null || $event->status === MiningEvent::STATUS_HELD);
+
+        // An event already reaching back that far keeps its days as long as
+        // its start is not moved.
+        $earliest = $this->access->earliestFirstDay();
+        if ($earliest !== null && $start->lt($earliest) && ($event === null || !$start->eq($event->start_time))) {
+            $errors[$startField] = trans('mining-manager::events.before_billed', [
+                'last' => $earliest->copy()->subDay()->format('D j M'),
+                'first' => $earliest->format('D j M'),
+            ]);
+        }
+
+        if ($pastEvent && $request->input('participation') === MiningEvent::PARTICIPATION_SIGNED_UP) {
+            $errors['participation'] = trans('mining-manager::events.past_no_signups');
+        }
+
+        // A moon manager's event starts far enough ahead, and never raises tax.
+        $user = auth()->user();
+        if (!$this->access->isDirector($user)) {
+            $earliestStart = $this->access->earliestManagerStart();
+            if ($start->lt($earliestStart) && ($event === null || !$start->eq($event->start_time))) {
+                $hours = $this->access->settings()['manager_lead_hours'];
+                $errors[$startField] = $moon
+                    ? trans('mining-manager::events.manager_lead_days', ['hours' => $hours, 'day' => $this->managerFirstDay()->format('D j M')])
+                    : trans('mining-manager::events.manager_lead_time', ['hours' => $hours, 'time' => $earliestStart->format('D j M H:i')]);
+            }
+            if ((int) $request->input('tax_modifier') > 0) {
+                $errors['tax_modifier'] = trans('mining-manager::events.manager_no_increase');
+            }
+        }
+
+        if ($event === null && $past) {
+            if (trim((string) $request->input('reason')) === '') {
+                $errors['reason'] = trans('mining-manager::events.reason_needed_past');
+            }
+            if ($this->access->holdUntil() === null) {
+                $errors[$startField] = trans('mining-manager::events.too_close_to_bill_run', ['run' => $this->access->nextBillRun()->format('D j M H:i')]);
+            }
+            if (!$this->access->isDirector($user)) {
+                $errors[$startField] = trans('mining-manager::events.past_directors_only');
+            }
+        }
+
+        if ($event !== null && $event->status === MiningEvent::STATUS_HELD && !$past) {
+            $errors[$endField] = trans('mining-manager::events.held_stays_past');
+        } elseif ($event !== null && $past && !$event->hasStarted()) {
+            // Days that have passed are a past event's, held before they
+            // count, not a planned one's moved back.
+            $errors[$endField] = trans('mining-manager::events.make_past_instead');
+        }
+
+        return $errors;
+    }
+
+    /**
+     * What the event form needs to know of the limits, so it can show them
+     * before anyone saves.
+     *
+     * @return array<string, mixed>
+     */
+    private function formLimits(?MiningEvent $event = null): array
+    {
+        $governed = MiningEvent::hasGovernance();
+        $manager = !$this->access->isDirector(auth()->user());
+        $earliest = $governed ? $this->access->earliestFirstDay() : null;
+        $managerFirstDay = $manager ? $this->managerFirstDay() : null;
+
+        return [
+            'governed' => $governed,
+            'creating' => $event === null,
+            'held' => $event !== null && $event->status === MiningEvent::STATUS_HELD,
+            'earliest_day' => $manager ? $managerFirstDay->toDateString() : $earliest?->toDateString(),
+            'last_billed' => $earliest?->copy()->subDay()->format('D j M'),
+            'earliest_label' => $earliest?->format('D j M'),
+            // An event already reaching back further keeps its start.
+            'enforce_earliest' => !$manager && $earliest !== null && ($event === null || $event->start_time->gte($earliest)),
+            'can_past' => !$manager,
+            'hold_minutes' => $governed ? $this->access->settings()['past_hold_minutes'] : 0,
+            'today' => Carbon::now()->toDateString(),
+            // A moon manager's limits: how far ahead, and which events wait
+            // for a director.
+            'manager' => $manager,
+            'enforce_manager_start' => $manager && ($event === null || $event->start_time->gte($this->access->earliestManagerStart())),
+            'manager_first_label' => $managerFirstDay?->format('D j M'),
+            'manager_start_label' => $manager ? $this->access->earliestManagerStart()->format('D j M H:i') : null,
+            'lead_hours' => $this->access->settings()['manager_lead_hours'],
+            'approval_rule' => $this->access->settings()['approval_rule'],
+        ];
+    }
+
+    /**
+     * The first whole day a moon manager's moon event can count.
+     */
+    private function managerFirstDay(): Carbon
+    {
+        $earliest = $this->access->earliestManagerStart();
+        $day = $earliest->copy()->startOfDay();
+
+        return $day->lt($earliest) ? $day->addDay() : $day;
+    }
+
+    /**
+     * Put the event's refineries in line with the form, and say whether they
+     * changed, so the event can be gathered again.
+     *
+     * @param array<int, int> $structureIds
+     */
+    private function syncRefineries(MiningEvent $event, array $structureIds): bool
+    {
+        if (!MiningEvent::hasRules()) {
+            return false;
+        }
+
+        $current = $event->refineryIds();
+        sort($current);
+        sort($structureIds);
+
+        if ($current === $structureIds) {
+            return false;
+        }
+
+        $event->moons()->whereNotIn('structure_id', $structureIds ?: [0])->delete();
+        $moonIds = app(\MiningManager\Services\Moon\RefineryService::class)->moonIdsForStructures($structureIds);
+
+        foreach (array_diff($structureIds, $current) as $structureId) {
+            EventMoon::create([
+                'event_id' => $event->id,
+                'structure_id' => $structureId,
+                'moon_id' => $moonIds[$structureId] ?? null,
+            ]);
+        }
+
+        return true;
     }
 
     /**
@@ -149,39 +505,58 @@ class EventController extends Controller
      */
     public function store(Request $request)
     {
-        $request->validate([
-            'name' => 'required|string|max:255',
-            'description' => 'nullable|string',
-            'type' => 'required|string|in:mining_op,moon_extraction,ice_mining,gas_huffing,special',
-            'start_time' => 'required|date',
-            'end_time' => 'nullable|date|after:start_time',
-            'location_scope' => 'required|string|in:any,system,constellation,region',
-            // Reference checks: accepting any integer lets a typo or stale
-            // form replay persist a row pointing at a non-existent system or
-            // corp. Display code joins `solar_systems` later and silently
-            // renders "Unknown", confusing reports / charts — so reject at
-            // save time instead.
-            'solar_system_id' => 'nullable|integer|exists:solar_systems,system_id',
-            'tax_modifier' => 'required|integer|min:-100|max:100',
-            'corporation_id' => 'nullable|integer|exists:corporation_infos,corporation_id',
-        ]);
+        $user = auth()->user();
+
+        if (!$this->access->canCreate($user)) {
+            return redirect()->route('mining-manager.events.index')
+                ->with('error', trans('mining-manager::events.cannot_create'));
+        }
+
+        [$attributes, $refineries] = $this->eventFromForm($request);
+
+        // Days that have passed: held, so it can still be changed or deleted
+        // before its discount goes on them. A moon manager's event the
+        // Events settings name waits for a director.
+        $status = MiningEvent::STATUS_PLANNED;
+        if (MiningEvent::hasGovernance() && $attributes['end_time'] !== null && $attributes['end_time']->lte(Carbon::now())) {
+            $status = MiningEvent::STATUS_HELD;
+            $attributes['applies_at'] = $this->access->holdUntil();
+        } elseif (!$this->access->isDirector($user) && $this->access->needsApproval((int) $attributes['tax_modifier'])) {
+            $status = MiningEvent::STATUS_AWAITING_APPROVAL;
+        }
 
         try {
-            $event = MiningEvent::create([
-                'name' => $request->input('name'),
-                'description' => $request->input('description'),
-                'type' => $request->input('type', 'mining_op'),
-                'start_time' => Carbon::parse($request->input('start_time')),
-                'end_time' => $request->input('end_time') ? Carbon::parse($request->input('end_time')) : null,
-                'location_scope' => $request->input('location_scope', 'any'),
-                'solar_system_id' => $request->input('location_scope') !== 'any' ? $request->input('solar_system_id') : null,
-                'tax_modifier' => $request->input('tax_modifier', 0),
-                'corporation_id' => $request->input('corporation_id'),
-                'status' => 'planned',
-                'created_by' => auth()->user()->id,
-            ]);
+            $event = DB::transaction(function () use ($attributes, $refineries, $status, $request) {
+                $event = MiningEvent::create($attributes + [
+                    'status' => $status,
+                    'created_by' => auth()->user()->id,
+                ]);
+                $this->syncRefineries($event, $refineries);
+                EventHistory::record($event, EventHistory::CREATED, auth()->id(), $event->snapshot(), $request->input('reason'));
 
-            // Send notifications if requested
+                if ($status === MiningEvent::STATUS_AWAITING_APPROVAL) {
+                    EventHistory::record($event, EventHistory::SENT_FOR_APPROVAL, auth()->id());
+                }
+
+                return $event;
+            });
+
+            if ($status === MiningEvent::STATUS_HELD) {
+                $this->notifyReview($event, 'held', $user, $request->input('reason'));
+
+                return redirect()->route('mining-manager.events.show', $event->id)
+                    ->with('success', trans('mining-manager::events.held_created', ['time' => $event->applies_at->format('D j M H:i')]));
+            }
+
+            if ($status === MiningEvent::STATUS_AWAITING_APPROVAL) {
+                $this->notifyReview($event, 'awaiting_approval', $user);
+
+                return redirect()->route('mining-manager.events.show', $event->id)
+                    ->with('success', trans('mining-manager::events.awaiting_created'));
+            }
+
+            // Send notifications if requested. Manager Core hears of the event
+            // only then too, as a plugin subscribed to it may ping Discord.
             if ($request->input('send_notifications')) {
                 try {
                     $this->notificationService->sendEventCreated($event);
@@ -192,6 +567,7 @@ class EventController extends Controller
                     ]);
                 }
 
+                ManagerCoreEvents::eventCreated($event);
             }
 
             return redirect()->route('mining-manager.events.show', $event->id)
@@ -217,25 +593,56 @@ class EventController extends Controller
     public function show($id)
     {
         try {
-            $event = MiningEvent::with(['participants', 'creator'])->findOrFail($id);
+            $event = MiningEvent::with('creator')->findOrFail($id);
+            $user = auth()->user();
 
-            // Get participants sorted by quantity mined
-            $participants = $event->participants()
-                ->orderBy('quantity_mined', 'desc')
-                ->get();
+            if (!$this->access->canSee($user, $event)) {
+                return redirect()->route('mining-manager.events.index')
+                    ->with('error', trans('mining-manager::events.not_announced_yet'));
+            }
 
-            // Calculate statistics
-            $stats = [
-                'total_mined' => $participants->sum('quantity_mined'),
-                'participant_count' => $participants->count(),
-                'average_per_miner' => $participants->count() > 0
-                    ? $participants->sum('quantity_mined') / $participants->count()
-                    : 0,
-                'tax_modifier' => $event->tax_modifier,
-                'tax_modifier_label' => $event->getTaxModifierLabel(),
+            $eventPeople = app(EventPeople::class);
+            $people = $eventPeople->people($event);
+            $byDay = $eventPeople->byDay($event);
+            $byRefinery = $eventPeople->byRefinery($event);
+            $reportingUntil = $eventPeople->stillReportingUntil($event);
+
+            // The refineries the event is narrowed to, or for one that is
+            // not, the ones its mining came from.
+            $refineries = app(EventRefineries::class)->forEvent(
+                $event->refineryIds() ?: array_keys($byRefinery),
+                $event->start_time,
+                $event->end_time
+            );
+
+            $mined = array_filter($people, fn ($person) => $person['characters'] !== []);
+            $totals = [
+                'people' => count($mined),
+                'characters' => array_sum(array_map(fn ($person) => count($person['characters']), $people)),
+                'signups' => count(array_filter($people, fn ($person) => in_array($person['status'], [EventPeople::SIGNED_UP, EventPeople::SIGNED_UP_WAITING], true))),
+                'value' => array_sum(array_column($people, 'value')),
+                'qualifying' => array_sum(array_column($people, 'qualifying')),
+                'discount' => array_sum(array_column($people, 'discount')),
             ];
+            $signedUp = $event->isSignedUp($user);
 
-            return view('mining-manager::events.show', compact('event', 'participants', 'stats'));
+            $can = [
+                'edit' => $this->access->canEdit($user, $event),
+                'cancel' => $this->access->canCancel($user, $event),
+                'restore' => $this->access->canRestore($user, $event),
+                'approve' => $this->access->canApprove($user, $event),
+                'delete' => $this->access->canDelete($user, $event),
+                'update_data' => $this->access->isDirector($user),
+            ];
+            $entries = MiningEvent::hasGovernance() ? $event->history()->with('user')->limit(200)->get() : collect();
+            $history = $this->describeHistory($entries);
+
+            // Who declined it and why, or that nobody approved it in time.
+            $decision = $event->status === MiningEvent::STATUS_DECLINED
+                ? $entries->first(fn ($entry) => in_array($entry->action, [EventHistory::DECLINED, EventHistory::LAPSED], true))
+                : null;
+
+            return view('mining-manager::events.show', compact('event', 'people', 'byDay', 'byRefinery', 'refineries', 'reportingUntil', 'totals', 'signedUp', 'can', 'history', 'decision'));
         } catch (\Exception $e) {
             \Log::error('EventController: Error showing event', [
                 'event_id' => $id,
@@ -257,6 +664,11 @@ class EventController extends Controller
     {
         $event = MiningEvent::findOrFail($id);
 
+        if (!$this->access->canEdit(auth()->user(), $event)) {
+            return redirect()->route('mining-manager.events.show', $event->id)
+                ->with('error', trans('mining-manager::events.cannot_edit'));
+        }
+
         // Same scoped dropdown as create() — corps with MM settings +
         // moon owner. Plus, defensively, the event's currently-assigned
         // corp_id (if any) so an event tied to a corp that's no longer
@@ -264,15 +676,18 @@ class EventController extends Controller
         $corporations = $this->getEventDropdownCorporations((int) ($event->corporation_id ?? 0));
 
         $taxCompat = $this->buildTaxCompatibilityMap();
+        $refineries = app(EventRefineries::class)->choices($event->refineryIds());
+        $canDelete = $this->access->canDelete(auth()->user(), $event);
+        $limits = $this->formLimits($event);
 
-        return view('mining-manager::events.edit', compact('event', 'corporations', 'taxCompat'));
+        return view('mining-manager::events.edit', compact('event', 'corporations', 'taxCompat', 'refineries', 'canDelete', 'limits'));
     }
 
     /**
      * Build the corporation dropdown for event create/edit forms.
      *
-     * Scope: any corp that has MM settings configured + the moon owner
-     * corp. Optionally include a specific corp by ID (used by edit() so
+     * Scope: the configured corporations, the Moon Owner always among
+     * them. Optionally include a specific corp by ID (used by edit() so
      * an event tied to a corp that's no longer in the active set still
      * renders its current value correctly).
      *
@@ -286,25 +701,8 @@ class EventController extends Controller
      */
     protected function getEventDropdownCorporations(int $alwaysIncludeCorpId = 0)
     {
-        $corpIds = collect();
-
-        // Corps that have any MM setting persisted (per-corp tax rates,
-        // per-corp tax program corporation, etc.)
-        $settingsCorpIds = DB::table('mining_manager_settings')
-            ->whereNotNull('corporation_id')
-            ->distinct()
-            ->pluck('corporation_id');
-        $corpIds = $corpIds->merge($settingsCorpIds);
-
-        // Moon owner corp (single source of truth — separate setting,
-        // not a per-corp scope so it lives at corporation_id IS NULL).
-        $moonOwnerCorpId = (int) DB::table('mining_manager_settings')
-            ->whereNull('corporation_id')
-            ->where('key', 'general.moon_owner_corporation_id')
-            ->value('value');
-        if ($moonOwnerCorpId > 0) {
-            $corpIds->push($moonOwnerCorpId);
-        }
+        // The configured corporations, the Moon Owner always among them.
+        $corpIds = collect(app(\MiningManager\Services\Configuration\SettingsManagerService::class)->getHomeCorporationIds());
 
         // Optional pin (edit form's currently-assigned corp).
         if ($alwaysIncludeCorpId > 0) {
@@ -333,37 +731,59 @@ class EventController extends Controller
      */
     public function update(Request $request, $id)
     {
-        $request->validate([
-            'name' => 'required|string|max:255',
-            'description' => 'nullable|string',
-            'type' => 'required|string|in:mining_op,moon_extraction,ice_mining,gas_huffing,special',
-            'start_time' => 'required|date',
-            'end_time' => 'nullable|date|after:start_time',
-            'location_scope' => 'required|string|in:any,system,constellation,region',
-            // Existence checks — symmetric with store(). Accepting any
-            // integer lets stale form replays / typos persist pointers to
-            // non-existent systems / corps.
-            'solar_system_id' => 'nullable|integer|exists:solar_systems,system_id',
-            'tax_modifier' => 'required|integer|min:-100|max:100',
-            'corporation_id' => 'nullable|integer|exists:corporation_infos,corporation_id',
-            'status' => 'required|in:planned,active,completed,cancelled',
-        ]);
+        $event = MiningEvent::findOrFail($id);
+
+        if (!$this->access->canEdit(auth()->user(), $event)) {
+            return redirect()->route('mining-manager.events.show', $event->id)
+                ->with('error', trans('mining-manager::events.cannot_edit'));
+        }
+
+        [$attributes, $refineries] = $this->eventFromForm($request, $event);
+
+        // A change to an event under way moves what people already get, so
+        // whoever makes it says why.
+        if ($event->hasStarted() && $event->isAnnounced() && trim((string) $request->input('reason')) === '') {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'reason' => trans('mining-manager::events.reason_needed_started'),
+            ]);
+        }
+
+        $before = $event->snapshot();
+        $user = auth()->user();
 
         try {
-            $event = MiningEvent::findOrFail($id);
+            $approval = DB::transaction(function () use ($event, $attributes, $refineries, $before, $request, $user) {
+                // Refineries first, so a scope edit gathers the event with
+                // them. Refineries alone changing is not a change to the
+                // event row, so it gathers the event itself.
+                $refineriesChanged = $this->syncRefineries($event, $refineries);
+                $event->update($attributes);
 
-            $event->update([
-                'name' => $request->input('name'),
-                'description' => $request->input('description'),
-                'type' => $request->input('type', 'mining_op'),
-                'start_time' => Carbon::parse($request->input('start_time')),
-                'end_time' => $request->input('end_time') ? Carbon::parse($request->input('end_time')) : null,
-                'location_scope' => $request->input('location_scope', 'any'),
-                'solar_system_id' => $request->input('location_scope') !== 'any' ? $request->input('solar_system_id') : null,
-                'tax_modifier' => $request->input('tax_modifier', 0),
-                'corporation_id' => $request->input('corporation_id'),
-                'status' => $request->input('status'),
-            ]);
+                if ($refineriesChanged && !$event->wasChanged(MiningEvent::SCOPE_AFFECTING_FIELDS)) {
+                    app(EventMiningAggregator::class)->aggregate($event, true);
+                }
+
+                $changes = MiningEvent::changesBetween($before, $event->snapshot());
+                if ($changes !== []) {
+                    EventHistory::record($event, EventHistory::EDITED, $user->id, $changes, $request->input('reason'));
+                }
+
+                return $this->approvalAfterEdit($event, $changes, $user);
+            });
+
+            if ($approval === 'sent') {
+                $this->notifyReview($event, 'awaiting_approval', $user);
+
+                return redirect()->route('mining-manager.events.show', $event->id)
+                    ->with('success', trans('mining-manager::events.sent_back_for_approval'));
+            }
+
+            if ($approval === 'cleared') {
+                $this->announce($event);
+
+                return redirect()->route('mining-manager.events.show', $event->id)
+                    ->with('success', trans('mining-manager::events.cleared_by_rule'));
+            }
 
             return redirect()->route('mining-manager.events.show', $event->id)
                 ->with('success', 'Event updated successfully');
@@ -389,7 +809,18 @@ class EventController extends Controller
     {
         try {
             $event = MiningEvent::findOrFail($id);
+            $user = auth()->user();
+
+            if (!$this->access->canDelete($user, $event)) {
+                return redirect()->route('mining-manager.events.show', $event->id)
+                    ->with('error', trans('mining-manager::events.cannot_delete'));
+            }
+
+            // Taken before the delete, which takes the refineries with it.
+            $snapshot = $event->snapshot() + ['status' => $event->status];
             $event->delete();
+            EventHistory::record($event, EventHistory::DELETED, $user->id, $snapshot);
+            $this->notifyReview($event, 'deleted', $user);
 
             return redirect()->route('mining-manager.events.index')
                 ->with('success', 'Event deleted successfully');
@@ -402,6 +833,337 @@ class EventController extends Controller
             return redirect()->back()
                 ->with('error', 'Error deleting event: ' . $e->getMessage());
         }
+    }
+
+    /**
+     * Where a moon manager's edit leaves their event's approval. A change to
+     * its rules the Events settings name sends an approved event back to wait
+     * for a director; a change that takes a waiting event out of their reach
+     * lets it through. Renaming or describing it changes nothing.
+     *
+     * @param array<string, array{0: mixed, 1: mixed}> $changes
+     * @param \Seat\Web\Models\User $user
+     * @return string|null 'sent' back for approval, 'cleared' to go ahead, or null
+     */
+    private function approvalAfterEdit(MiningEvent $event, array $changes, $user): ?string
+    {
+        if ($changes === [] || $this->access->isDirector($user) || !MiningEvent::hasGovernance()) {
+            return null;
+        }
+
+        $needs = $this->access->needsApproval((int) $event->tax_modifier);
+        $rulesChanged = array_diff_key($changes, array_flip(['name', 'description'])) !== [];
+
+        if ($needs && $rulesChanged && $event->status === MiningEvent::STATUS_PLANNED) {
+            $event->update(['status' => MiningEvent::STATUS_AWAITING_APPROVAL]);
+            EventHistory::record($event, EventHistory::SENT_FOR_APPROVAL, $user->id);
+
+            return 'sent';
+        }
+
+        if (!$needs && $event->status === MiningEvent::STATUS_AWAITING_APPROVAL) {
+            $event->update(['status' => MiningEvent::STATUS_PLANNED]);
+            // Nobody approved it: the settings no longer ask anyone to.
+            EventHistory::record($event, EventHistory::APPROVED);
+
+            return 'cleared';
+        }
+
+        return null;
+    }
+
+    /**
+     * Approve a moon manager's event: it is announced, and runs as planned.
+     *
+     * @param int $id
+     * @return \Illuminate\Http\RedirectResponse
+     */
+    public function approve($id)
+    {
+        $event = MiningEvent::findOrFail($id);
+        $user = auth()->user();
+
+        if (!$this->access->canApprove($user, $event)) {
+            return redirect()->route('mining-manager.events.show', $event->id)
+                ->with('error', trans('mining-manager::events.cannot_approve'));
+        }
+
+        // Claimed, so two directors deciding at once cannot both act on it.
+        $claimed = MiningEvent::where('id', $event->id)
+            ->where('status', MiningEvent::STATUS_AWAITING_APPROVAL)
+            ->update(['status' => MiningEvent::STATUS_PLANNED]);
+
+        if ($claimed === 0) {
+            return redirect()->route('mining-manager.events.show', $event->id)
+                ->with('info', trans('mining-manager::events.already_decided'));
+        }
+
+        $event->refresh();
+        EventHistory::record($event, EventHistory::APPROVED, $user->id);
+        $this->notifyReview($event, 'approved', $user);
+        $this->announce($event);
+
+        return redirect()->route('mining-manager.events.show', $event->id)
+            ->with('success', trans('mining-manager::events.approved_done'));
+    }
+
+    /**
+     * Decline a moon manager's event, with a reason. It does not run.
+     *
+     * @param Request $request
+     * @param int $id
+     * @return \Illuminate\Http\RedirectResponse
+     */
+    public function decline(Request $request, $id)
+    {
+        $event = MiningEvent::findOrFail($id);
+        $user = auth()->user();
+
+        if (!$this->access->canApprove($user, $event)) {
+            return redirect()->route('mining-manager.events.show', $event->id)
+                ->with('error', trans('mining-manager::events.cannot_approve'));
+        }
+
+        $request->validate(['reason' => 'required|string|max:500']);
+
+        $claimed = MiningEvent::where('id', $event->id)
+            ->where('status', MiningEvent::STATUS_AWAITING_APPROVAL)
+            ->update(['status' => MiningEvent::STATUS_DECLINED]);
+
+        if ($claimed === 0) {
+            return redirect()->route('mining-manager.events.show', $event->id)
+                ->with('info', trans('mining-manager::events.already_decided'));
+        }
+
+        $event->refresh();
+        EventHistory::record($event, EventHistory::DECLINED, $user->id, [], $request->input('reason'));
+        $this->notifyReview($event, 'declined', $user, $request->input('reason'));
+
+        return redirect()->route('mining-manager.events.show', $event->id)
+            ->with('success', trans('mining-manager::events.declined_done'));
+    }
+
+    /**
+     * Event Created, for an event that has just gone ahead.
+     */
+    private function announce(MiningEvent $event): void
+    {
+        try {
+            $this->notificationService->sendEventCreated($event);
+        } catch (\Throwable $e) {
+            \Log::warning('EventController: Failed to send event created notification', [
+                'event_id' => $event->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        ManagerCoreEvents::eventCreated($event);
+    }
+
+    /**
+     * Cancel an event. Its discount comes off every day not billed yet, and
+     * whoever cancels it says why.
+     *
+     * @param Request $request
+     * @param int $id
+     * @return \Illuminate\Http\RedirectResponse
+     */
+    public function cancel(Request $request, $id)
+    {
+        $event = MiningEvent::findOrFail($id);
+        $user = auth()->user();
+
+        if (!$this->access->canCancel($user, $event)) {
+            return redirect()->route('mining-manager.events.show', $event->id)
+                ->with('error', trans('mining-manager::events.cannot_cancel'));
+        }
+
+        $request->validate(['reason' => 'required|string|max:500']);
+
+        $from = $event->status;
+        $event->update(['status' => MiningEvent::STATUS_CANCELLED]);
+        EventHistory::record($event, EventHistory::CANCELLED, $user->id, ['status' => [$from, MiningEvent::STATUS_CANCELLED]], $request->input('reason'));
+        $this->notifyReview($event, 'cancelled', $user, $request->input('reason'));
+
+        return redirect()->route('mining-manager.events.show', $event->id)
+            ->with('success', trans('mining-manager::events.cancelled_done'));
+    }
+
+    /**
+     * Bring a cancelled event back, so its discount goes back on the days not
+     * billed yet.
+     *
+     * @param Request $request
+     * @param int $id
+     * @return \Illuminate\Http\RedirectResponse
+     */
+    public function restore(Request $request, $id)
+    {
+        $event = MiningEvent::findOrFail($id);
+        $user = auth()->user();
+
+        if (!$this->access->canRestore($user, $event)) {
+            return redirect()->route('mining-manager.events.show', $event->id)
+                ->with('error', trans('mining-manager::events.cannot_restore'));
+        }
+
+        $request->validate(['reason' => 'nullable|string|max:500']);
+
+        $status = $this->statusToRestore($event);
+        $attributes = ['status' => $status];
+
+        // Held again, from now: whoever brings it back is changing what it
+        // will do, and the other directors get their look again.
+        if ($status === MiningEvent::STATUS_HELD) {
+            $until = $this->access->holdUntil();
+            if ($until === null) {
+                return redirect()->route('mining-manager.events.show', $event->id)
+                    ->with('error', trans('mining-manager::events.too_close_to_bill_run', ['run' => $this->access->nextBillRun()->format('D j M H:i')]));
+            }
+            $attributes['applies_at'] = $until;
+        }
+
+        $event->update($attributes);
+        EventHistory::record($event, EventHistory::RESTORED, $user->id, ['status' => [MiningEvent::STATUS_CANCELLED, $status]], $request->input('reason'));
+        $this->notifyReview($event, 'restored', $user, $request->input('reason'));
+
+        return redirect()->route('mining-manager.events.show', $event->id)
+            ->with('success', trans('mining-manager::events.restored_done'));
+    }
+
+    /**
+     * What a cancelled event comes back as: still waiting, when it was held
+     * or waiting for approval; otherwise what its days make it now.
+     */
+    private function statusToRestore(MiningEvent $event): string
+    {
+        $before = null;
+
+        if (MiningEvent::hasGovernance()) {
+            $cancelled = EventHistory::where('event_id', $event->id)
+                ->where('action', EventHistory::CANCELLED)
+                ->orderByDesc('id')
+                ->first();
+            $before = $cancelled->changes['status'][0] ?? null;
+        }
+
+        if (in_array($before, [MiningEvent::STATUS_HELD, MiningEvent::STATUS_AWAITING_APPROVAL], true)) {
+            return $before;
+        }
+
+        if (!$event->hasStarted()) {
+            return MiningEvent::STATUS_PLANNED;
+        }
+
+        return $event->isPast() ? MiningEvent::STATUS_COMPLETED : MiningEvent::STATUS_ACTIVE;
+    }
+
+    /**
+     * Tell the Event Review webhooks. A message that fails to go out is
+     * logged; what was done stands.
+     *
+     * @param \Seat\Web\Models\User|null $user
+     */
+    private function notifyReview(MiningEvent $event, string $kind, $user = null, ?string $reason = null): void
+    {
+        try {
+            $this->notificationService->sendEventReview($event, $kind, [
+                'by' => $user->name ?? null,
+                'reason' => $reason,
+            ]);
+        } catch (\Throwable $e) {
+            \Log::warning('EventController: could not send the Event Review message', [
+                'event_id' => $event->id,
+                'kind' => $kind,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * The event's history as its page shows it: when, by whom, what and why,
+     * and for anything that changed the event, each field before and after.
+     *
+     * @param \Illuminate\Support\Collection<int, EventHistory> $history
+     * @return array<int, array{when: \Carbon\Carbon|null, who: string, action: string, reason: ?string, changes: array<int, array{field: string, before: string, after: string}>}>
+     */
+    private function describeHistory($history): array
+    {
+        $changed = $history->reject(fn ($entry) => in_array($entry->action, [EventHistory::CREATED, EventHistory::DELETED], true));
+
+        // Names for the refineries, places and corporations the changes name.
+        $structureIds = [];
+        $placeIds = [];
+        $corporationIds = [];
+        foreach ($changed as $entry) {
+            foreach ((array) $entry->changes as $field => $pair) {
+                foreach ((array) $pair as $value) {
+                    if ($field === 'refineries') {
+                        $structureIds = array_merge($structureIds, array_map('intval', (array) $value));
+                    } elseif ($field === 'solar_system_id' && $value) {
+                        $placeIds[] = (int) $value;
+                    } elseif ($field === 'corporation_id' && $value) {
+                        $corporationIds[] = (int) $value;
+                    }
+                }
+            }
+        }
+
+        $structures = $structureIds ? DB::table('universe_structures')->whereIn('structure_id', array_unique($structureIds))->pluck('name', 'structure_id')->all() : [];
+        $places = $placeIds ? MapDenormalize::whereIn('itemID', array_unique($placeIds))->pluck('itemName', 'itemID')->all() : [];
+        $corporations = $corporationIds ? DB::table('corporation_infos')->whereIn('corporation_id', array_unique($corporationIds))->pluck('name', 'corporation_id')->all() : [];
+
+        $none = trans('mining-manager::events.history_none');
+        $show = function (string $field, $value) use ($structures, $places, $corporations, $none): string {
+            if ($value === null || $value === '' || $value === []) {
+                return match ($field) {
+                    'refineries' => trans('mining-manager::events.history_any_refinery'),
+                    'ore_categories' => trans('mining-manager::events.history_all_ore'),
+                    default => $none,
+                };
+            }
+
+            return match ($field) {
+                'type' => MiningEvent::EVENT_TYPES[$value] ?? (string) $value,
+                'location_scope' => MiningEvent::LOCATION_SCOPES[$value] ?? (string) $value,
+                'solar_system_id' => $places[$value] ?? (string) $value,
+                'refineries' => implode(', ', array_map(fn ($id) => $structures[$id] ?? (string) $id, (array) $value)),
+                'ore_categories' => implode(', ', array_map(fn ($category) => MiningEvent::ORE_CATEGORY_LABELS[$category] ?? $category, (array) $value)),
+                'corporation_id' => $corporations[$value] ?? (string) $value,
+                'members_only' => trans('mining-manager::events.' . ($value ? 'yes' : 'no')),
+                'participation' => trans('mining-manager::events.' . ($value === MiningEvent::PARTICIPATION_SIGNED_UP ? 'participation_signed_up' : 'participation_everyone')),
+                'tax_modifier' => MiningEvent::TAX_MODIFIER_LABELS[(int) $value] ?? ((int) $value > 0 ? '+' : '') . (int) $value . '%',
+                'status' => trans('mining-manager::events.' . $value),
+                'description' => \Illuminate\Support\Str::limit((string) $value, 120),
+                default => (string) $value,
+            };
+        };
+
+        return $history->map(function ($entry) use ($show) {
+            $changes = [];
+            if (!in_array($entry->action, [EventHistory::CREATED, EventHistory::DELETED], true)) {
+                foreach ((array) $entry->changes as $field => $pair) {
+                    if (!is_array($pair) || count($pair) !== 2) {
+                        continue;
+                    }
+                    $changes[] = [
+                        'field' => trans('mining-manager::events.history_field_' . $field),
+                        'before' => $show($field, $pair[0]),
+                        'after' => $show($field, $pair[1]),
+                    ];
+                }
+            }
+
+            return [
+                'when' => $entry->created_at,
+                'who' => $entry->user_id === null
+                    ? trans('mining-manager::events.history_by_plugin')
+                    : ($entry->user->name ?? trans('mining-manager::events.unknown')),
+                'action' => trans('mining-manager::events.history_' . $entry->action),
+                'reason' => $entry->reason,
+                'changes' => $changes,
+            ];
+        })->values()->all();
     }
 
     /**
@@ -439,6 +1201,7 @@ class EventController extends Controller
             }
 
             $event->refresh();
+            EventHistory::record($event, EventHistory::STARTED, auth()->id());
 
             // Send event started notification
             try {
@@ -449,6 +1212,7 @@ class EventController extends Controller
                     'error' => $e->getMessage()
                 ]);
             }
+            ManagerCoreEvents::eventStarted($event);
 
             return redirect()->route('mining-manager.events.show', $event->id)
                 ->with('success', 'Event started successfully');
@@ -498,6 +1262,7 @@ class EventController extends Controller
 
             // Refresh the event to get updated totals
             $event->refresh();
+            EventHistory::record($event, EventHistory::COMPLETED, auth()->id());
 
             // Send event completed notification
             try {
@@ -508,6 +1273,7 @@ class EventController extends Controller
                     'error' => $e->getMessage()
                 ]);
             }
+            ManagerCoreEvents::eventCompleted($event);
 
             return redirect()->route('mining-manager.events.show', $event->id)
                 ->with('success', 'Event completed successfully. Tax modifier: ' . $event->getTaxModifierLabel());
@@ -547,7 +1313,7 @@ class EventController extends Controller
     public function calendar()
     {
         $events = MiningEvent::with('creator', 'participants')
-            ->where('status', '!=', 'cancelled')
+            ->whereNotIn('status', array_merge([MiningEvent::STATUS_CANCELLED], MiningEvent::UNANNOUNCED_STATUSES))
             ->get();
 
         $upcomingEvents = MiningEvent::with('creator', 'participants')
@@ -611,27 +1377,34 @@ class EventController extends Controller
             ]);
         }
         
-        // Get all events user's characters are participating in
+        // The events the user's characters mined for, or the account signed
+        // up for.
+        $mine = function ($query) use ($characterIds, $user) {
+            $query->whereHas('participants', function ($participants) use ($characterIds) {
+                $participants->whereIn('character_id', $characterIds);
+            });
+
+            if (MiningEvent::hasRules()) {
+                $query->orWhereHas('signups', function ($signups) use ($user) {
+                    $signups->where('user_id', $user->id);
+                });
+            }
+        };
+
         $activeEvents = MiningEvent::with('creator', 'participants')
             ->where('status', 'active')
-            ->whereHas('participants', function($query) use ($characterIds) {
-                $query->whereIn('character_id', $characterIds);
-            })
+            ->where($mine)
             ->get();
-        
+
         $upcomingEvents = MiningEvent::with('creator', 'participants')
             ->where('status', 'planned')
-            ->whereHas('participants', function($query) use ($characterIds) {
-                $query->whereIn('character_id', $characterIds);
-            })
+            ->where($mine)
             ->orderBy('start_time', 'asc')
             ->get();
-        
+
         $completedEvents = MiningEvent::with('creator', 'participants')
             ->where('status', 'completed')
-            ->whereHas('participants', function($query) use ($characterIds) {
-                $query->whereIn('character_id', $characterIds);
-            })
+            ->where($mine)
             ->orderBy('end_time', 'desc')
             ->limit(20)
             ->get();
@@ -697,7 +1470,9 @@ class EventController extends Controller
     }
 
     /**
-     * FIXED: Join a mining event with proper character ID handling
+     * Sign the user's account up for an event, every character on it. On an
+     * event for those who sign up, the update that runs every minute gives
+     * their mining the rate from here on.
      *
      * @param int $id
      * @return \Illuminate\Http\JsonResponse
@@ -706,56 +1481,52 @@ class EventController extends Controller
     {
         try {
             $event = MiningEvent::findOrFail($id);
-            
-            // Check if event is joinable (upcoming or active)
-            if (!in_array($event->status, ['planned', 'active'])) {
+
+            // Sign-ups stay open until the event ends.
+            if (!$event->takesSignUps()) {
                 return response()->json([
                     'success' => false,
                     'message' => trans('mining-manager::events.cannot_join_event')
                 ], 400);
             }
 
-            // FIXED: Get current user's main character ID using proper method
+            if (!MiningEvent::hasRules()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => trans('mining-manager::events.signups_unavailable')
+                ], 503);
+            }
+
             $user = auth()->user();
             $characterId = $this->getMainCharacterId($user);
-            
+
             if (!$characterId) {
                 \Log::warning('EventController: No character ID found when trying to join event', [
                     'user_id' => $user->id,
                     'event_id' => $id
                 ]);
-                
+
                 return response()->json([
                     'success' => false,
                     'message' => 'No character found for your account'
                 ], 400);
             }
 
-            // Check if already participating
-            $existing = EventParticipant::where('event_id', $event->id)
-                ->where('character_id', $characterId)
-                ->first();
+            $signup = EventSignup::firstOrCreate(
+                ['event_id' => $event->id, 'user_id' => $user->id],
+                ['character_id' => $characterId, 'signed_up_at' => Carbon::now()]
+            );
 
-            if ($existing) {
+            if (!$signup->wasRecentlyCreated) {
                 return response()->json([
                     'success' => false,
                     'message' => trans('mining-manager::events.already_joined')
                 ], 400);
             }
 
-            // Add participant
-            EventParticipant::create([
-                'event_id' => $event->id,
-                'character_id' => $characterId,
-                'joined_at' => Carbon::now(),
-            ]);
-
-            // Update participant count
-            $event->increment('participant_count');
-
             return response()->json([
                 'success' => true,
-                'message' => trans('mining-manager::events.joined_success')
+                'message' => trans($event->needsSignUp() ? 'mining-manager::events.joined_success_rate' : 'mining-manager::events.joined_success')
             ]);
         } catch (\Exception $e) {
             \Log::error('EventController: Error joining event', [
@@ -772,7 +1543,9 @@ class EventController extends Controller
     }
 
     /**
-     * FIXED: Leave a mining event with proper character ID handling
+     * Withdraw the user's account from an event. Like signing up, this can
+     * only change until the event ends; a day already billed keeps what it
+     * was billed.
      *
      * @param int $id
      * @return \Illuminate\Http\JsonResponse
@@ -781,40 +1554,24 @@ class EventController extends Controller
     {
         try {
             $event = MiningEvent::findOrFail($id);
-            
-            // FIXED: Get current user's main character ID using proper method
-            $user = auth()->user();
-            $characterId = $this->getMainCharacterId($user);
-            
-            if (!$characterId) {
-                \Log::warning('EventController: No character ID found when trying to leave event', [
-                    'user_id' => $user->id,
-                    'event_id' => $id
-                ]);
-                
+
+            if (!$event->takesSignUps()) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'No character found for your account'
+                    'message' => trans('mining-manager::events.cannot_join_event')
                 ], 400);
             }
 
-            // Find participation record
-            $participant = EventParticipant::where('event_id', $event->id)
-                ->where('character_id', $characterId)
-                ->first();
+            $withdrawn = MiningEvent::hasRules()
+                ? EventSignup::where('event_id', $event->id)->where('user_id', auth()->user()->id)->delete()
+                : 0;
 
-            if (!$participant) {
+            if ($withdrawn === 0) {
                 return response()->json([
                     'success' => false,
                     'message' => trans('mining-manager::events.not_participating')
                 ], 400);
             }
-
-            // Remove participant
-            $participant->delete();
-
-            // Update participant count
-            $event->decrement('participant_count');
 
             return response()->json([
                 'success' => true,
@@ -859,8 +1616,12 @@ class EventController extends Controller
      */
     private function buildTaxCompatibilityMap(): array
     {
+        // Which corporation the event is for is picked on the form, so the
+        // warning covers what any tax profile taxes.
         $settingsService = app(\MiningManager\Services\Configuration\SettingsManagerService::class);
-        $taxSelector = $settingsService->getTaxSelector();
+        $taxSelector = $settingsService->usesTaxProfiles()
+            ? $settingsService->taxSelectorAcross($settingsService->taxProfiles())
+            : $settingsService->getTaxSelector();
 
         $categoryTaxed = [
             'ore' => !empty($taxSelector['ore']),

@@ -70,6 +70,25 @@ class Setting extends Model
     }
 
     /**
+     * The value kept for a key in exactly one place: a corporation's row, or
+     * the global row when no corporation is given. Nothing falls back to
+     * anything else.
+     *
+     * @param string $key
+     * @param int|null $corporationId
+     * @return mixed
+     */
+    public static function valueAt(string $key, ?int $corporationId)
+    {
+        $query = self::where('key', $key);
+        $corporationId ? $query->where('corporation_id', $corporationId) : $query->whereNull('corporation_id');
+
+        $setting = $query->first();
+
+        return $setting ? self::castValue($setting->value, $setting->type) : null;
+    }
+
+    /**
      * Set a setting value.
      *
      * @param string $key

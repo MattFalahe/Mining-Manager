@@ -12,15 +12,21 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
 use MiningManager\Services\OreClassifier;
+use MiningManager\Services\Character\AffiliationResolutionService;
+use MiningManager\Services\Character\CorporationOnDate;
 
 /**
  * EventMiningAggregator
  *
  * Materialises the set of mining records that qualify for a given event
  * into the event_mining_records table. Acts as the single place where
- * all four scope filters (corporation, location, time, ore category) are
- * applied; every downstream consumer can then read from the materialised
- * table without re-implementing the filter logic.
+ * all four scope filters (corporation, location or refineries, time, ore
+ * category) are applied; every downstream consumer can then read from the
+ * materialised table without re-implementing the filter logic.
+ *
+ * On an event for those who signed up, everyone's mining in scope is still
+ * recorded, so the event page can show it, but only an account's mining from
+ * when it signed up is marked as qualifying for the rate.
  *
  * Source routing by event type
  * ============================
@@ -36,17 +42,28 @@ use MiningManager\Services\OreClassifier;
  * Corp filter
  * ===========
  * Matches the semantic used by LedgerSummaryService::getEventAttributionForLedgerRow():
- * an event with a specific corporation_id applies to miners whose *current*
- * corporation_id (from character_infos) matches; null corp means global.
+ * an event with a specific corporation_id applies to miners who were in that
+ * corporation on the day they mined, placed by CorporationOnDate the way the
+ * daily summaries place them. Null corp means everyone, or every member of a
+ * configured corporation for an event marked members only.
  *
  * Called from:
- *   - UpdateMiningEventsCommand cron (for every active event, every tick)
- *   - MiningEvent::saved observer (re-aggregate when scope is edited)
+ *   - UpdateMiningEventsCommand cron (every tick, for every active event and
+ *     for one that ended in the last few days, whose last day's refinery data
+ *     only arrives after it has ended; once for an event set up after its
+ *     days had passed)
+ *   - MiningEvent::saved observer (re-aggregate when scope is edited, days
+ *     built again when the status changes) and ::deleted (forget())
+ *   - EventManagementService::updateEventData (the Update Data button)
  *   - artisan mining-manager:backfill-event-records (one-off backfill)
  *
  * Idempotent by design: upserts on the composite natural key
  * (event_id, character_id, mining_date, mining_time, type_id, solar_system_id, observer_id).
  * Running every minute doesn't duplicate rows.
+ *
+ * Every day whose qualifying mining changed has its daily summary built
+ * again at the end of the run, so the discount reaches the day straight
+ * away. A day already billed keeps the tax it was billed at.
  */
 class EventMiningAggregator
 {
@@ -59,6 +76,39 @@ class EventMiningAggregator
      * @var SettingsManagerService
      */
     protected $settingsService;
+
+    /**
+     * The days this run changed, as 'character_id|Y-m-d' => [character_id, Y-m-d].
+     *
+     * @var array<string, array{0: int, 1: string}>
+     */
+    private array $changedDays = [];
+
+    /** Whether the database has the event rules (refineries, sign-ups, qualifying). */
+    private bool $rules = false;
+
+    /**
+     * The refineries the event being gathered is narrowed to; empty for every
+     * refinery in its location.
+     *
+     * @var array<int, int>
+     */
+    private array $refineries = [];
+
+    /**
+     * When each account signed up, by user id, for an event that only counts
+     * those who did; null when everyone counts.
+     *
+     * @var array<int, Carbon>|null
+     */
+    private ?array $signedUp = null;
+
+    /**
+     * The account of each character met so far, by character id.
+     *
+     * @var array<int, int>
+     */
+    private array $accounts = [];
 
     public function __construct(
         OreValuationService $valuationService,
@@ -75,22 +125,28 @@ class EventMiningAggregator
      * @param bool $fullRefresh If true, delete existing records for this event
      *                          before re-populating. Use when event scope has
      *                          been edited (location/corp/type/time changes).
-     * @return array ['created' => int, 'updated' => int, 'skipped' => int, 'deleted' => int]
+     * @return array ['created' => int, 'updated' => int, 'skipped' => int, 'deleted' => int, 'days' => int]
      */
     public function aggregate(MiningEvent $event, bool $fullRefresh = false): array
     {
         $deleted = 0;
+        $this->changedDays = [];
+        $this->prepare($event);
 
         if ($fullRefresh) {
+            // The days the old records covered are built again too, so a
+            // narrowed scope takes its discount back off them.
+            $this->noteDaysOf($event);
+
             $deleted = EventMiningRecord::where('event_id', $event->id)->delete();
             Log::info("Mining Manager: EventMiningAggregator full-refresh of event {$event->id} — deleted {$deleted} prior records");
         }
 
-        $allowedCategories = MiningEvent::EVENT_TYPE_ORE_CATEGORIES[$event->type] ?? [];
+        $allowedCategories = $event->oreCategories();
 
         if (empty($allowedCategories)) {
-            Log::warning("Mining Manager: EventMiningAggregator called for event {$event->id} with unknown type '{$event->type}' — no aggregation performed");
-            return ['created' => 0, 'updated' => 0, 'skipped' => 0, 'deleted' => $deleted];
+            Log::warning("Mining Manager: EventMiningAggregator event {$event->id} has no ore to count (type '{$event->type}'), no aggregation performed");
+            return ['created' => 0, 'updated' => 0, 'skipped' => 0, 'deleted' => $deleted, 'days' => $this->buildChangedDays()];
         }
 
         // Narrow the event's ore-category set to what the plugin is
@@ -104,7 +160,7 @@ class EventMiningAggregator
 
         if (empty($allowedCategories)) {
             Log::info("Mining Manager: EventMiningAggregator event {$event->id} — every category for event type '{$event->type}' is untaxed per current tax_selector; nothing to aggregate");
-            return ['created' => 0, 'updated' => 0, 'skipped' => 0, 'deleted' => $deleted];
+            return ['created' => 0, 'updated' => 0, 'skipped' => 0, 'deleted' => $deleted, 'days' => $this->buildChangedDays()];
         }
 
         // Split categories by which source they come from.
@@ -117,7 +173,7 @@ class EventMiningAggregator
             fn($c) => !str_starts_with($c, 'moon_')
         ));
 
-        $totals = ['created' => 0, 'updated' => 0, 'skipped' => 0, 'deleted' => $deleted];
+        $totals = ['created' => 0, 'updated' => 0, 'skipped' => 0, 'deleted' => $deleted, 'days' => 0];
 
         DB::transaction(function () use ($event, $moonCategories, $nonMoonCategories, &$totals) {
             if (!empty($moonCategories)) {
@@ -135,17 +191,123 @@ class EventMiningAggregator
             }
         });
 
+        $totals['days'] = $this->buildChangedDays();
+
         Log::info(sprintf(
-            "Mining Manager: EventMiningAggregator event %d (%s) — created %d, updated %d, skipped %d%s",
+            "Mining Manager: EventMiningAggregator event %d (%s) — created %d, updated %d, skipped %d, days built again %d%s",
             $event->id,
             $event->type,
             $totals['created'],
             $totals['updated'],
             $totals['skipped'],
+            $totals['days'],
             $deleted > 0 ? " (refreshed, deleted {$deleted} prior)" : ''
         ));
 
         return $totals;
+    }
+
+    /**
+     * Save a record only when what it holds changed, and note its day. Rows
+     * that read the same as last time are left alone, so a run every minute
+     * builds a day again only when its mining has moved.
+     */
+    private function saveIfChanged(EventMiningRecord $record): bool
+    {
+        if ($record->exists && !$record->isDirty()) {
+            return false;
+        }
+
+        $record->recorded_at = Carbon::now();
+        $record->save();
+        $this->changedDay((int) $record->character_id, $record->mining_date);
+
+        return true;
+    }
+
+    /**
+     * Note a day whose qualifying mining changed.
+     *
+     * @param mixed $date
+     */
+    private function changedDay(int $characterId, $date): void
+    {
+        $day = Carbon::parse($date)->toDateString();
+        $this->changedDays[$characterId . '|' . $day] = [$characterId, $day];
+    }
+
+    /**
+     * Note every day the event has mining on.
+     */
+    private function noteDaysOf(MiningEvent $event): void
+    {
+        foreach (EventMiningRecord::where('event_id', $event->id)->distinct()->get(['character_id', 'mining_date']) as $record) {
+            $this->changedDay((int) $record->character_id, $record->mining_date);
+        }
+    }
+
+    /**
+     * Work out again every day the event has mining on, so a change to
+     * whether its rate applies at all, the event cancelled or brought back,
+     * reaches those days. A billed day keeps what it was billed.
+     *
+     * @return int days built again
+     */
+    public function rebuildDays(MiningEvent $event): int
+    {
+        $this->changedDays = [];
+        $this->noteDaysOf($event);
+
+        return $this->buildChangedDays();
+    }
+
+    /**
+     * Drop a deleted event's mining and work its days out again without it.
+     * A billed day keeps what it was billed.
+     *
+     * @return int days built again
+     */
+    public function forget(MiningEvent $event): int
+    {
+        $this->changedDays = [];
+        $this->noteDaysOf($event);
+        EventMiningRecord::where('event_id', $event->id)->delete();
+
+        return $this->buildChangedDays();
+    }
+
+    /**
+     * Build again the daily summaries of the days this run changed, so the
+     * discount reaches them now. The refinery import builds a day as soon as
+     * its rows arrive, before this has recorded them, and nothing else would
+     * build the day again: the nightly run only goes back to yesterday. A day
+     * an invoice covers keeps the tax it was billed at (see
+     * LedgerSummaryService), so this never changes a bill.
+     *
+     * @return int days built again
+     */
+    private function buildChangedDays(): int
+    {
+        $days = $this->changedDays;
+        $this->changedDays = [];
+
+        if (!$days) {
+            return 0;
+        }
+
+        $summaries = app(\MiningManager\Services\Ledger\LedgerSummaryService::class);
+        $built = 0;
+
+        foreach ($days as [$characterId, $day]) {
+            try {
+                $summaries->generateDailySummary($characterId, $day);
+                $built++;
+            } catch (\Throwable $e) {
+                Log::warning("Mining Manager: could not build character {$characterId}'s summary for {$day} again after its event mining changed: {$e->getMessage()}");
+            }
+        }
+
+        return $built;
     }
 
     /**
@@ -167,12 +329,19 @@ class EventMiningAggregator
      *   all_moon_ore         → all observer rows, regardless of which corp
      *                           owns the moon / installed the observer.
      *
+     * Refineries
+     * ==========
+     * An event narrowed to some refineries counts only their rows, wherever
+     * its location points; otherwise the location scope picks the systems.
+     *
      * Miner-corp filter
      * =================
      * Applied on top of the source pool:
      *   • Corp-scoped event (event.corporation_id set) →
-     *       miner's current corp == event.corporation_id
-     *   • Global event (event.corporation_id null) →
+     *       the miner was in event.corporation_id that day
+     *   • Members-only event (no corporation, members_only) →
+     *       the miner was in any configured corporation that day
+     *   • Event for everyone →
      *       no miner-corp filter (anyone's moon mining counts)
      *
      * Note: no "miner corp must equal moon owner corp" constraint. A
@@ -189,7 +358,7 @@ class EventMiningAggregator
     {
         // Honour the plugin's moon-ore tax scope setting so event data
         // reflects the same pool the tax engine operates on.
-        $taxSelector = $this->settingsService->getTaxSelector();
+        $taxSelector = $this->taxSelectorForEvent($event);
 
         if (!empty($taxSelector['no_moon_ore'])) {
             Log::debug("Mining Manager: EventMiningAggregator event {$event->id} — plugin has no_moon_ore set, skipping observer pass");
@@ -217,8 +386,12 @@ class EventMiningAggregator
         }
         // all_moon_ore (the default) needs no extra filter — any observer row qualifies.
 
-        // Location scope — resolves constellation/region to system IDs.
-        $event->applyLocationFilter($query, 'solar_system_id');
+        if ($this->refineries !== []) {
+            $query->whereIn('observer_id', $this->refineries);
+        } else {
+            // Location scope — resolves constellation/region to system IDs.
+            $event->applyLocationFilter($query, 'solar_system_id');
+        }
 
         $rows = $query->get();
 
@@ -226,46 +399,35 @@ class EventMiningAggregator
             return ['created' => 0, 'updated' => 0, 'skipped' => 0];
         }
 
-        // Miner-corp lookup (in PHP) for corp-scoped events. Unused for
-        // global events but cheap enough that we always resolve it.
-        $characterCorps = $this->resolveCharacterCorps(
-            $rows->pluck('character_id')->unique()->all()
-        );
-
+        $this->loadAccounts($rows);
         $created = 0; $updated = 0; $skipped = 0;
 
         foreach ($rows as $row) {
-            // Corp-scoped event: require miner's current corp = event corp.
-            // Global event: no miner-corp filter.
-            if ($event->corporation_id !== null) {
-                $charCorp = $characterCorps[$row->character_id] ?? null;
-                if ($charCorp !== (int) $event->corporation_id) {
-                    $skipped++;
-                    continue;
-                }
+            if ($this->scopedToMembers($event) && !$this->minedFor($event, (int) $row->character_id, $row->date)) {
+                $skipped++;
+                continue;
             }
 
-            $record = EventMiningRecord::updateOrCreate(
-                [
-                    'event_id' => $event->id,
-                    'character_id' => $row->character_id,
-                    'mining_date' => $row->date,
-                    'mining_time' => '00:00:00',
-                    'type_id' => $row->type_id,
-                    'solar_system_id' => $row->solar_system_id,
-                    'observer_id' => $row->observer_id,
-                ],
-                [
-                    'ore_category' => $row->ore_category,
-                    'quantity' => $row->quantity,
-                    'unit_price' => $row->unit_price,
-                    'value_isk' => $row->total_value,
-                    'source' => EventMiningRecord::SOURCE_OBSERVER,
-                    'recorded_at' => Carbon::now(),
-                ]
-            );
+            $record = EventMiningRecord::firstOrNew([
+                'event_id' => $event->id,
+                'character_id' => $row->character_id,
+                'mining_date' => $row->date,
+                'mining_time' => '00:00:00',
+                'type_id' => $row->type_id,
+                'solar_system_id' => $row->solar_system_id,
+                'observer_id' => $row->observer_id,
+            ]);
+            $record->fill([
+                'ore_category' => $row->ore_category,
+                'quantity' => $row->quantity,
+                'unit_price' => $row->unit_price,
+                'value_isk' => $row->total_value,
+                'source' => EventMiningRecord::SOURCE_OBSERVER,
+            ] + ($this->rules ? ['qualifies' => $this->qualifies((int) $row->character_id, Carbon::parse($row->date)->toDateString(), null)] : []));
 
-            $record->wasRecentlyCreated ? $created++ : $updated++;
+            if ($this->saveIfChanged($record)) {
+                $record->wasRecentlyCreated ? $created++ : $updated++;
+            }
         }
 
         return ['created' => $created, 'updated' => $updated, 'skipped' => $skipped];
@@ -303,16 +465,17 @@ class EventMiningAggregator
         // Location scope on character_minings.solar_system_id.
         $event->applyLocationFilter($query, 'solar_system_id');
 
-        // Corp filter via JOIN to character_affiliations on the miner's
-        // current corp. corporation_id was dropped from character_infos in
-        // SeAT 2019 and now lives only in character_affiliations.
+        // Corp-scoped event: only characters who have ever been in the
+        // corporation can have mined for it, and for a members-only event,
+        // in one of the configured corporations. Each of their days is placed
+        // below, by the corporation they were in on it.
         if ($event->corporation_id !== null) {
-            $query->whereExists(function ($sub) use ($event) {
-                $sub->select(DB::raw(1))
-                    ->from('character_affiliations')
-                    ->whereColumn('character_affiliations.character_id', 'character_minings.character_id')
-                    ->where('character_affiliations.corporation_id', $event->corporation_id);
-            });
+            $query->whereIn('character_id', $this->everInCorporations([(int) $event->corporation_id]));
+        } elseif ($this->scopedToMembers($event)) {
+            $query->whereIn('character_id', $this->everInCorporations(array_merge(
+                $this->settingsService->getHomeCorporationIds(),
+                array_keys($this->settingsService->configuredUntil())
+            )));
         }
 
         $rows = $query->get();
@@ -320,6 +483,8 @@ class EventMiningAggregator
         if ($rows->isEmpty()) {
             return ['created' => 0, 'updated' => 0, 'skipped' => 0];
         }
+
+        $this->loadAccounts($rows);
 
         // Build a (char, date, type, system) → historical aggregate map from
         // mining_ledger so we can carve the ledger's total_value proportionally
@@ -336,6 +501,11 @@ class EventMiningAggregator
             // reads SeAT's own table, so skipping it at import alone would not
             // keep it out.
             if (OreClassifier::isIgnored((int) $row->type_id)) {
+                $skipped++;
+                continue;
+            }
+
+            if ($this->scopedToMembers($event) && !$this->minedFor($event, (int) $row->character_id, $row->date)) {
                 $skipped++;
                 continue;
             }
@@ -388,27 +558,26 @@ class EventMiningAggregator
                 ? $row->time->format('H:i:s')
                 : (string) $row->time;
 
-            $record = EventMiningRecord::updateOrCreate(
-                [
-                    'event_id' => $event->id,
-                    'character_id' => $row->character_id,
-                    'mining_date' => $row->date,
-                    'mining_time' => $miningTime,
-                    'type_id' => $row->type_id,
-                    'solar_system_id' => $row->solar_system_id,
-                    'observer_id' => null,
-                ],
-                [
-                    'ore_category' => $category,
-                    'quantity' => $row->quantity,
-                    'unit_price' => $unitPrice,
-                    'value_isk' => $totalValue,
-                    'source' => EventMiningRecord::SOURCE_CHARACTER_MINING,
-                    'recorded_at' => Carbon::now(),
-                ]
-            );
+            $record = EventMiningRecord::firstOrNew([
+                'event_id' => $event->id,
+                'character_id' => $row->character_id,
+                'mining_date' => $row->date,
+                'mining_time' => $miningTime,
+                'type_id' => $row->type_id,
+                'solar_system_id' => $row->solar_system_id,
+                'observer_id' => null,
+            ]);
+            $record->fill([
+                'ore_category' => $category,
+                'quantity' => $row->quantity,
+                'unit_price' => $unitPrice,
+                'value_isk' => $totalValue,
+                'source' => EventMiningRecord::SOURCE_CHARACTER_MINING,
+            ] + ($this->rules ? ['qualifies' => $this->qualifies((int) $row->character_id, $dateStr, $miningTime)] : []));
 
-            $record->wasRecentlyCreated ? $created++ : $updated++;
+            if ($this->saveIfChanged($record)) {
+                $record->wasRecentlyCreated ? $created++ : $updated++;
+            }
         }
 
         return ['created' => $created, 'updated' => $updated, 'skipped' => $skipped];
@@ -511,7 +680,7 @@ class EventMiningAggregator
      */
     private function filterCategoriesByTaxSettings(MiningEvent $event, array $categories): array
     {
-        $taxSelector = $this->settingsService->getTaxSelector();
+        $taxSelector = $this->taxSelectorForEvent($event);
 
         $map = [
             'ore' => 'ore',
@@ -556,29 +725,141 @@ class EventMiningAggregator
     }
 
     /**
-     * Look up current corporation_id for each character in bulk.
-     *
-     * Current affiliation (corp, alliance, faction) lives in the
-     * character_affiliations table — NOT character_infos. The corporation_id
-     * column was removed from character_infos in SeAT 2019 and migrated
-     * to character_affiliations. Other parts of this plugin (AnalyticsController,
-     * DashboardController, etc.) already use DB::table('character_affiliations')
-     * for this — we match that pattern rather than introducing a new model.
-     *
-     * @param array $characterIds
-     * @return array<int, int> Map of character_id => corporation_id
+     * What the miners an event covers are taxed on, as one selector: the
+     * event corporation's profile, or for an event open to everyone, what
+     * any profile taxes. The daily summaries still charge each miner by
+     * their own profile; this only decides which mining is worth recording.
      */
-    private function resolveCharacterCorps(array $characterIds): array
+    private function taxSelectorForEvent(MiningEvent $event): array
     {
-        if (empty($characterIds)) {
+        if (!$this->settingsService->usesTaxProfiles()) {
+            return $this->settingsService->getTaxSelector();
+        }
+
+        if ($event->corporation_id !== null) {
+            $profiles = [$this->settingsService->profileFor((int) $event->corporation_id)];
+        } else {
+            $profiles = $this->settingsService->taxProfiles();
+
+            // Global taxes the non-members, whom a members-only event leaves out.
+            if ($this->scopedToMembers($event)) {
+                $profiles = array_values(array_filter($profiles, fn ($profile) => $profile !== null)) ?: $profiles;
+            }
+        }
+
+        return $this->settingsService->taxSelectorAcross($profiles);
+    }
+
+    /**
+     * Load what the event's rules need before its mining is gathered.
+     */
+    private function prepare(MiningEvent $event): void
+    {
+        $this->rules = MiningEvent::hasRules();
+        $this->refineries = $this->rules ? $event->refineryIds() : [];
+        $this->accounts = [];
+        $this->signedUp = null;
+
+        if ($this->rules && $event->needsSignUp()) {
+            $this->signedUp = $event->signups()->get(['user_id', 'signed_up_at', 'created_at'])
+                ->mapWithKeys(fn ($signup) => [(int) $signup->user_id => $signup->signed_up_at ?? $signup->created_at ?? Carbon::now()])
+                ->all();
+        }
+    }
+
+    /**
+     * Whether only some corporations' miners count: the event's own, or for
+     * a members-only event, every configured corporation's.
+     */
+    private function scopedToMembers(MiningEvent $event): bool
+    {
+        return $event->corporation_id !== null || ($this->rules && $event->members_only);
+    }
+
+    /**
+     * Whether a miner's day counts for the event's corporations: they were in
+     * the event's corporation that day, or for a members-only event in any
+     * configured one, placed exactly as the daily summaries place them when
+     * they apply the event's discount. A member who leaves keeps the event
+     * mining they did as a member, however often the event is gathered again.
+     *
+     * @param mixed $date
+     */
+    private function minedFor(MiningEvent $event, int $characterId, $date): bool
+    {
+        $members = $this->settingsService->memberCorporationsOn($date);
+        $corporation = app(CorporationOnDate::class)->forDay($characterId, $date, $members);
+
+        if ($event->corporation_id !== null) {
+            return $corporation === (int) $event->corporation_id;
+        }
+
+        // A pilot whose corporation is not known yet is taxed as a member of
+        // the Moon Owner's, so they count as a member here too.
+        return $corporation === null || in_array($corporation, $members, true);
+    }
+
+    /**
+     * Note the account of every character in the rows, for an event that
+     * only counts those who signed up.
+     *
+     * @param \Illuminate\Support\Collection $rows
+     */
+    private function loadAccounts($rows): void
+    {
+        if ($this->signedUp === null) {
+            return;
+        }
+
+        $characters = $rows->pluck('character_id')->map(fn ($id) => (int) $id)->unique()->values()->all();
+        $this->accounts += MiningEvent::accountsOf(array_values(array_diff($characters, array_keys($this->accounts))));
+    }
+
+    /**
+     * Whether a piece of the event's mining gets its rate. On an event for
+     * those who signed up, an account's mining counts from when it signed
+     * up: from that day for refinery mining, which is reported by the day,
+     * and from that moment for the rest.
+     */
+    private function qualifies(int $characterId, string $date, ?string $time): bool
+    {
+        if ($this->signedUp === null) {
+            return true;
+        }
+
+        $user = $this->accounts[$characterId] ?? null;
+        $signedUpAt = $user !== null ? ($this->signedUp[$user] ?? null) : null;
+
+        if ($signedUpAt === null) {
+            return false;
+        }
+
+        return $time === null
+            ? $signedUpAt->toDateString() <= $date
+            : $signedUpAt->lte(Carbon::parse("{$date} {$time}"));
+    }
+
+    /**
+     * Every character known to have been in any of the corporations: by
+     * SeAT's corporation history, its affiliation, or the plugin's own
+     * lookups.
+     *
+     * @param array<int, int> $corporationIds
+     * @return array<int, int>
+     */
+    private function everInCorporations(array $corporationIds): array
+    {
+        $corporationIds = array_values(array_unique(array_map('intval', $corporationIds)));
+
+        if ($corporationIds === []) {
             return [];
         }
 
-        return DB::table('character_affiliations')
-            ->whereIn('character_id', $characterIds)
-            ->pluck('corporation_id', 'character_id')
-            ->map(fn($v) => (int) $v)
-            ->toArray();
+        $ids = DB::table('character_corporation_histories')->whereIn('corporation_id', $corporationIds)->pluck('character_id')
+            ->merge(DB::table('character_affiliations')->whereIn('corporation_id', $corporationIds)->pluck('character_id'))
+            ->merge(DB::table(AffiliationResolutionService::TABLE)->whereIn('corporation_id', $corporationIds)->pluck('character_id'));
+
+        return $ids->map(fn ($id) => (int) $id)->unique()->values()->all();
     }
 
     /**

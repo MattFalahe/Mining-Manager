@@ -261,21 +261,20 @@ class GenerateReportsCommand extends Command
     {
         $this->info("\n=== Report Summary ===");
 
-        // Handle nested summary structure
-        $summary = $reportData['summary'] ?? $reportData;
+        // The same keys the report page reads, so the two always agree.
+        $summary = $reportData['summary'] ?? [];
+        $taxes = $reportData['taxes'] ?? [];
+        $topMiners = $reportData['miners']['top_miners'] ?? [];
 
-        $this->line("Total Miners: " . ($summary['total_miners'] ?? 0));
+        $this->line("Total Miners: " . number_format($summary['unique_miners'] ?? 0));
         $this->line("Total Ore Mined: " . number_format($summary['total_quantity'] ?? 0));
         $this->line("Total Value: " . number_format($summary['total_value'] ?? 0, 2) . " ISK");
-        $this->line("Total Tax Collected: " . number_format($summary['total_tax'] ?? 0, 2) . " ISK");
+        $this->line("Total Tax Collected: " . number_format($taxes['total_paid'] ?? 0, 2) . " ISK");
 
-        // Top miners from miners array
-        if (!empty($reportData['miners'])) {
+        if (!empty($topMiners)) {
             $this->info("\nTop 5 Miners:");
-            foreach (array_slice($reportData['miners'], 0, 5) as $miner) {
-                $name = $miner['name'] ?? $miner['character_name'] ?? 'Unknown';
-                $quantity = $miner['quantity'] ?? $miner['total_quantity'] ?? 0;
-                $this->line("  - {$name}: " . number_format($quantity) . " ore");
+            foreach (array_slice($topMiners, 0, 5) as $miner) {
+                $this->line("  - " . ($miner['name'] ?? 'Unknown') . ": " . number_format($miner['quantity'] ?? 0) . " ore");
             }
         }
     }

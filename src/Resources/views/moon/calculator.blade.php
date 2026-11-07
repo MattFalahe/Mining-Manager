@@ -4,7 +4,7 @@
 @section('page_header', trans('mining-manager::menu.moon_extractions'))
 
 @push('head')
-<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=8">
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=10">
 <style>
     .moon-simulator-page .finder-section { margin-bottom: 12px; }
     .moon-simulator-page .finder-section-title {
@@ -171,7 +171,7 @@
                 </ul>
                 <p class="mb-0">
                     {{ trans('mining-manager::moons.scan_required_how') }}
-                    <a href="{{ url('/tools/moons') }}" target="_blank" class="alert-link">{{ trans('mining-manager::moons.moon_not_scanned_link') }}</a>
+                    <a href="{{ url('/tools/moons') }}" target="_blank" rel="noopener" class="alert-link">{{ trans('mining-manager::moons.moon_not_scanned_link') }}</a>
                 </p>
             </div>
         </div>

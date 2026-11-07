@@ -4,7 +4,7 @@
 @section('page_header', trans('mining-manager::menu.mining_events'))
 
 @push('head')
-<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=8">
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=10">
 <link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/vendor/fullcalendar.min.css') }}">
 <script src="{{ asset('vendor/mining-manager/js/eve-time.js') }}?v=1" defer></script>
 <script src="{{ asset('vendor/mining-manager/js/eve-countdown.js') }}?v=1" defer></script>
@@ -100,13 +100,13 @@
                     <i class="fas fa-play-circle"></i> {{ trans('mining-manager::menu.active_events') }}
                 </a>
             </li>
-            @can('mining-manager.director')
+            @if (app(\MiningManager\Services\Events\EventAccess::class)->canCreate(auth()->user()))
             <li class="nav-item">
                 <a class="nav-link {{ Request::is('*/events/create') ? 'active' : '' }}" href="{{ route('mining-manager.events.create') }}">
                     <i class="fas fa-plus-circle"></i> {{ trans('mining-manager::menu.create_event') }}
                 </a>
             </li>
-            @endcan
+            @endif
             <li class="nav-item">
                 <a class="nav-link {{ Request::is('*/events/calendar') ? 'active' : '' }}" href="{{ route('mining-manager.events.calendar') }}">
                     <i class="fas fa-calendar-alt"></i> {{ trans('mining-manager::menu.event_calendar') }}
@@ -162,11 +162,11 @@
                         {{ trans('mining-manager::events.calendar_view') }}
                     </h3>
                     <div class="card-tools">
-                        @can('mining-manager.director')
+                        @if (app(\MiningManager\Services\Events\EventAccess::class)->canCreate(auth()->user()))
                         <a href="{{ route('mining-manager.events.create') }}" class="btn btn-sm btn-success">
                             <i class="fas fa-plus"></i> {{ trans('mining-manager::events.create_event') }}
                         </a>
-                        @endcan
+                        @endif
                         <a href="{{ route('mining-manager.events.index') }}" class="btn btn-sm btn-info">
                             <i class="fas fa-list"></i> {{ trans('mining-manager::events.list_view') }}
                         </a>
@@ -267,7 +267,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <a href="#" id="eventViewButton" class="btn btn-info" target="_blank">
+                    <a href="#" id="eventViewButton" class="btn btn-info" target="_blank" rel="noopener">
                         <i class="fas fa-eye"></i> {{ trans('mining-manager::events.view_details') }}
                     </a>
                     <button type="button" class="btn btn-secondary" data-dismiss="modal">

@@ -24,7 +24,7 @@ class MonitorActiveTheftsCommand extends Command
      * @var string
      */
     protected $signature = 'mining-manager:monitor-active-thefts
-                            {--hours=6 : Number of hours to look back for activity}
+                            {--hours=6 : How far back to look for newly recorded mining, in hours}
                             {--notify : Send notifications for active thefts}';
 
     /**
@@ -115,14 +115,12 @@ class MonitorActiveTheftsCommand extends Command
 
                     foreach ($activeThefts as $theftData) {
                         $incident = $theftData['incident'];
-                        $newValue = $theftData['new_value'];
-                        $totalValue = $incident->ore_value;
 
                         $occurrence = $this->getOccurrenceSuffix($incident->activity_count);
 
-                        $this->line("  🔴 <fg=red>{$incident->character_name}</> mined " .
-                                   number_format($newValue / 1000000, 0) . "M ISK ({$occurrence})");
-                        $this->line("     Total unpaid: " . number_format($totalValue / 1000000, 0) . "M ISK");
+                        $this->line("  🔴 <fg=red>{$incident->getCharacterName()}</> mined " .
+                                   number_format($theftData['new_value'] / 1000000, 0) . "M ISK on {$theftData['mining_date']} so far ({$occurrence})");
+                        $this->line("     Counted on the incident: " . number_format($incident->ore_value / 1000000, 0) . "M ISK");
                         $this->line('');
                     }
 
@@ -133,7 +131,8 @@ class MonitorActiveTheftsCommand extends Command
                             try {
                                 $this->notificationService->notifyActiveTheft(
                                     $theftData['incident'],
-                                    $theftData['new_value']
+                                    $theftData['new_value'],
+                                    $theftData['mining_date']
                                 );
                                 $notificationsSent++;
                             } catch (\Exception $e) {

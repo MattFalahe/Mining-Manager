@@ -346,7 +346,7 @@ class ApiController extends Controller
     {
         return response()->json([
             'status' => 'ok',
-            'version' => config('mining-manager.version', '1.0.0'),
+            'version' => app(\MiningManager\Services\VersionChecker::class)->installedVersion(),
             'timestamp' => Carbon::now()->toIso8601String(),
         ]);
     }

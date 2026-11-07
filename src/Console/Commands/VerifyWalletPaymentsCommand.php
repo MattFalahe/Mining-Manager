@@ -491,7 +491,7 @@ class VerifyWalletPaymentsCommand extends Command
                             ->where('period_start', '<=', $month->copy()->endOfMonth()->format('Y-m-d'));
                     });
             })
-            ->whereNotIn('status', ['waived', 'exempted'])
+            ->whereNotIn('status', MiningTax::WRITTEN_OFF_STATUSES)
             ->pluck('id')
             ->map(fn ($id) => (int) $id)
             ->all();

@@ -170,10 +170,14 @@ class ProcessMiningLedgerCommand extends Command
         // queue workers (Laravel's persistent worker reuses the process
         // across many jobs sequentially).
         $previousActiveCorp = $settingsService->getActiveCorporation();
+        $summaries = app(\MiningManager\Services\Ledger\LedgerSummaryService::class);
         try {
-            // Process entries in chunks, grouped by observer within each chunk
-            $query->orderBy('observer_id')->chunk(500, function ($chunk) use (
-                $settingsService, $recalculate, $cutoffDate,
+            // Process entries in chunks, grouped by observer within each chunk.
+            // A refinery has many reports, and a sort left with ties is free to
+            // order them differently for each page, so without the id a run
+            // reads some reports twice and never reaches others.
+            $query->orderBy('observer_id')->orderBy('id')->chunk(500, function ($chunk) use (
+                $settingsService, $summaries, $recalculate, $cutoffDate,
                 &$processed, &$updated, &$skipped, &$errors,
                 &$uniqueObserverIds, &$uniqueCharacterIds, &$totalQuantity,
                 &$touchedPairsMap, &$jackpotCheckEntries, &$billedSkips, &$lateArrivals,
@@ -227,7 +231,7 @@ class ProcessMiningLedgerCommand extends Command
 
                     // Calculate ore values using OreValuationService (daily session pricing)
                     $valuationService = app(OreValuationService::class);
-                    $values = $valuationService->calculateOreValue($entry->type_id, $entry->quantity);
+                    $values = $valuationService->calculateOreValue($entry->type_id, $entry->quantity, ['mining_date' => $entry->last_updated]);
 
                     $unitPrice = $values['unit_price'] ?? 0;
                     $oreValue = $values['ore_value'] ?? 0;
@@ -242,8 +246,14 @@ class ProcessMiningLedgerCommand extends Command
                     $isTriglavian = TypeIdRegistry::isTriglavianOre($entry->type_id);
                     $oreCategory = $this->classifyOreCategory($entry->type_id);
 
-                    // Get tax rate from this structure owner's corporation settings
-                    $taxRate = $this->getTaxRateFromSettings($settingsService, $entry->type_id, $isMoonOre, $isIce, $isGas, $isAbyssal, $isTriglavian, $taxSelector, $structureCorpId);
+                    // The rate the daily summaries charge this row. Days taxed
+                    // before tax profiles keep the structure owner's settings.
+                    $taxRate = $summaries->profileRateFor(
+                        (int) $entry->character_id,
+                        Carbon::parse($entry->last_updated),
+                        (int) $entry->type_id,
+                        $structureCorpId ? (int) $structureCorpId : null
+                    ) ?? $this->getTaxRateFromSettings($settingsService, $entry->type_id, $isMoonOre, $isIce, $isGas, $isAbyssal, $isTriglavian, $taxSelector, $structureCorpId);
                     $taxAmount = $totalValue * ($taxRate / 100);
 
                     // Prepare data
@@ -303,7 +313,8 @@ class ProcessMiningLedgerCommand extends Command
                         if ($entry->quantity > $existing->quantity) {
                             $extraValues = $valuationService->calculateOreValue(
                                 $entry->type_id,
-                                (int) $entry->quantity - (int) $existing->quantity
+                                (int) $entry->quantity - (int) $existing->quantity,
+                                ['mining_date' => $entry->last_updated]
                             );
                             $existing->update(LateMining::growth($existing, (int) $entry->quantity, $extraValues) + [
                                 'processed_at' => Carbon::now(),
@@ -356,10 +367,18 @@ class ProcessMiningLedgerCommand extends Command
                         // Character ESI combines ALL mining of a type in a system into one entry,
                         // so if a character mined at both a corp moon and non-corp moon,
                         // we subtract the observer quantity and keep the remainder as untaxed.
+                        //
+                        // The personal row is the one in the refinery's own system. The
+                        // same ore mined in another system that day has a row of its own,
+                        // and reducing that one instead left both wrong: mining that never
+                        // happened kept as personal mining, and the real refinery mining
+                        // counted twice. Where SeAT has not resolved the refinery's system
+                        // the day's row is taken as before.
                         $personalDupe = MiningLedger::where('character_id', $entry->character_id)
                             ->whereDate('date', Carbon::parse($entry->last_updated)->toDateString())
                             ->where('type_id', $entry->type_id)
                             ->whereNull('observer_id')
+                            ->when($solarSystemId, fn ($query) => $query->where('solar_system_id', $solarSystemId))
                             ->first();
 
                         // Dedup is a correction, and a correction to mining that
@@ -387,7 +406,7 @@ class ProcessMiningLedgerCommand extends Command
                             } else {
                                 // Character mined more than observer shows — keep remainder as non-corp mining
                                 $valuationService = app(OreValuationService::class);
-                                $remainderValues = $valuationService->calculateOreValue($entry->type_id, $remainder);
+                                $remainderValues = $valuationService->calculateOreValue($entry->type_id, $remainder, ['mining_date' => $personalDupe->date]);
                                 $personalDupe->update([
                                     'quantity' => $remainder,
                                     'unit_price' => $remainderValues['unit_price'] ?? 0,
@@ -459,12 +478,6 @@ class ProcessMiningLedgerCommand extends Command
                 $this->line("   • Total est. taxes (per settings): " . number_format($totalTaxes, 0) . " ISK");
             }
 
-            if ($errors > 0) {
-                $this->line('');
-                $this->warn("⚠️  Completed with {$errors} errors. Check logs for details.");
-                return Command::FAILURE;
-            }
-
             // Check for jackpot ores in observer entries.
             //
             // BUG FIX 2026-04-27: previously gated on `$processed > 0` which
@@ -486,8 +499,8 @@ class ProcessMiningLedgerCommand extends Command
 
             // No second pass over personal rows here, on purpose. A personal
             // row is reduced once, above, the first time it meets an observer
-            // row, and one exactly matching our own observer is cleared each
-            // night by PersonalMiningReconciler. Taking the observer quantity
+            // row, and PersonalMiningReconciler works out each night what it
+            // should hold from SeAT's full figure. Taking the observer quantity
             // off again on every run removed the part of a pilot's mining that
             // came off somebody else's moon.
 
@@ -510,10 +523,41 @@ class ProcessMiningLedgerCommand extends Command
                     $this->warn("   ⚠️  Daily summary update failed: {$e->getMessage()}");
                     Log::warning('Mining Manager: Auto daily summary update failed', ['error' => $e->getMessage()]);
                 }
+
+                // Where non-members may not mine, their mining is theft the
+                // moment it is imported, not on the next nightly run.
+                try {
+                    $opened = app(\MiningManager\Services\Theft\TheftDetectionService::class)->checkAfterImport();
+                    $notifier = app(\MiningManager\Services\Notification\TheftNotificationService::class);
+
+                    foreach ($opened as $incident) {
+                        $incident->severity === 'critical'
+                            ? $notifier->notifyCriticalTheft($incident)
+                            : $notifier->notifyTheftDetected($incident);
+                    }
+
+                    if ($opened->isNotEmpty()) {
+                        $this->info("   Opened {$opened->count()} theft incident(s) for non-members mining here.");
+                    }
+                } catch (\Throwable $e) {
+                    Log::warning('Mining Manager: theft check after the import failed', ['error' => $e->getMessage()]);
+                }
             }
 
             // Clear dashboard cache so new data shows immediately
             \MiningManager\Http\Controllers\DashboardController::clearDashboardCache();
+
+            // Errors are reported last. A row that failed waits for the next
+            // run, and every row that went in still gets the jackpot check,
+            // its day summaries and the theft check above. Stopping at the
+            // first error held all three back for every row, and one row that
+            // keeps failing would have held them back on every run.
+            if ($errors > 0) {
+                $this->line('');
+                $this->warn("⚠️  Completed with {$errors} errors. Check logs for details. Dashboard cache cleared.");
+                return Command::FAILURE;
+            }
+
             $this->info("\n✅ Processing complete. Dashboard cache cleared.");
 
             return Command::SUCCESS;
@@ -773,20 +817,43 @@ class ProcessMiningLedgerCommand extends Command
                     continue;
                 }
 
-                // Distinguish auto-detect (was not jackpot) from user-report
-                // verification (was already jackpot via manual report).
-                $wasAutoDetected = !$extraction->is_jackpot;
-
-                $extraction->is_jackpot = true;
-                if (!$extraction->jackpot_detected_at) {
-                    $extraction->jackpot_detected_at = now();
-                }
                 // Real mining data IS the verification. Both paths land here
                 // so the daily DetectJackpotsCommand backstop has nothing to
                 // do for this extraction.
-                $extraction->jackpot_verified = true;
-                $extraction->jackpot_verified_at = now();
-                $extraction->save();
+                //
+                // An extraction nobody has marked yet is claimed in one
+                // statement, the way a member's Report Jackpot claims it. That
+                // report or the daily scan can land between the read above and
+                // this write, and only whoever flips the flag sends the ping,
+                // so one jackpot is never announced twice.
+                $wasAutoDetected = !$extraction->is_jackpot && MoonExtraction::where('id', $extraction->id)
+                    ->where('is_jackpot', false)
+                    ->update([
+                        'is_jackpot' => true,
+                        'jackpot_detected_at' => $extraction->jackpot_detected_at ?? now(),
+                        'jackpot_verified' => true,
+                        'jackpot_verified_at' => now(),
+                    ]) === 1;
+
+                $boreOut = false;
+                if (!$wasAutoDetected) {
+                    // Marked already, by a member's report or another run: the
+                    // mark stands, and the mining bears it out.
+                    $boreOut = MoonExtraction::where('id', $extraction->id)
+                        ->whereNull('jackpot_verified')
+                        ->update([
+                            'jackpot_verified' => true,
+                            'jackpot_verified_at' => now(),
+                        ]) === 1;
+                }
+
+                $extraction->refresh();
+
+                // Manager Core hears of it once, from whichever of the writes
+                // above changed the extraction.
+                if ($wasAutoDetected || $boreOut) {
+                    \MiningManager\Integrations\ManagerCoreEvents::jackpotDetected($extraction);
+                }
 
                 if ($wasAutoDetected) {
                     $jackpotsFound++;

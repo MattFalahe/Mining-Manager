@@ -3,11 +3,27 @@
 namespace MiningManager\Services\Tax;
 
 use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use MiningManager\Models\MiningTax;
+use MiningManager\Services\Character\CorporationOnDate;
 use MiningManager\Services\Configuration\SettingsManagerService;
 
 class TaxPeriodHelper
 {
+    /**
+     * The day of the month a queued change of billing period takes effect,
+     * the day after the tax run bills the period before (see
+     * shouldCalculateToday()).
+     */
+    public const PERIOD_CHANGE_DAY = 3;
+
+    /**
+     * The last day of the month a billing period can change on the day: the
+     * run on the 16th bills the first half of a twice-a-month month.
+     */
+    public const LAST_SAME_DAY_PERIOD_CHANGE = 15;
+
     protected SettingsManagerService $settingsService;
 
     public function __construct(SettingsManagerService $settingsService)
@@ -19,13 +35,12 @@ class TaxPeriodHelper
      * Get the configured tax calculation period type.
      *
      * Respects a "queued switch" via tax_calculation_period_pending +
-     * tax_calculation_period_effective_from. Period changes are always
-     * deferred to the first of a future calendar month to avoid colliding
-     * with tax rows whose unique key is (character_id, period_start):
-     * biweekly H1 and monthly both target period_start = 1st of month,
-     * so switching mid-month would either orphan the shorter periods or
-     * silently overwrite their period_type under --force recalc. Queueing
-     * to a month boundary sidesteps both failure modes.
+     * tax_calculation_period_effective_from. A period change waits for
+     * nextSafeEffectiveDate() unless canChangePeriodToday() allows it on the
+     * day. Tax rows are keyed on (character_id, period_start), and biweekly
+     * H1 and monthly both start on the 1st, so a switch part way through a
+     * month would find the first half's bill in the way of the month's, or
+     * bill the second half alone.
      *
      * Legacy 'weekly' auto-heal: 'weekly' as an active period type was
      * removed in v1.0.3+ because weekly ISO periods cross calendar-month
@@ -46,10 +61,24 @@ class TaxPeriodHelper
      */
     public function getConfiguredPeriodType(): string
     {
-        $rates = $this->settingsService->getTaxRates();
-        $active = $rates['tax_calculation_period'] ?? 'monthly';
-        $pending = $rates['tax_calculation_period_pending'] ?? null;
-        $effectiveFrom = $rates['tax_calculation_period_effective_from'] ?? null;
+        return $this->periodTypeFor($this->settingsService->getActiveCorporation());
+    }
+
+    /**
+     * The billing period of the tax profile for a corporation's members, its
+     * own when configured and Global when not, as getConfiguredPeriodType()
+     * describes it. A queued change is promoted for that profile alone.
+     *
+     * @return string 'monthly' or 'biweekly'
+     */
+    public function periodTypeFor(?int $corporationId): string
+    {
+        $read = fn (string $key, $default) => $this->settingsService->getSettingForCorporation($key, $corporationId, $default);
+        $write = fn (string $key, $value) => $this->settingsService->updateSettingForCorporation($key, $value, 'string', $corporationId);
+
+        $active = $read('tax_rates.tax_calculation_period', 'monthly');
+        $pending = $read('tax_rates.tax_calculation_period_pending', null);
+        $effectiveFrom = $read('tax_rates.tax_calculation_period_effective_from', null);
 
         if ($pending && $effectiveFrom) {
             try {
@@ -58,21 +87,9 @@ class TaxPeriodHelper
                     // Auto-heal if somehow a pending 'weekly' value was stored.
                     $promoted = $this->normaliseLegacyWeekly($pending);
 
-                    $this->settingsService->updateSetting(
-                        'tax_rates.tax_calculation_period',
-                        $promoted,
-                        'string'
-                    );
-                    $this->settingsService->updateSetting(
-                        'tax_rates.tax_calculation_period_pending',
-                        null,
-                        'string'
-                    );
-                    $this->settingsService->updateSetting(
-                        'tax_rates.tax_calculation_period_effective_from',
-                        null,
-                        'string'
-                    );
+                    $write('tax_rates.tax_calculation_period', $promoted);
+                    $write('tax_rates.tax_calculation_period_pending', null);
+                    $write('tax_rates.tax_calculation_period_effective_from', null);
 
                     Log::info(sprintf(
                         'Mining Manager: Tax calculation period promoted %s → %s (effective %s, promoted on %s)',
@@ -92,16 +109,96 @@ class TaxPeriodHelper
 
         // Legacy auto-heal: convert any stored 'weekly' active value to 'monthly'.
         if ($active === 'weekly') {
-            $this->settingsService->updateSetting(
-                'tax_rates.tax_calculation_period',
-                'monthly',
-                'string'
-            );
-            Log::warning('Mining Manager: Auto-migrated tax_calculation_period from deprecated "weekly" to "monthly". Weekly tax periods were removed because ISO weeks straddle calendar-month boundaries, causing double-tax and chart-aggregation issues. Switch to biweekly via Settings → Tax Rates if you need sub-monthly granularity. Historical weekly tax rows remain visible in Tax History.');
+            $write('tax_rates.tax_calculation_period', 'monthly');
+            Log::warning('Mining Manager: Auto-migrated tax_calculation_period from deprecated "weekly" to "monthly". Weekly tax periods were removed because ISO weeks straddle calendar-month boundaries, causing double-tax and chart-aggregation issues. Switch to twice a month under Settings → Tax profiles if you need sub-monthly granularity. Historical weekly tax rows remain visible in Tax History.');
             return 'monthly';
         }
 
         return $active;
+    }
+
+    /**
+     * Every billing period the tax profiles use for a month's bills, so a
+     * run on a period boundary can bill each of them: last month's and this
+     * month's when no month is given. A corporation taken off the list still
+     * bills the month it left in. Before tax profiles there is one.
+     *
+     * @return array<int, string>
+     */
+    public function periodTypesInUse(?Carbon $month = null): array
+    {
+        if (!$this->settingsService->usesTaxProfiles()) {
+            return [$this->getConfiguredPeriodType()];
+        }
+
+        $from = ($month ?? Carbon::today()->subMonthNoOverflow())->copy()->startOfMonth()->toDateString();
+        $leaving = array_keys(array_filter($this->settingsService->configuredUntil(), fn (string $until) => $until >= $from));
+
+        return array_values(array_unique(array_map(
+            fn (?int $profile) => $this->periodTypeFor($profile),
+            array_merge($this->settingsService->taxProfiles(), $leaving)
+        )));
+    }
+
+    /**
+     * The billing period the signed-in player's bills follow, from their own
+     * account's tax profile.
+     */
+    public function periodTypeForViewer(): string
+    {
+        $main = (int) (auth()->user()->main_character_id ?? 0);
+
+        return $main ? $this->periodTypeForCharacter($main) : $this->periodTypeForMoonOwner();
+    }
+
+    /**
+     * The billing period a character's bills follow: the profile of their
+     * account, decided by its main character. The configured period before
+     * tax profiles.
+     */
+    public function periodTypeForCharacter(int $characterId, ?Carbon $month = null): string
+    {
+        if (!$this->settingsService->usesTaxProfiles()) {
+            return $this->getConfiguredPeriodType();
+        }
+
+        $main = (int) DB::table('refresh_tokens as rt')
+            ->join('users as u', 'u.id', '=', 'rt.user_id')
+            ->where('rt.character_id', $characterId)
+            ->value('u.main_character_id');
+
+        return $this->periodTypeFor($this->accountProfile($main ?: $characterId, $month ?? Carbon::now()));
+    }
+
+    /**
+     * The Moon Owner's billing period, for pages about the whole tax program
+     * that need one. The configured period before tax profiles.
+     */
+    public function periodTypeForMoonOwner(): string
+    {
+        if (!$this->settingsService->usesTaxProfiles()) {
+            return $this->getConfiguredPeriodType();
+        }
+
+        return $this->periodTypeFor((int) $this->settingsService->getSettingForCorporation('general.moon_owner_corporation_id', null) ?: null);
+    }
+
+    /**
+     * The tax profile whose billing period and code prefix an account's bills
+     * use: the profile of its main character's corporation on the first of
+     * the month, so an account never changes period halfway through one. A
+     * corporation taken off the list later that month still bills it.
+     */
+    public function accountProfile(int $mainCharacterId, Carbon $periodStart): ?int
+    {
+        $first = $periodStart->copy()->startOfMonth();
+        $corporationId = app(CorporationOnDate::class)->forDay(
+            $mainCharacterId,
+            $first,
+            $this->settingsService->memberCorporationsOn($first)
+        );
+
+        return $this->settingsService->profileFor($corporationId ? (int) $corporationId : null, $first);
     }
 
     /**
@@ -118,17 +215,86 @@ class TaxPeriodHelper
     /**
      * Return info about a queued period-type change, or null if none.
      *
-     * Used by the tax pages' yellow banner to surface the upcoming switch.
+     * Reads the active corporation's settings, so it means one thing only
+     * before tax profiles. The tax pages ask pendingPeriodChangesForViewer().
      *
      * @return array{current: string, pending: string, effective_from: \Carbon\Carbon}|null
      */
     public function getPendingPeriodChange(): ?array
     {
         $rates = $this->settingsService->getTaxRates();
-        $active = $rates['tax_calculation_period'] ?? 'monthly';
-        $pending = $rates['tax_calculation_period_pending'] ?? null;
-        $effectiveFrom = $rates['tax_calculation_period_effective_from'] ?? null;
 
+        return $this->queuedChange(
+            $rates['tax_calculation_period'] ?? 'monthly',
+            $rates['tax_calculation_period_pending'] ?? null,
+            $rates['tax_calculation_period_effective_from'] ?? null
+        );
+    }
+
+    /**
+     * The queued period changes the signed-in player should see on the tax
+     * pages: their own account's profile's, and every profile's for an admin,
+     * who queues them. An admin's are named after their profile.
+     *
+     * @return array<int, array{profile: string|null, current: string, pending: string, effective_from: \Carbon\Carbon}>
+     */
+    public function pendingPeriodChangesForViewer(): array
+    {
+        if (!$this->settingsService->usesTaxProfiles()) {
+            $change = $this->getPendingPeriodChange();
+
+            return $change ? [$change + ['profile' => null]] : [];
+        }
+
+        $user = auth()->user();
+        $admin = $user && $user->can('mining-manager.admin');
+        $moonOwner = (int) $this->settingsService->getSettingForCorporation('general.moon_owner_corporation_id', null) ?: null;
+
+        if ($admin) {
+            $profiles = $this->settingsService->taxProfiles();
+        } else {
+            $main = (int) ($user->main_character_id ?? 0);
+            $profiles = [$main ? $this->accountProfile($main, Carbon::now()) : $moonOwner];
+        }
+
+        $tickers = DB::table('corporation_infos')->whereIn('corporation_id', array_filter($profiles))->pluck('ticker', 'corporation_id');
+
+        $changes = [];
+        foreach ($profiles as $profile) {
+            if ($change = $this->pendingPeriodChangeFor($profile)) {
+                $name = $profile === null ? 'Global' : (isset($tickers[$profile]) ? "[{$tickers[$profile]}]" : "Corporation {$profile}");
+                $changes[] = $change + ['profile' => $admin ? $name : null];
+            }
+        }
+
+        return $changes;
+    }
+
+    /**
+     * A tax profile's queued period change, or null when none is to come.
+     *
+     * @return array{current: string, pending: string, effective_from: \Carbon\Carbon}|null
+     */
+    public function pendingPeriodChangeFor(?int $profile): ?array
+    {
+        $read = fn (string $key, $default = null) => $this->settingsService->getSettingForCorporation($key, $profile, $default);
+
+        return $this->queuedChange(
+            (string) $read('tax_rates.tax_calculation_period', 'monthly'),
+            $read('tax_rates.tax_calculation_period_pending'),
+            $read('tax_rates.tax_calculation_period_effective_from')
+        );
+    }
+
+    /**
+     * A queued change as the banner shows it, or null when there is none to
+     * come: half a queue, a date already reached, or a change to the period
+     * already in use.
+     *
+     * @return array{current: string, pending: string, effective_from: \Carbon\Carbon}|null
+     */
+    private function queuedChange(string $active, $pending, $effectiveFrom): ?array
+    {
         if (!$pending || !$effectiveFrom) {
             return null;
         }
@@ -139,7 +305,7 @@ class TaxPeriodHelper
             return null;
         }
 
-        // Already passed — getConfiguredPeriodType() will promote on next call.
+        // Already passed: billing promotes it the next time it reads the period.
         if (Carbon::today()->gte($effectiveDate)) {
             return null;
         }
@@ -166,35 +332,68 @@ class TaxPeriodHelper
      * or silently fails to fire (shouldCalculateToday returns false for
      * the new scheme on the old scheme's calc day).
      *
-     * Both remaining period types (monthly and biweekly) schedule their
-     * "previous-period" calc on DAY 2 of next month. Day 3 lets that
-     * calc run under the old scheme, then promotes.
-     *
-     * The match structure is intentionally kept forward-compatible: if
-     * the cron schedule in ScheduleSeeder ever shifts to day N, update
-     * this to day N+1. If a new period type with a different calc day is
-     * ever introduced, add a match arm.
+     * Both period types run their "previous-period" calc on day 2, so day
+     * 3 lets that calc run under the old scheme, then promotes. Asked for
+     * on the 1st or the 2nd, that is this month's 3rd, since nothing of the
+     * month has been billed yet; asked for later, next month's. If the cron
+     * schedule in ScheduleSeeder ever shifts to day N, PERIOD_CHANGE_DAY
+     * becomes N+1.
      *
      * @return \Carbon\Carbon
      */
     public function nextSafeEffectiveDate(): Carbon
     {
-        // Read the CURRENT active period, not the pending one. We're
-        // deciding how long the old scheme should keep running.
-        $rates = $this->settingsService->getTaxRates();
-        $active = $rates['tax_calculation_period'] ?? 'monthly';
+        $today = Carbon::today();
+        $month = $today->day < self::PERIOD_CHANGE_DAY
+            ? $today->copy()->startOfMonth()
+            : $today->copy()->addMonthNoOverflow()->startOfMonth();
 
-        $nextMonthStart = Carbon::today()->addMonthNoOverflow()->startOfMonth();
+        return $month->day(self::PERIOD_CHANGE_DAY);
+    }
 
-        return match ($active) {
-            // Both monthly and biweekly fire their previous-period calc on
-            // day 2 of next month. Day 3 is the first safe cutover.
-            'monthly', 'biweekly' => $nextMonthStart->addDays(2),
-            // Defensive fallback — unknown/legacy value, use the conservative
-            // day 3 rule. (A legacy 'weekly' value is auto-healed by
-            // getConfiguredPeriodType() before this method gets called.)
-            default => $nextMonthStart->addDays(2),
-        };
+    /**
+     * Whether a tax profile's billing period can change today rather than
+     * on nextSafeEffectiveDate().
+     *
+     * Only from the 3rd, once last month's last bills have gone out under
+     * the old period, to the 15th, before the run on the 16th bills a first
+     * half, and only while the profile has made no bill for this month, early
+     * or by hand. Any later, a move to monthly would find the first half's
+     * bill in the way and never bill the second half, and a move to twice a
+     * month would bill the second half alone.
+     */
+    public function canChangePeriodToday(?int $profile): bool
+    {
+        $today = Carbon::today();
+
+        if ($today->day < self::PERIOD_CHANGE_DAY || $today->day > self::LAST_SAME_DAY_PERIOD_CHANGE) {
+            return false;
+        }
+
+        return !$this->billedThisMonth($profile);
+    }
+
+    /**
+     * Whether a tax profile has made a bill for this month. Deleted bills
+     * count, since they still hold their period, and so do bills that do not
+     * say which profile made them, from before tax profiles.
+     */
+    private function billedThisMonth(?int $profile): bool
+    {
+        $month = Carbon::today()->startOfMonth();
+
+        $bills = MiningTax::withTrashed()
+            ->where(fn ($bills) => $bills
+                ->whereBetween('period_start', [$month->toDateString(), $month->copy()->endOfMonth()->toDateString()])
+                ->orWhere(fn ($older) => $older->whereNull('period_start')->where('month', $month->toDateString())));
+
+        if (MiningTax::recordsTaxProfile()) {
+            $bills->where(fn ($bills) => $bills
+                ->whereNull('tax_profile')
+                ->orWhere('tax_profile', $profile === null ? MiningTax::GLOBAL_PROFILE : (string) $profile));
+        }
+
+        return $bills->exists();
     }
 
     /**
@@ -256,7 +455,7 @@ class TaxPeriodHelper
 
         return match ($this->normaliseLegacyWeekly($periodType)) {
             'biweekly' => $this->getPreviousCompletedBiweekly($now),
-            default => $this->getPeriodBounds($now->copy()->subMonth(), 'monthly'),
+            default => $this->getPeriodBounds($now->copy()->subMonthNoOverflow(), 'monthly'),
         };
     }
 

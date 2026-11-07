@@ -9,9 +9,9 @@ class ReconcilePersonalMiningCommand extends Command
 {
     protected $signature = 'mining-manager:reconcile-personal-mining
                             {--days= : How many days back to look (default 4)}
-                            {--dry-run : Report what would go and write nothing}';
+                            {--dry-run : Report what would change and write nothing}';
 
-    protected $description = 'Remove personal mining rows a corporation observer has already accounted for';
+    protected $description = 'Remove or correct personal mining rows that refinery reports already account for';
 
     public function handle(PersonalMiningReconciler $reconciler): int
     {
@@ -33,19 +33,21 @@ class ReconcilePersonalMiningCommand extends Command
 
         if (!empty($result['rows'])) {
             $this->table(
-                ['Ledger id', 'Character', 'Date', 'Type', 'Quantity', 'ISK'],
+                ['Ledger id', 'Character', 'Date', 'Type', 'Quantity', 'Mined elsewhere', 'ISK'],
                 array_map(fn ($row) => [
                     $row['id'],
                     $row['character_id'],
                     $row['date'],
                     $row['type_id'],
                     number_format($row['quantity']),
+                    number_format($row['left']),
                     number_format($row['value'], 0),
                 ], $result['rows'])
             );
 
-            if ($result['removed'] > count($result['rows'])) {
-                $this->line('  ... and ' . ($result['removed'] - count($result['rows'])) . ' more.');
+            $changed = $result['removed'] + $result['adjusted'];
+            if ($changed > count($result['rows'])) {
+                $this->line('  ... and ' . ($changed - count($result['rows'])) . ' more.');
             }
 
             $this->line('');
@@ -56,6 +58,7 @@ class ReconcilePersonalMiningCommand extends Command
             [
                 ['Personal rows with an observer row beside them', number_format($result['examined'])],
                 [$dryRun ? 'Would be removed' : 'Removed', number_format($result['removed'])],
+                [$dryRun ? 'Would be set to what was mined elsewhere' : 'Set to what was mined elsewhere', number_format($result['adjusted'])],
                 ['Left alone, an issued invoice covers the day', number_format($result['billed_skipped'])],
                 ['Duplicated quantity', number_format($result['quantity'])],
                 ['Duplicated value (ISK)', number_format($result['value'], 0)],
@@ -63,7 +66,7 @@ class ReconcilePersonalMiningCommand extends Command
             ]
         );
 
-        if ($result['removed'] === 0) {
+        if ($result['removed'] === 0 && $result['adjusted'] === 0) {
             $this->info('Nothing was double counted in that window.');
 
             return self::SUCCESS;
@@ -71,7 +74,7 @@ class ReconcilePersonalMiningCommand extends Command
 
         if ($dryRun) {
             $this->line('');
-            $this->warn('Dry run. Run it again without --dry-run to remove them.');
+            $this->warn('Dry run. Run it again without --dry-run to make these changes.');
         }
 
         return self::SUCCESS;

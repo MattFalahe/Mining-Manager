@@ -57,7 +57,7 @@
         </div>
         <small class="text-muted d-block mt-1">
             Event tracking mirrors these settings &mdash; untaxed categories produce no participant data.
-            Change in <a href="{{ route('mining-manager.settings.index') }}">Settings &rarr; Tax</a>.
+            Change in <a href="{{ route('mining-manager.settings.index') }}">Settings, Tax profiles</a>.
         </small>
     </div>
 

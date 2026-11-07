@@ -4,7 +4,7 @@
 @section('page_header', trans('mining-manager::menu.reports'))
 
 @push('head')
-<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=8">
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=10">
 <style>
     .export-option-card { cursor: pointer; border: 2px solid transparent !important; transition: all 0.3s ease; position: relative; }
     .export-option-card:hover { border-color: rgba(102, 126, 234, 0.5) !important; transform: translateY(-2px); }
@@ -489,8 +489,15 @@ $(document).ready(function() {
 
     // Form submission
     $('#exportForm').on('submit', function() {
-        $('#exportBtn').prop('disabled', true)
+        const $btn = $('#exportBtn');
+        const label = $btn.html();
+        $btn.prop('disabled', true)
             .html('<i class="fas fa-spinner fa-spin"></i> {{ trans("mining-manager::reports.exporting") }}');
+        // The file downloads while the page stays where it is, so the button
+        // has to come back by itself for the next export.
+        setTimeout(function() {
+            $btn.prop('disabled', false).html(label);
+        }, 5000);
     });
 });
 </script>

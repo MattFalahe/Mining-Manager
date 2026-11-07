@@ -4,7 +4,7 @@
 @section('page_header', trans('mining-manager::menu.mining_events'))
 
 @push('head')
-<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=8">
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=10">
 <script src="{{ asset('vendor/mining-manager/js/eve-time.js') }}?v=1" defer></script>
 <script src="{{ asset('vendor/mining-manager/js/eve-countdown.js') }}?v=1" defer></script>
 <meta http-equiv="refresh" content="30">
@@ -28,13 +28,13 @@
                     <i class="fas fa-play-circle"></i> {{ trans('mining-manager::menu.active_events') }}
                 </a>
             </li>
-            @can('mining-manager.director')
+            @if (app(\MiningManager\Services\Events\EventAccess::class)->canCreate(auth()->user()))
             <li class="nav-item">
                 <a class="nav-link {{ Request::is('*/events/create') ? 'active' : '' }}" href="{{ route('mining-manager.events.create') }}">
                     <i class="fas fa-plus-circle"></i> {{ trans('mining-manager::menu.create_event') }}
                 </a>
             </li>
-            @endcan
+            @endif
             <li class="nav-item">
                 <a class="nav-link {{ Request::is('*/events/calendar') ? 'active' : '' }}" href="{{ route('mining-manager.events.calendar') }}">
                     <i class="fas fa-calendar-alt"></i> {{ trans('mining-manager::menu.event_calendar') }}
@@ -172,14 +172,16 @@
                         <a href="{{ route('mining-manager.events.show', $event->id) }}" class="btn btn-info">
                             <i class="fas fa-eye"></i> {{ trans('mining-manager::events.view_details') }}
                         </a>
-                        @if($event->isParticipating(auth()->user()))
-                            <button class="btn btn-danger leave-event" data-event-id="{{ $event->id }}">
-                                <i class="fas fa-sign-out-alt"></i> {{ trans('mining-manager::events.leave') }}
-                            </button>
-                        @else
-                            <button class="btn btn-success join-event" data-event-id="{{ $event->id }}">
-                                <i class="fas fa-sign-in-alt"></i> {{ trans('mining-manager::events.join') }}
-                            </button>
+                        @if($event->takesSignUps())
+                            @if($event->isSignedUp(auth()->user()))
+                                <button class="btn btn-danger leave-event" data-event-id="{{ $event->id }}">
+                                    <i class="fas fa-sign-out-alt"></i> {{ trans('mining-manager::events.leave') }}
+                                </button>
+                            @else
+                                <button class="btn btn-success join-event" data-event-id="{{ $event->id }}">
+                                    <i class="fas fa-sign-in-alt"></i> {{ trans('mining-manager::events.join') }}
+                                </button>
+                            @endif
                         @endif
                     </div>
                 </div>

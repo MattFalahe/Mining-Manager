@@ -9,7 +9,6 @@ use Illuminate\Support\Facades\Schema;
 use MiningManager\Models\MoonExtraction;
 use MiningManager\Models\WebhookConfiguration;
 use MiningManager\Integrations\MoonFastPollIntegration;
-use MiningManager\Models\TaxCode;
 use MiningManager\Services\Tax\ClassificationEpoch;
 use MiningManager\Services\OreClassifier;
 use MiningManager\Services\TypeIdRegistry;
@@ -101,8 +100,8 @@ class MasterTestRunner
             'checkPricingSettingsLoadable',
             'checkNotificationSettingsLoadable',
             'checkFeatureFlagsLoadable',
-            'checkActiveCorporationConfigured',
-            'checkValueShownMatchesTax',
+            'checkMoonOwnerSet',
+            'checkSettingsHealth',
 
             // Cross-plugin detection + integration
             'checkManagerCoreDetected',
@@ -253,7 +252,7 @@ class MasterTestRunner
         ];
 
         if (!Schema::hasTable('migrations')) {
-            return $this->fail('Migrations table present', 'schema', 'migrations table missing — Laravel install is broken');
+            return $this->fail('Migrations table present', 'schema', 'migrations table missing: Laravel install is broken');
         }
 
         $applied = DB::table('migrations')->whereIn('migration', $expected)->pluck('migration')->toArray();
@@ -333,7 +332,7 @@ class MasterTestRunner
             return $this->fail(
                 'Tax-code uniqueness',
                 'schema',
-                'Found ' . $dupes->count() . '+ duplicated tax codes — migration 000011 likely did not run',
+                'Found ' . $dupes->count() . '+ duplicated tax codes: migration 000011 likely did not run',
                 ['sample_duplicates' => $dupes->pluck('code')->all()]
             );
         }
@@ -380,7 +379,7 @@ class MasterTestRunner
 
         $rowCount = DB::table('mining_manager_settings')->count();
         if ($rowCount === 0) {
-            return $this->warn('Settings table present', 'schema', 'mining_manager_settings is empty — fresh install or seeder not run');
+            return $this->warn('Settings table present', 'schema', 'mining_manager_settings is empty: fresh install or seeder not run');
         }
 
         return $this->pass('Settings table present', 'schema', "{$rowCount} settings rows");
@@ -389,35 +388,6 @@ class MasterTestRunner
     // =================================================================
     // SETTINGS CONSISTENCY
     // =================================================================
-
-    /**
-     * The simulator and Find Moons open on refined or ore value, and tax is
-     * worked out from one or the other. They are separate settings, so they can
-     * disagree, and when they do every simulation carries a warning that the
-     * figure on screen is not the one tax uses.
-     */
-    protected function checkValueShownMatchesTax(): array
-    {
-        $name = 'Moon value shown matches the value taxed';
-
-        $showsRefined = !empty($this->settingsService->getPricingSettings()['use_refined_value']);
-        // Same test OreValuationService makes: minerals, or else the ore.
-        $taxesRefined = ($this->settingsService->getGeneralSettings()['ore_valuation_method'] ?? 'mineral_price') === 'mineral_price';
-
-        $shown = $showsRefined ? 'refined' : 'ore';
-        $taxed = $taxesRefined ? 'refined' : 'ore';
-
-        if ($showsRefined === $taxesRefined) {
-            return $this->pass($name, 'settings', "The simulator and Find Moons open on {$shown} value, the same figure tax is worked out from");
-        }
-
-        return $this->warn(
-            $name,
-            'settings',
-            "The simulator and Find Moons open on {$shown} value, but tax is worked out from {$taxed} value",
-            ['hint' => 'Every simulation warns that the figure on screen is not the one tax uses. Use Refined Mineral Value on the Pricing tab sets which value the pages open on.']
-        );
-    }
 
     protected function checkPricingSettingsLoadable(): array
     {
@@ -428,7 +398,7 @@ class MasterTestRunner
             'price_provider', 'price_type', 'cache_duration', 'fallback_to_jita',
             'janice_market', 'janice_price_method',
             'manager_core_market', 'manager_core_variant',
-            'use_refined_value', 'refining_efficiency',
+            'refining_efficiency',
         ];
 
         $missing = [];
@@ -461,7 +431,7 @@ class MasterTestRunner
         $hasTypeSettings = isset($s['type_settings']) && is_array($s['type_settings']);
 
         if (!$hasEnabledTypes || !$hasTypeSettings) {
-            return $this->warn('Notification settings loadable', 'settings', 'shape unexpected — UI may render with defaults', $s);
+            return $this->warn('Notification settings loadable', 'settings', 'shape unexpected: UI may render with defaults', $s);
         }
 
         $enabledCount = count(array_filter($s['enabled_types']));
@@ -478,24 +448,56 @@ class MasterTestRunner
         return $this->pass('Feature flags loadable', 'settings', "{$on}/" . count($f) . " flags enabled");
     }
 
-    protected function checkActiveCorporationConfigured(): array
+    protected function checkMoonOwnerSet(): array
     {
         $corpId = $this->settingsService->getTaxProgramCorporationId();
         if (!$corpId) {
             return $this->warn(
-                'Tax program corporation configured',
+                'Moon Owner set',
                 'settings',
-                'No tax program corporation set — moon owner-scoped queries will not filter',
-                ['hint' => 'Set general.moon_owner_corporation_id in Settings → General']
+                'No Moon Owner corporation is set, so nothing that works for the Moon Owner has a corporation to work for',
+                ['hint' => 'Set it under Settings, Setup']
             );
         }
 
         $name = DB::table('corporation_infos')->where('corporation_id', $corpId)->value('name');
         return $this->pass(
-            'Tax program corporation configured',
+            'Moon Owner set',
             'settings',
-            $name ? "{$name} ({$corpId})" : "Corp ID {$corpId} (name not in SDE)"
+            $name ? "{$name} ({$corpId})" : "Corporation {$corpId}, which SeAT has no record of"
         );
+    }
+
+    /**
+     * The Settings Health tab's checks, summed up: where every setting is
+     * kept, and what each tax profile holds.
+     */
+    protected function checkSettingsHealth(): array
+    {
+        $name = 'Settings and tax profiles';
+        $report = app(SettingsHealth::class)->report();
+
+        $problems = [];
+        foreach ($report['groups'] as $group) {
+            foreach ($group['checks'] as $check) {
+                if (in_array($check['status'], ['warn', 'fail'], true)) {
+                    $problems[] = "{$check['label']}: {$check['message']}";
+                }
+            }
+        }
+
+        $counts = $report['counts'];
+        $summary = "{$counts['ok']} ok, {$counts['warn']} warnings, {$counts['fail']} failures";
+
+        if ($report['overall'] === 'fail') {
+            return $this->fail($name, 'settings', "{$summary}. The Settings Health tab has the detail", $problems);
+        }
+
+        if ($report['overall'] === 'warn') {
+            return $this->warn($name, 'settings', "{$summary}. The Settings Health tab has the detail", $problems);
+        }
+
+        return $this->pass($name, 'settings', $summary);
     }
 
     // =================================================================
@@ -537,7 +539,7 @@ class MasterTestRunner
             return $this->warn(
                 'EventBus subscription',
                 'cross-plugin',
-                'No structure.alert.* subscription registered for mining-manager — boot path did not run, or MC table was reset'
+                'No structure.alert.* subscription registered for mining-manager: boot path did not run, or MC table was reset'
             );
         }
 
@@ -567,7 +569,7 @@ class MasterTestRunner
                 return $this->warn(
                     'PluginBridge capabilities',
                     'cross-plugin',
-                    'mining-manager.structure.notify_alert capability not registered — boot path did not run'
+                    'mining-manager.structure.notify_alert capability not registered: boot path did not run'
                 );
             }
 
@@ -588,7 +590,7 @@ class MasterTestRunner
             return $this->skip(
                 'MC pricing subscription',
                 'cross-plugin',
-                "Configured provider is '{$provider}' — MC subscription not required"
+                "Configured provider is '{$provider}': MC subscription not required"
             );
         }
 
@@ -604,7 +606,7 @@ class MasterTestRunner
             return $this->warn(
                 'MC pricing subscription',
                 'cross-plugin',
-                'Provider=manager-core but ZERO type subscriptions present — boot re-subscribe failed or MC table was reset',
+                'Provider=manager-core but ZERO type subscriptions present: boot re-subscribe failed or MC table was reset',
                 ['hint' => 'Re-save the Pricing settings, or check service-provider boot logs for "[MM] Boot-time MC pricing subscription failed"']
             );
         }
@@ -637,7 +639,7 @@ class MasterTestRunner
         $total = DB::table('manager_core_market_prices')->where('market', $market)->count();
 
         if ($total === 0) {
-            return $this->warn('MC price freshness', 'pricing', "No price rows in market '{$market}' — MC update-prices cron has never run for this market");
+            return $this->warn('MC price freshness', 'pricing', "No price rows in market '{$market}': MC update-prices cron has never run for this market");
         }
 
         if ($stale > 0) {
@@ -806,7 +808,7 @@ class MasterTestRunner
             return $this->warn(
                 'Price provider roundtrip',
                 'pricing',
-                'getPrices(Tritanium) returned 0 — provider has no price data yet',
+                'getPrices(Tritanium) returned 0: provider has no price data yet',
                 ['hint' => 'For MC: wait for the next manager-core:update-prices cron, or click "Refresh Prices" in MC. For Janice/Fuzzwork: check the API endpoint reachability.']
             );
         }
@@ -835,7 +837,7 @@ class MasterTestRunner
         $enabled = WebhookConfiguration::enabled()->count();
 
         if ($total === 0) {
-            return $this->warn('Webhook configurations', 'notifications', 'No webhooks configured — notifications will be silently dropped');
+            return $this->warn('Webhook configurations', 'notifications', 'No webhooks configured: notifications will be silently dropped');
         }
 
         // HTTPS-only audit cross-check: scan for any webhook URL still using
@@ -848,7 +850,7 @@ class MasterTestRunner
             return $this->warn(
                 'Webhook configurations',
                 'notifications',
-                "{$httpUrls} webhook(s) still use http:// — saved before HTTPS-only enforcement landed",
+                "{$httpUrls} webhook(s) still use http://, saved before HTTPS-only enforcement landed",
                 ['hint' => 'Re-edit each webhook in Settings → Webhooks; the new validation will require https://']
             );
         }
@@ -904,7 +906,7 @@ class MasterTestRunner
             return $this->warn(
                 'Custom-template injection safety',
                 'security',
-                'Substitution result shape unexpected — H3 fix may not be active',
+                'Substitution result shape unexpected: H3 fix may not be active',
                 $result
             );
         }
@@ -919,7 +921,7 @@ class MasterTestRunner
     protected function checkSchedulesPresent(): array
     {
         if (!Schema::hasTable('schedules')) {
-            return $this->fail('Cron schedules present', 'lifecycle', 'schedules table missing — SeAT install broken');
+            return $this->fail('Cron schedules present', 'lifecycle', 'schedules table missing: SeAT install broken');
         }
 
         $expected = [
@@ -960,7 +962,7 @@ class MasterTestRunner
         $futureChunks = MoonExtraction::where('chunk_arrival_time', '>', Carbon::now())->count();
 
         if ($total === 0) {
-            return $this->warn('Moon extractions health', 'lifecycle', 'No extractions ingested — fresh install or import failing');
+            return $this->warn('Moon extractions health', 'lifecycle', 'No extractions ingested: fresh install or import failing');
         }
 
         return $this->pass(
@@ -984,7 +986,7 @@ class MasterTestRunner
         $name = 'Personal mining import';
 
         if (!($this->settingsService->getFeatureFlags()['enable_ledger_tracking'] ?? true)) {
-            return $this->skip($name, 'import', 'Ledger tracking is switched off');
+            return $this->skip($name, 'import', 'Import Personal Mining is switched off');
         }
 
         if (!Schema::hasTable('character_minings')) {
@@ -1002,6 +1004,7 @@ class MasterTestRunner
                               AND o.date = t.date
                               AND o.type_id = t.type_id
                               AND o.observer_id IS NOT NULL
+                              AND (o.solar_system_id = t.solar_system_id OR o.solar_system_id IS NULL)
                               AND o.deleted_at IS NULL) AS has_observer,
                     (SELECT l.quantity FROM mining_ledger l
                      WHERE l.character_id = t.character_id
@@ -1024,8 +1027,10 @@ class MasterTestRunner
         $different = 0;
 
         foreach ($rows as $row) {
-            // Moon mining with observer data is imported from the observer,
-            // not from here.
+            // Where a refinery reported the same ore in the same system, or in
+            // one SeAT has not placed yet, the personal row is cut to what the
+            // report leaves, so SeAT's figure is no yardstick for it. The import
+            // skips these on the same terms.
             if ($row->has_observer) {
                 continue;
             }
@@ -1301,7 +1306,7 @@ class MasterTestRunner
     protected function checkProcessedTransactionsTable(): array
     {
         if (!Schema::hasTable('mining_manager_processed_transactions')) {
-            return $this->fail('Processed transactions table', 'tax', 'mining_manager_processed_transactions table missing — H1 dedup latch will throw');
+            return $this->fail('Processed transactions table', 'tax', 'mining_manager_processed_transactions table missing: H1 dedup latch will throw');
         }
 
         $rowCount = DB::table('mining_manager_processed_transactions')->count();
@@ -1331,14 +1336,13 @@ class MasterTestRunner
             return $this->warn($name, 'payments', 'Switched on, but the keyword is empty, so no payment is recognised as paying ahead');
         }
 
-        $others = [
-            'tax code prefix' => trim((string) TaxCode::getPrefix()),
-            // An empty refund keyword falls back to the default at match time.
-            'refund keyword' => trim((string) ($payment['refund_keyword'] ?? '')) ?: 'MM-REFUND',
-        ];
+        // Every tax profile makes its codes with a prefix of its own.
+        $others = array_map(fn (string $prefix) => ['tax code prefix', $prefix], $this->settingsService->taxCodePrefixes());
+        // An empty refund keyword falls back to the default at match time.
+        $others[] = ['refund keyword', trim((string) ($payment['refund_keyword'] ?? '')) ?: 'MM-REFUND'];
 
         $clashes = [];
-        foreach ($others as $label => $other) {
+        foreach ($others as [$label, $other]) {
             if ($other !== '' && (stripos($keyword, $other) !== false || stripos($other, $keyword) !== false)) {
                 $clashes[] = "{$label} {$other}";
             }
@@ -1356,8 +1360,8 @@ class MasterTestRunner
             return $this->warn(
                 $name,
                 'payments',
-                "Keyword {$keyword}, but Hold surplus as credit is off, so anything paid ahead beyond what a member owes is not held",
-                ['hint' => 'Turn on Hold surplus as credit under Settings, General, or a director has to assign the rest of each pay-ahead by hand.']
+                "Keyword {$keyword}, but keeping what is left over as credit is off, so anything paid ahead beyond what a member owes is not held",
+                ['hint' => 'Turn on Keep anything left over as credit against the next bill, under Settings, Payments, or a director has to assign the rest of each pay-ahead by hand.']
             );
         }
 

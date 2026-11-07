@@ -157,6 +157,36 @@
                     {{ trans('mining-manager::settings.enable_moon_tracking_help') }}
                 </small>
             </div>
+
+            <div class="form-group mb-0">
+                <label for="theft_overdue_days">
+                    <i class="fas fa-user-secret"></i>
+                    <strong>Days Overdue Before Theft</strong>
+                    <span class="badge badge-info ml-1">{{ trans('mining-manager::settings.applies_to_all_corporations') }}</span>
+                </label>
+                <div class="input-group" style="max-width: 220px;">
+                    <input type="number"
+                           class="form-control @error('theft_overdue_days') is-invalid @enderror"
+                           id="theft_overdue_days"
+                           name="theft_overdue_days"
+                           value="{{ old('theft_overdue_days', $settings->theft_overdue_days ?? 15) }}"
+                           min="0"
+                           max="365"
+                           required>
+                    <div class="input-group-append">
+                        <span class="input-group-text">Days</span>
+                    </div>
+                </div>
+                <small class="form-text text-muted">
+                    A non-member mining at your refineries counts as theft once a bill on their account is
+                    more than this many days past its due date and still unpaid, or at once while the Global
+                    profile's moon rates are 100%. Members are never flagged; their overdue bills are for the
+                    reminders and the outstanding digest. Default: 15 days.
+                </small>
+                @error('theft_overdue_days')
+                    <div class="invalid-feedback d-block">{{ $message }}</div>
+                @enderror
+            </div>
         </div>
     </div>
 
@@ -169,22 +199,6 @@
             </h5>
         </div>
         <div class="card-body">
-            <div class="custom-control custom-switch mb-3">
-                <input type="checkbox" 
-                       class="custom-control-input" 
-                       id="allow_public_stats" 
-                       name="allow_public_stats" 
-                       value="1"
-                       {{ old('allow_public_stats', $settings->allow_public_stats ?? false) ? 'checked' : '' }}>
-                <label class="custom-control-label" for="allow_public_stats">
-                    <i class="fas fa-chart-pie"></i>
-                    <strong>{{ trans('mining-manager::settings.allow_public_stats') }}</strong>
-                </label>
-                <small class="form-text text-muted">
-                    {{ trans('mining-manager::settings.allow_public_stats_help') }}
-                </small>
-            </div>
-
             <div class="custom-control custom-switch mb-3">
                 <input type="checkbox" 
                        class="custom-control-input" 
@@ -315,30 +329,6 @@
                 </small>
             </div>
 
-            <div class="custom-control custom-switch mb-3">
-                <input type="checkbox"
-                       class="custom-control-input"
-                       id="enable_upfront_payments"
-                       name="enable_upfront_payments"
-                       value="1"
-                       {{ old('enable_upfront_payments', $settings->enable_upfront_payments ?? false) ? 'checked' : '' }}>
-                <label class="custom-control-label" for="enable_upfront_payments">
-                    <i class="fas fa-hand-holding-usd"></i>
-                    <strong>Upfront Payments</strong>
-                    {{-- The corporation selector at the top of the page does not
-                         govern this one. Say so where the switch is, rather than
-                         letting somebody set it per corporation and wonder why
-                         nothing changed. --}}
-                    <span class="badge badge-info ml-1">{{ trans('mining-manager::settings.applies_to_all_corporations') }}</span>
-                </label>
-                <small class="form-text text-muted">
-                    Lets members pay before being invoiced by putting a standing keyword
-                    in the transfer reason. The payment settles whatever they already owe,
-                    oldest first, and the rest becomes account balance against future
-                    invoices. Off by default. The keyword itself is set under
-                    General &rarr; Payment Settings.
-                </small>
-            </div>
         </div>
     </div>
 
@@ -379,31 +369,6 @@
                 </div>
                 <small class="form-text text-muted">
                     {{ trans('mining-manager::settings.ledger_retention_days_help') }}
-                </small>
-            </div>
-
-            <div class="form-group">
-                <label for="tax_record_retention_days">
-                    <i class="fas fa-coins"></i>
-                    {{ trans('mining-manager::settings.tax_record_retention_days') }}
-                </label>
-                <div class="input-group">
-                    <input type="number" 
-                           class="form-control @error('tax_record_retention_days') is-invalid @enderror" 
-                           id="tax_record_retention_days" 
-                           name="tax_record_retention_days" 
-                           value="{{ old('tax_record_retention_days', $settings->tax_record_retention_days ?? 730) }}"
-                           min="90" 
-                           max="3650">
-                    <div class="input-group-append">
-                        <span class="input-group-text">{{ trans('mining-manager::settings.days') }}</span>
-                    </div>
-                    @error('tax_record_retention_days')
-                        <div class="invalid-feedback">{{ $message }}</div>
-                    @enderror
-                </div>
-                <small class="form-text text-muted">
-                    {{ trans('mining-manager::settings.tax_record_retention_days_help') }}
                 </small>
             </div>
 

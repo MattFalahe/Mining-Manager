@@ -645,7 +645,8 @@ class MoonExtractionService
         DB::transaction(function () use ($structure, $extractionData, $refineries, &$updated, &$created) {
             foreach ($extractionData as $data) {
                 // The rigs a chunk is pulled with are looked at until it
-                // arrives; after that the chunk is what it is.
+                // arrives; after that the chunk is what it is. A cancelled
+                // chunk never arrives, so its record stops where it was.
                 $onItsWay = Carbon::parse($data['chunk_arrival_time'])->isFuture();
 
                 $existing = MoonExtraction::where('structure_id', $structure->structure_id)
@@ -671,7 +672,7 @@ class MoonExtractionService
                         'moon_id' => $data['moon_id'] ?? null,
                     ] + ($final ? [] : ['ore_composition' => $data['ore_composition'] ?? null]));
 
-                    if ($onItsWay) {
+                    if ($onItsWay && $existing->status !== 'cancelled') {
                         $existing->update([
                             'moon_rigs' => $refineries->rigSnapshot((int) $structure->structure_id, $existing->moon_rigs),
                         ]);

@@ -28,10 +28,6 @@
     "eveseat/services": "^5.0",
     "barryvdh/laravel-dompdf": "^3.0"
   },
-  "require-dev": {
-    "phpunit/phpunit": "^10.0",
-    "orchestra/testbench": "^8.0"
-  },
   "autoload": {
     "psr-4": {
       "MiningManager\\": "src/"
@@ -50,7 +46,7 @@
     }
   },
   "scripts": {
-    "test": "vendor/bin/phpunit"
+    "test": "tests/vendor/bin/phpunit"
   },
   "minimum-stability": "stable",
   "prefer-stable": true

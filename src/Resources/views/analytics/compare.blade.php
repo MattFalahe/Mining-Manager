@@ -4,7 +4,7 @@
 @section('page_header', trans('mining-manager::menu.analytics'))
 
 @push('head')
-<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=8">
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=10">
 <style>
     .comparison-card {
         transition: all 0.3s;
@@ -220,15 +220,17 @@
                                             </h5>
                                         </div>
                                         <div class="card-body">
+                                            {{-- Every change on this page runs from Period 1 to Period 2, so Period 1
+                                                 starts as the earlier 30 days; the other way round, growth shows as a fall. --}}
                                             <div class="form-group">
                                                 <label>{{ trans('mining-manager::analytics.start_date') }}</label>
                                                 <input type="date" name="period1_start" class="form-control"
-                                                       value="{{ request('period1_start', now()->subDays(30)->format('Y-m-d')) }}">
+                                                       value="{{ request('period1_start', now()->subDays(60)->format('Y-m-d')) }}">
                                             </div>
                                             <div class="form-group">
                                                 <label>{{ trans('mining-manager::analytics.end_date') }}</label>
                                                 <input type="date" name="period1_end" class="form-control"
-                                                       value="{{ request('period1_end', now()->format('Y-m-d')) }}">
+                                                       value="{{ request('period1_end', now()->subDays(30)->format('Y-m-d')) }}">
                                             </div>
                                         </div>
                                     </div>
@@ -249,12 +251,12 @@
                                             <div class="form-group">
                                                 <label>{{ trans('mining-manager::analytics.start_date') }}</label>
                                                 <input type="date" name="period2_start" class="form-control"
-                                                       value="{{ request('period2_start', now()->subDays(60)->format('Y-m-d')) }}">
+                                                       value="{{ request('period2_start', now()->subDays(30)->format('Y-m-d')) }}">
                                             </div>
                                             <div class="form-group">
                                                 <label>{{ trans('mining-manager::analytics.end_date') }}</label>
                                                 <input type="date" name="period2_end" class="form-control"
-                                                       value="{{ request('period2_end', now()->subDays(30)->format('Y-m-d')) }}">
+                                                       value="{{ request('period2_end', now()->format('Y-m-d')) }}">
                                             </div>
                                         </div>
                                     </div>

@@ -43,6 +43,7 @@ use MiningManager\Console\Commands\ImportCharacterMiningCommand;
 use MiningManager\Console\Commands\GenerateTaxCodesCommand;
 use MiningManager\Console\Commands\BackupDataCommand;
 use MiningManager\Console\Commands\RestoreDataCommand;
+use MiningManager\Console\Commands\SettingsTransferCommand;
 use MiningManager\Database\Seeders\ScheduleSeeder;
 use Illuminate\Support\Facades\Event;
 
@@ -173,6 +174,7 @@ class MiningManagerServiceProvider extends AbstractSeatPlugin
                 InitializeCommand::class,
                 BackupDataCommand::class,
                 RestoreDataCommand::class,
+                SettingsTransferCommand::class,
             ]);
         }
 

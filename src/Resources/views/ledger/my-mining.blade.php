@@ -4,7 +4,7 @@
 @section('page_header', trans_choice('mining-manager::ledger.mining_ledger', 2))
 
 @push('head')
-<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=8">
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=10">
 @endpush
 
 @section('full')
@@ -42,14 +42,27 @@
                     <h3 class="card-title">
                         <i class="fas fa-chart-pie"></i>
                         {{ trans('mining-manager::ledger.your_mining_summary') }}
+                        @if(!empty($rangeLabel))
+                            <span class="badge badge-secondary ml-2">{{ $rangeLabel }}</span>
+                        @endif
                     </h3>
                     <div class="card-tools">
-                        @php $activePeriod = request('period', 'month'); @endphp
+                        {{-- The tax periods line up with the bills; the rest are rolling windows ending today --}}
+                        @php
+                            $activePeriod = $period ?? request('period', 'period');
+                            $periodButtons = [
+                                'period' => trans('mining-manager::ledger.this_period'),
+                                'last_period' => trans('mining-manager::ledger.last_period'),
+                                'week' => trans('mining-manager::ledger.last_7_days'),
+                                'month' => trans('mining-manager::ledger.last_30_days'),
+                                'year' => trans('mining-manager::ledger.last_12_months'),
+                                'all' => trans('mining-manager::ledger.all_time'),
+                            ];
+                        @endphp
                         <div class="btn-group">
-                            <button type="button" class="btn btn-sm btn-primary {{ $activePeriod === 'week' ? 'active' : '' }}" onclick="changePeriod('week')">{{ trans('mining-manager::ledger.week') }}</button>
-                            <button type="button" class="btn btn-sm btn-primary {{ $activePeriod === 'month' ? 'active' : '' }}" onclick="changePeriod('month')">{{ trans('mining-manager::ledger.month') }}</button>
-                            <button type="button" class="btn btn-sm btn-primary {{ $activePeriod === 'year' ? 'active' : '' }}" onclick="changePeriod('year')">{{ trans('mining-manager::ledger.year') }}</button>
-                            <button type="button" class="btn btn-sm btn-primary {{ $activePeriod === 'all' ? 'active' : '' }}" onclick="changePeriod('all')">{{ trans('mining-manager::ledger.all_time') }}</button>
+                            @foreach($periodButtons as $periodKey => $periodName)
+                                <button type="button" class="btn btn-sm {{ $activePeriod === $periodKey ? 'btn-primary' : 'btn-outline-secondary' }}" onclick="changePeriod('{{ $periodKey }}')">{{ $periodName }}</button>
+                            @endforeach
                         </div>
                     </div>
                 </div>
@@ -148,7 +161,13 @@
                         </div>
                     </div>
 
-                    {{-- TAX STATUS ROW --}}
+                    {{-- TAX STATUS ROW: the estimate is the mining shown, paid and
+                         left to pay are the bills covering those days, and the
+                         last tile is what to pay next whatever the period. --}}
+                    @php
+                        $billsShown = $stats['bills_covering'] ?? 0;
+                        $nextPayment = $stats['next_payment'] ?? ['overdue_count' => 0, 'overdue_amount' => 0, 'next' => null];
+                    @endphp
                     <div class="row mt-3">
                         {{-- Estimated Tax, for the period picked above --}}
                         <div class="col-lg-3 col-md-6">
@@ -168,7 +187,12 @@
                             <div class="small-box bg-gradient-success">
                                 <div class="inner">
                                     <h3>{{ number_format($stats['total_tax_paid'] ?? 0, 0) }}</h3>
-                                    <p>{{ trans('mining-manager::ledger.tax_paid') }} (ISK)</p>
+                                    <p>
+                                        {{ trans('mining-manager::ledger.tax_paid') }} (ISK)
+                                        @if($billsShown > 0)
+                                            <br><small>{{ trans('mining-manager::ledger.of_billed', ['amount' => number_format($stats['total_tax_billed'] ?? 0, 0)]) }}</small>
+                                        @endif
+                                    </p>
                                 </div>
                                 <div class="icon">
                                     <i class="fas fa-check-circle"></i>
@@ -180,8 +204,19 @@
                         <div class="col-lg-3 col-md-6">
                             <div class="small-box {{ ($stats['tax_outstanding'] ?? 0) > 0 ? 'bg-gradient-warning' : 'bg-gradient-success' }}">
                                 <div class="inner">
-                                    <h3>{{ number_format($stats['tax_outstanding'] ?? 0, 0) }}</h3>
-                                    <p>{{ trans('mining-manager::ledger.tax_outstanding') }} (ISK)</p>
+                                    @if($billsShown > 0)
+                                        <h3>{{ number_format($stats['tax_outstanding'] ?? 0, 0) }}</h3>
+                                        <p>
+                                            {{ trans('mining-manager::ledger.tax_outstanding') }} (ISK)
+                                            <br><small>{{ trans_choice('mining-manager::ledger.bills_covering', $billsShown, ['count' => $billsShown]) }}</small>
+                                        </p>
+                                    @elseif(($stats['estimated_tax_this_month'] ?? 0) > 0 && $billedOn && $billedOn->isFuture())
+                                        <h3>{{ trans('mining-manager::ledger.not_billed_yet') }}</h3>
+                                        <p>{{ trans('mining-manager::ledger.bills_go_out', ['date' => $billedOn->format('M j')]) }}</p>
+                                    @else
+                                        <h3>0</h3>
+                                        <p>{{ trans('mining-manager::ledger.no_bill_for_days') }}</p>
+                                    @endif
                                 </div>
                                 <div class="icon">
                                     <i class="fas fa-balance-scale"></i>
@@ -189,17 +224,45 @@
                             </div>
                         </div>
 
-                        {{-- Sessions, for the period picked above --}}
+                        {{-- What to pay next, whatever the period above: overdue first --}}
                         <div class="col-lg-3 col-md-6">
-                            <div class="small-box bg-gradient-info">
-                                <div class="inner">
-                                    <h3>{{ $stats['total_sessions'] ?? 0 }}</h3>
-                                    <p>{{ trans('mining-manager::ledger.mining_sessions_this_month') }}</p>
+                            @if($nextPayment['overdue_count'] > 0)
+                                <div class="small-box bg-gradient-danger">
+                                    <div class="inner">
+                                        <h3>{{ number_format($nextPayment['overdue_amount'], 2) }}</h3>
+                                        <p>{{ trans_choice('mining-manager::ledger.overdue_bills', $nextPayment['overdue_count'], ['count' => $nextPayment['overdue_count']]) }}</p>
+                                    </div>
+                                    <div class="icon">
+                                        <i class="fas fa-exclamation-triangle"></i>
+                                    </div>
+                                    <a href="{{ route('mining-manager.taxes.my-taxes') }}" class="small-box-footer">
+                                        {{ trans('mining-manager::ledger.view_my_taxes') }} <i class="fas fa-arrow-circle-right"></i>
+                                    </a>
                                 </div>
-                                <div class="icon">
-                                    <i class="fas fa-calendar-day"></i>
+                            @elseif($nextPayment['next'])
+                                <div class="small-box bg-gradient-info">
+                                    <div class="inner">
+                                        <h3>{{ number_format($nextPayment['next']->getRemainingBalance(), 2) }}</h3>
+                                        <p>{{ trans('mining-manager::ledger.next_payment_due', ['date' => $nextPayment['next']->effectiveDueDate()->format('M j'), 'countdown' => $nextPayment['next']->dueCountdown()]) }}</p>
+                                    </div>
+                                    <div class="icon">
+                                        <i class="fas fa-calendar-day"></i>
+                                    </div>
+                                    <a href="{{ route('mining-manager.taxes.my-taxes') }}" class="small-box-footer">
+                                        {{ trans('mining-manager::ledger.view_my_taxes') }} <i class="fas fa-arrow-circle-right"></i>
+                                    </a>
                                 </div>
-                            </div>
+                            @else
+                                <div class="small-box bg-gradient-success">
+                                    <div class="inner">
+                                        <h3>0</h3>
+                                        <p>{{ trans('mining-manager::ledger.nothing_to_pay') }}</p>
+                                    </div>
+                                    <div class="icon">
+                                        <i class="fas fa-check-circle"></i>
+                                    </div>
+                                </div>
+                            @endif
                         </div>
                     </div>
 
@@ -208,7 +271,7 @@
                     <div class="row mt-2">
                         @if(($stats['event_discount_total'] ?? 0) > 0)
                         <div class="col-md-8">
-                            <div class="callout callout-success">
+                            <div class="mm-notice mm-notice-success">
                                 <h5><i class="fas fa-gift text-warning"></i> Event Discount Applied</h5>
                                 <p class="mb-0">
                                     You saved <strong>{{ number_format($stats['event_discount_total'], 0) }} ISK</strong>
@@ -247,7 +310,7 @@
                     @if(($stats['estimated_tax_this_month'] ?? 0) > 0)
                     <div class="row mt-2">
                         <div class="col-12">
-                            <div class="callout callout-info">
+                            <div class="mm-notice">
                                 <h5><i class="fas fa-info-circle"></i> {{ trans('mining-manager::ledger.about_estimated_tax') }}</h5>
                                 <p class="mb-0">{{ trans('mining-manager::ledger.estimated_tax_notice') }}</p>
                             </div>
@@ -269,6 +332,12 @@
                         <i class="fas fa-chart-line"></i>
                         {{ trans('mining-manager::ledger.mining_trend') }}
                     </h3>
+                    <div class="card-tools">
+                        <div class="btn-group btn-group-sm" role="group" id="trendModeSwitch">
+                            <button type="button" class="btn btn-primary" data-mode="total">{{ trans('mining-manager::ledger.trend_total') }}</button>
+                            <button type="button" class="btn btn-outline-secondary" data-mode="type">{{ trans('mining-manager::ledger.trend_by_type') }}</button>
+                        </div>
+                    </div>
                 </div>
                 <div class="card-body">
                     <div class="chart-container" style="position: relative; height: 300px;">
@@ -287,6 +356,12 @@
                         <i class="fas fa-chart-pie"></i>
                         {{ trans('mining-manager::ledger.ore_distribution') }}
                     </h3>
+                    <div class="card-tools">
+                        <div class="btn-group btn-group-sm" role="group" id="distributionModeSwitch">
+                            <button type="button" class="btn btn-primary" data-mode="ore">{{ trans('mining-manager::ledger.distribution_by_ore') }}</button>
+                            <button type="button" class="btn btn-outline-secondary" data-mode="type">{{ trans('mining-manager::ledger.trend_by_type') }}</button>
+                        </div>
+                    </div>
                 </div>
                 <div class="card-body">
                     <div class="chart-container" style="position: relative; height: 300px;">
@@ -486,95 +561,210 @@ function exportPersonalData() {
     window.location.href = '{{ route("mining-manager.ledger.export-personal") }}';
 }
 
-// Mining Trend Chart
+// Mining Trend Chart: the value of each day, or each day split by kind of
+// ore, stacked. The switch is remembered in this browser.
 const trendCtx = document.getElementById('miningTrendChart').getContext('2d');
-const trendChart = new Chart(trendCtx, {
-    type: 'line',
-    data: {
-        labels: @json($trendData['labels'] ?? []),
-        datasets: [{
-            label: '{{ trans("mining-manager::ledger.daily_value") }}',
-            data: @json($trendData['values'] ?? []),
+const trendLabels = @json($trendData['labels'] ?? []);
+const trendTotal = (@json($trendData['values'] ?? [])).map(Number);
+const trendByType = @json($trendData['by_type'] ?? []);
+const trendTypes = [
+    { key: 'moon', label: @json(trans('mining-manager::ledger.moon_ore')), rgb: '255, 0, 132' },
+    { key: 'ore', label: @json(trans('mining-manager::ledger.regular_ore')), rgb: '161, 198, 60' },
+    { key: 'ice', label: @json(trans('mining-manager::ledger.ice')), rgb: '0, 210, 255' },
+    { key: 'gas', label: @json(trans('mining-manager::ledger.gas')), rgb: '255, 159, 64' },
+    { key: 'abyssal', label: @json(trans('mining-manager::ledger.abyssal')), rgb: '255, 205, 86' },
+    { key: 'triglavian', label: @json(trans('mining-manager::ledger.triglavian')), rgb: '220, 53, 69' }
+];
+
+function trendConfig(mode) {
+    const byType = mode === 'type';
+
+    // Kinds of ore never mined in the period stay out of the legend.
+    const datasets = byType
+        ? trendTypes
+            .map(function (type) {
+                return { type: type, values: (trendByType[type.key] || []).map(Number) };
+            })
+            .filter(function (series) {
+                return series.values.some(function (value) { return value > 0; });
+            })
+            .map(function (series) {
+                return {
+                    label: series.type.label,
+                    data: series.values,
+                    backgroundColor: 'rgba(' + series.type.rgb + ', 0.75)',
+                    borderColor: 'rgba(' + series.type.rgb + ', 1)',
+                    borderWidth: 1
+                };
+            })
+        : [{
+            label: @json(trans('mining-manager::ledger.daily_value')),
+            data: trendTotal,
             borderColor: 'rgba(0, 210, 255, 1)',
             backgroundColor: 'rgba(0, 210, 255, 0.1)',
             borderWidth: 2,
             fill: true,
             tension: 0.4
-        }]
-    },
-    options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-            legend: { 
-                display: true,
-                labels: { color: '#fff' }
-            },
-            tooltip: {
-                callbacks: {
-                    label: function(context) {
-                        return context.dataset.label + ': ' + context.parsed.y.toLocaleString() + ' ISK';
-                    }
-                }
-            }
-        },
-        scales: {
-            x: {
-                ticks: { color: '#fff' },
-                grid: { color: '#444' }
-            },
-            y: {
-                beginAtZero: true,
-                ticks: { 
-                    color: '#fff',
-                    callback: function(value) {
-                        return value.toLocaleString();
-                    }
-                },
-                grid: { color: '#444' }
-            }
-        }
-    }
-});
+        }];
 
-// Ore Distribution Chart
-const distributionCtx = document.getElementById('oreDistributionChart').getContext('2d');
-const distributionChart = new Chart(distributionCtx, {
-    type: 'doughnut',
-    data: {
-        labels: @json($oreDistribution['labels'] ?? []),
-        datasets: [{
-            data: @json($oreDistribution['values'] ?? []),
-            backgroundColor: [
-                'rgba(0, 210, 255, 0.8)',
-                'rgba(255, 0, 132, 0.8)',
-                'rgba(161, 198, 60, 0.8)',
-                'rgba(255, 159, 64, 0.8)',
-                'rgba(255, 205, 86, 0.8)',
-                'rgba(75, 192, 192, 0.8)',
-            ]
-        }]
-    },
-    options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-            legend: { 
-                position: 'right',
-                labels: { color: '#fff' }
+    return {
+        type: byType ? 'bar' : 'line',
+        data: { labels: trendLabels, datasets: datasets },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                legend: {
+                    display: true,
+                    labels: { color: '#fff' }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return context.dataset.label + ': ' + context.parsed.y.toLocaleString() + ' ISK';
+                        },
+                        footer: function(items) {
+                            if (!byType || items.length < 2) {
+                                return '';
+                            }
+                            const total = items.reduce(function (sum, item) { return sum + item.parsed.y; }, 0);
+                            return @json(trans('mining-manager::ledger.trend_total')) + ': ' + total.toLocaleString() + ' ISK';
+                        }
+                    }
+                }
             },
-            tooltip: {
-                callbacks: {
-                    label: function(context) {
-                        const value = context.parsed;
-                        const total = context.dataset.data.reduce((a, b) => a + b, 0);
-                        const percentage = ((value / total) * 100).toFixed(1);
-                        return context.label + ': ' + value.toLocaleString() + ' ISK (' + percentage + '%)';
+            scales: {
+                x: {
+                    stacked: byType,
+                    ticks: { color: '#fff' },
+                    grid: { color: '#444' }
+                },
+                y: {
+                    stacked: byType,
+                    beginAtZero: true,
+                    ticks: {
+                        color: '#fff',
+                        callback: function(value) {
+                            return value.toLocaleString();
+                        }
+                    },
+                    grid: { color: '#444' }
+                }
+            }
+        }
+    };
+}
+
+// Ore Distribution Chart: the top ores by value, or the same mining by kind
+// of ore, from the same figures as the trend chart's By type.
+const distributionCtx = document.getElementById('oreDistributionChart').getContext('2d');
+const distributionOreLabels = @json($oreDistribution['labels'] ?? []);
+const distributionOreValues = (@json($oreDistribution['values'] ?? [])).map(Number);
+const distributionOreColors = [
+    'rgba(0, 210, 255, 0.8)',
+    'rgba(255, 0, 132, 0.8)',
+    'rgba(161, 198, 60, 0.8)',
+    'rgba(255, 159, 64, 0.8)',
+    'rgba(255, 205, 86, 0.8)',
+    'rgba(75, 192, 192, 0.8)'
+];
+
+function distributionConfig(mode) {
+    // Everything past the top ten is one grey slice, set apart from the ores.
+    const otherOres = @json(trans('mining-manager::ledger.other_ores'));
+    let labels = distributionOreLabels;
+    let values = distributionOreValues;
+    let colors = distributionOreLabels.map(function (label, index) {
+        return label === otherOres ? 'rgba(108, 117, 125, 0.8)' : distributionOreColors[index % distributionOreColors.length];
+    });
+
+    if (mode === 'type') {
+        const kinds = trendTypes
+            .map(function (type) {
+                const total = (trendByType[type.key] || []).reduce(function (sum, value) { return sum + Number(value); }, 0);
+                return { type: type, total: total };
+            })
+            .filter(function (kind) { return kind.total > 0; });
+
+        labels = kinds.map(function (kind) { return kind.type.label; });
+        values = kinds.map(function (kind) { return kind.total; });
+        colors = kinds.map(function (kind) { return 'rgba(' + kind.type.rgb + ', 0.8)'; });
+    }
+
+    return {
+        type: 'doughnut',
+        data: {
+            labels: labels,
+            datasets: [{ data: values, backgroundColor: colors }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'right',
+                    labels: { color: '#fff' }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            const value = context.parsed;
+                            const total = context.dataset.data.reduce(function (sum, item) { return sum + item; }, 0);
+                            const percentage = total > 0 ? ((value / total) * 100).toFixed(1) : '0.0';
+                            return context.label + ': ' + value.toLocaleString() + ' ISK (' + percentage + '%)';
+                        }
                     }
                 }
             }
         }
-    }
+    };
+}
+
+// A two-way switch over a chart: marks the button picked, rebuilds the chart
+// that way and remembers the choice in this browser.
+function chartSwitch(selector, storageKey, defaultMode, build) {
+    const buttons = document.querySelectorAll(selector + ' [data-mode]');
+    const modes = Array.prototype.map.call(buttons, function (button) { return button.dataset.mode; });
+    let mode = defaultMode;
+    try {
+        const saved = localStorage.getItem(storageKey);
+        if (modes.indexOf(saved) !== -1) {
+            mode = saved;
+        }
+    } catch (e) {}
+
+    let chart = build(mode);
+    const mark = function () {
+        buttons.forEach(function (button) {
+            const active = button.dataset.mode === mode;
+            button.classList.toggle('btn-primary', active);
+            button.classList.toggle('btn-outline-secondary', !active);
+        });
+    };
+    mark();
+
+    buttons.forEach(function (button) {
+        button.addEventListener('click', function () {
+            if (button.dataset.mode === mode) {
+                return;
+            }
+            mode = button.dataset.mode;
+            chart.destroy();
+            chart = build(mode);
+            mark();
+            try {
+                localStorage.setItem(storageKey, mode);
+            } catch (e) {}
+        });
+    });
+}
+
+chartSwitch('#trendModeSwitch', 'mm.myMining.trendMode', 'total', function (mode) {
+    return new Chart(trendCtx, trendConfig(mode));
+});
+chartSwitch('#distributionModeSwitch', 'mm.myMining.distributionMode', 'ore', function (mode) {
+    return new Chart(distributionCtx, distributionConfig(mode));
 });
 
 // Monthly Comparison Chart

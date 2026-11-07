@@ -3,10 +3,13 @@
 namespace MiningManager\Console\Commands;
 
 use Illuminate\Console\Command;
+use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
+use Symfony\Component\Console\Output\Output;
+use Symfony\Component\Console\Output\OutputInterface;
 
 class InitializeCommand extends Command
 {
@@ -31,6 +34,19 @@ class InitializeCommand extends Command
      */
     private int $currentStep = 0;
     private int $totalSteps = 0;
+
+    /**
+     * Longest a step waits for a run of its command that is already going,
+     * such as one the schedule started.
+     */
+    private const WAIT_FOR_RUN_SECONDS = 300;
+
+    /**
+     * Steps that did not run, each with its command and why.
+     *
+     * @var string[]
+     */
+    private array $notRun = [];
 
     /**
      * Execute the console command.
@@ -109,17 +125,25 @@ class InitializeCommand extends Command
         // DONE
         // ─────────────────────────────────────────────────────
         $this->newLine(2);
-        $this->line('╔══════════════════════════════════════════════════════════════╗');
-        $this->line('║                                                              ║');
-        $this->line('║              ✅  Mining Manager — Setup Complete!             ║');
-        $this->line('║                                                              ║');
-        $this->line('╚══════════════════════════════════════════════════════════════╝');
+        if (!empty($this->notRun)) {
+            $this->warn('  Setup finished, but these steps did not run:');
+            foreach ($this->notRun as $line) {
+                $this->warn("     • {$line}");
+            }
+            $this->warn('  Run this command again once the cause is sorted, or run the commands named above.');
+        } else {
+            $this->line('╔══════════════════════════════════════════════════════════════╗');
+            $this->line('║                                                              ║');
+            $this->line('║              ✅  Mining Manager — Setup Complete!             ║');
+            $this->line('║                                                              ║');
+            $this->line('╚══════════════════════════════════════════════════════════════╝');
+        }
         $this->newLine();
 
         $this->info('Next steps:');
         $this->line('  1. Open SeAT and navigate to Mining Manager from the sidebar');
-        $this->line('  2. Check Settings > General to verify your Moon Owner Corporation');
-        $this->line('  3. Check Settings > Tax Rates to configure per-corporation tax rates');
+        $this->line('  2. Check Settings > Setup for your Moon Owner Corporation and the corporations you tax');
+        $this->line('  3. Check Settings > Tax profiles for each profile\'s rates and billing period');
         $this->line('  4. Set up webhooks in Settings > Webhooks for Discord/Slack notifications');
         $this->line('  5. The scheduled tasks will keep everything updated automatically');
         $this->newLine();
@@ -149,7 +173,7 @@ class InitializeCommand extends Command
             $this->line("         ✅ Set to: {$corpName} ({$moonOwnerCorpId})");
         } else {
             $this->error('         ❌ Not configured!');
-            $issues[] = 'Moon Owner Corporation is not set. Go to Settings > General and select your corporation.';
+            $issues[] = 'Moon Owner Corporation is not set. Go to Settings > Setup and select your corporation.';
         }
 
         // Check 2: Price Provider
@@ -165,52 +189,50 @@ class InitializeCommand extends Command
             $this->warn('         ⚠️  Price cache is empty — will be populated during setup');
         }
 
-        // Check 3: Tax Rates
-        $this->info('  [3/4] Checking Tax Rates...');
-        $configuredCorps = DB::table('mining_manager_settings')
-            ->whereNotNull('corporation_id')
-            ->distinct()
-            ->pluck('corporation_id');
+        // Check 3: Tax profiles, Global first, then each configured corporation
+        $this->info('  [3/4] Checking tax profiles...');
+        $anyRate = false;
+        foreach ($settingsService->taxProfiles() as $profile) {
+            $name = $profile === null
+                ? 'Global'
+                : (DB::table('corporation_infos')->where('corporation_id', $profile)->value('name') ?? "Corp #{$profile}");
+            $taxRates = $settingsService->taxRatesFor($profile);
+            $taxSelector = $settingsService->taxSelectorFor($profile);
 
-        if ($configuredCorps->isNotEmpty()) {
-            foreach ($configuredCorps as $corpId) {
-                $corpName = DB::table('corporation_infos')->where('corporation_id', $corpId)->value('name') ?? "Corp #{$corpId}";
-                $settingsService->setActiveCorporation((int) $corpId);
-                $taxRates = $settingsService->getTaxRates();
-                $taxSelector = $settingsService->getTaxSelector();
+            $moon = $taxRates['moon_ore'] ?? [];
+            $others = [
+                'Ore' => ['ore', $taxRates['ore'] ?? 0],
+                'Ice' => ['ice', $taxRates['ice'] ?? 0],
+                'Gas' => ['gas', $taxRates['gas'] ?? 0],
+                'Abyssal' => ['abyssal_ore', $taxRates['abyssal_ore'] ?? 0],
+                'Triglavian' => ['triglavian_ore', $taxRates['triglavian_ore'] ?? 0],
+            ];
 
-                $moonR64 = $taxRates['moon_ore']['r64'] ?? 0;
-                $moonR32 = $taxRates['moon_ore']['r32'] ?? 0;
-                $oreRate = $taxRates['ore'] ?? 0;
-                $iceRate = $taxRates['ice'] ?? 0;
-                $gasRate = $taxRates['gas'] ?? 0;
-                $abyssalRate = $taxRates['abyssal_ore'] ?? 0;
-                $triglavianRate = $taxRates['triglavian_ore'] ?? 0;
+            $this->line("         ✅ {$name}:");
+            $this->line('            Moon: R64=' . ($moon['r64'] ?? 0) . '% R32=' . ($moon['r32'] ?? 0) . '% R16=' . ($moon['r16'] ?? 0)
+                . '% R8=' . ($moon['r8'] ?? 0) . '% R4=' . ($moon['r4'] ?? 0) . '%');
 
-                $this->line("         ✅ {$corpName}:");
-                $this->line("            Moon: R64={$moonR64}% R32={$moonR32}% | Ore={$oreRate}% Ice={$iceRate}% Gas={$gasRate}% Abyssal={$abyssalRate}% Triglavian={$triglavianRate}%");
-
-                // Show what's being taxed
-                $taxedTypes = [];
-                $moonMode = ($taxSelector['all_moon_ore'] ?? false) ? 'All Moon' : (($taxSelector['only_corp_moon_ore'] ?? false) ? 'Corp Moon Only' : (($taxSelector['no_moon_ore'] ?? false) ? 'No Moon' : 'Default'));
-                $taxedTypes[] = "Moon: {$moonMode}";
-                if ($taxSelector['ore'] ?? false) $taxedTypes[] = 'Ore';
-                if ($taxSelector['ice'] ?? false) $taxedTypes[] = 'Ice';
-                if ($taxSelector['gas'] ?? false) $taxedTypes[] = 'Gas';
-                if ($taxSelector['abyssal_ore'] ?? false) $taxedTypes[] = 'Abyssal';
-                if ($taxSelector['triglavian_ore'] ?? false) $taxedTypes[] = 'Triglavian';
-                $this->line("            Taxing: " . implode(', ', $taxedTypes));
+            // The same order of precedence the tax calculation reads the
+            // moon ore choice in.
+            $moonChoice = !empty($taxSelector['no_moon_ore']) ? 'not taxed'
+                : (!empty($taxSelector['only_corp_moon_ore']) ? 'only at your refineries'
+                    : (($taxSelector['all_moon_ore'] ?? true) ? 'all moon ore' : 'not taxed'));
+            $taxed = ["Moon: {$moonChoice}"];
+            foreach ($others as $label => [$key, $rate]) {
+                if (!empty($taxSelector[$key])) {
+                    $taxed[] = "{$label} {$rate}%";
+                    $anyRate = $anyRate || $rate > 0;
+                }
             }
-            $settingsService->setActiveCorporation(null);
-        } else {
-            // Check global defaults
-            $r64 = $settingsService->getSetting('tax_rates.moon_ore.r64', 0);
-            if ($r64 > 0) {
-                $this->line("         ✅ Global defaults configured (R64={$r64}%)");
-            } else {
-                $this->warn('         ⚠️  No tax rates configured yet. You can set them in Settings > Tax Rates.');
-                $issues[] = 'Tax rates are at 0% — set your rates in Settings > Tax Rates before calculating taxes.';
+            if ($moonChoice !== 'not taxed' && max(array_merge([0], array_map('floatval', $moon))) > 0) {
+                $anyRate = true;
             }
+            $this->line('            Taxing: ' . implode(', ', $taxed));
+        }
+
+        if (!$anyRate) {
+            $this->warn('         ⚠️  No tax rates set yet. You can set them in Settings > Tax profiles.');
+            $issues[] = 'Tax rates are at 0%: set your rates in Settings > Tax profiles before calculating taxes.';
         }
 
         // Check 4: ESI Data
@@ -237,7 +259,7 @@ class InitializeCommand extends Command
             // Critical: Moon Owner Corp must be set
             if (!$moonOwnerCorpId) {
                 $this->error('  Moon Owner Corporation must be configured before running setup.');
-                $this->error('  Go to SeAT > Mining Manager > Settings > General and set it, then run this command again.');
+                $this->error('  Go to SeAT > Mining Manager > Settings > Setup and set it, then run this command again.');
                 return false;
             }
 
@@ -284,7 +306,11 @@ class InitializeCommand extends Command
         }
 
         $this->newLine();
-        $this->info('  ✅ Current month setup complete!');
+        if (empty($this->notRun)) {
+            $this->info('  ✅ Current month setup complete!');
+        } else {
+            $this->warn('  ⚠️  Current month setup finished, but ' . count($this->notRun) . ' step(s) did not run (listed at the end).');
+        }
     }
 
     /**
@@ -395,13 +421,19 @@ class InitializeCommand extends Command
         $steps[] = ['Reconstruct historical extraction records', 'mining-manager:backfill-extraction-history', ['--days' => $days]];
 
         $this->totalSteps = count($steps);
+        $notRunBefore = count($this->notRun);
 
         foreach ($steps as $index => $step) {
             $this->runStep($index + 1, $step[0], $step[1], $step[2]);
         }
 
         $this->newLine();
-        $this->info("  ✅ Historical backfill complete! ({$months} months)");
+        $missed = count($this->notRun) - $notRunBefore;
+        if ($missed === 0) {
+            $this->info("  ✅ Historical backfill complete! ({$months} months)");
+        } else {
+            $this->warn("  ⚠️  Historical backfill finished, but {$missed} step(s) did not run (listed at the end).");
+        }
     }
 
     /**
@@ -416,12 +448,28 @@ class InitializeCommand extends Command
 
         $startTime = microtime(true);
 
+        if (!$this->waitForRunningCopy($command)) {
+            $this->newLine();
+            $this->warn("  ⏭️  Step {$step}/{$this->totalSteps} skipped: a run of {$command} that was already going did not finish within " . (self::WAIT_FOR_RUN_SECONDS / 60) . ' minutes');
+            $this->notRun[] = "{$description} ({$command}): a run of it that was already going did not finish in time";
+            return;
+        }
+
         try {
-            $exitCode = Artisan::call($command, $options, $this->getOutput());
+            $output = $this->recordingOutput();
+            $exitCode = Artisan::call($command, $options, $output);
             $elapsed = round(microtime(true) - $startTime, 1);
 
             $this->newLine();
-            if ($exitCode === 0) {
+
+            // A command that skips its whole run says so in a line ending in
+            // "Skipping." and still exits 0, so the exit code alone would call
+            // the step done.
+            $skipped = $this->skipLine($output->text);
+            if ($skipped !== null) {
+                $this->warn("  ⏭️  Step {$step}/{$this->totalSteps} skipped: {$skipped}");
+                $this->notRun[] = "{$description} ({$command}): {$skipped}";
+            } elseif ($exitCode === 0) {
                 $this->info("  ✅ Step {$step}/{$this->totalSteps} complete ({$elapsed}s)");
             } else {
                 $this->warn("  ⚠️  Step {$step}/{$this->totalSteps} completed with warnings ({$elapsed}s)");
@@ -430,7 +478,65 @@ class InitializeCommand extends Command
             $elapsed = round(microtime(true) - $startTime, 1);
             $this->newLine();
             $this->error("  ❌ Step {$step}/{$this->totalSteps} failed ({$elapsed}s): {$e->getMessage()}");
+            $this->notRun[] = "{$description} ({$command}): failed, {$e->getMessage()}";
         }
+    }
+
+    /**
+     * Wait for a run of this command that is already going. Each command the
+     * setup runs takes a lock named after itself and skips when it finds it
+     * taken, which a run the schedule started would cause. False when that run
+     * does not finish in time.
+     */
+    private function waitForRunningCopy(string $command): bool
+    {
+        $lock = Cache::lock($command, 10);
+
+        if (!$lock->get()) {
+            $this->line('  Waiting for a run of this command that is already going...');
+
+            try {
+                $lock->block(self::WAIT_FOR_RUN_SECONDS);
+            } catch (LockTimeoutException $e) {
+                return false;
+            }
+        }
+
+        $lock->release();
+
+        return true;
+    }
+
+    /**
+     * An output that passes a step's lines straight through and keeps them,
+     * so a step that skipped can be told from one that ran.
+     */
+    private function recordingOutput(): Output
+    {
+        return new class($this->getOutput()) extends Output {
+            public string $text = '';
+
+            public function __construct(private OutputInterface $inner)
+            {
+                parent::__construct($inner->getVerbosity(), $inner->isDecorated(), $inner->getFormatter());
+            }
+
+            protected function doWrite(string $message, bool $newline): void
+            {
+                $this->inner->write($message, $newline, OutputInterface::OUTPUT_RAW);
+                $this->text .= $message . ($newline ? "\n" : '');
+            }
+        };
+    }
+
+    /**
+     * The line in which a step's command said it skipped its run, or null.
+     */
+    private function skipLine(string $text): ?string
+    {
+        $plain = preg_replace('/\e\[[\d;]*m/', '', $text);
+
+        return preg_match('/^\s*(.*\bSkipping\.)\s*$/m', $plain, $match) ? trim($match[1]) : null;
     }
 
     /**

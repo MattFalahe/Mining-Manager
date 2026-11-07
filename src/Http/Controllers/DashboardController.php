@@ -7,14 +7,14 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Cache;
 use Seat\Web\Http\Controllers\Controller;
 use MiningManager\Services\Analytics\DashboardMetricsService;
+use MiningManager\Services\Analytics\Players;
 use MiningManager\Services\Pricing\MarketDataService;
 use MiningManager\Services\Character\CharacterInfoService;
 use MiningManager\Services\Configuration\SettingsManagerService;
+use MiningManager\Services\Ledger\LedgerSummaryService;
 use MiningManager\Services\TypeIdRegistry;
 use MiningManager\Models\MiningLedger;
 use MiningManager\Models\MiningTax;
-use MiningManager\Models\MiningEvent;
-use MiningManager\Models\MoonExtraction;
 use MiningManager\Models\MonthlyStatistic;
 use MiningManager\Models\MiningLedgerDailySummary;
 use Seat\Eveapi\Models\Character\CharacterInfo;
@@ -80,13 +80,16 @@ class DashboardController extends Controller
         // Last 12 months period
         $last12MonthsStart = Carbon::now()->subMonths(12)->startOfMonth();
 
-        // Cache key based on user ID and current month
-        $cacheKey = 'dashboard.member.' . $user->id . '.' . $currentMonthStart->format('Y-m');
+        [$periodStart, , $periodLabel] = $this->currentTaxPeriod(app(\MiningManager\Services\Tax\TaxPeriodHelper::class)->periodTypeForViewer());
+
+        // Cache key based on user ID, current month and, on biweekly, the half
+        $cacheKey = 'dashboard.member.' . $user->id . '.' . $currentMonthStart->format('Y-m') . ($periodStart ? '.' . $periodStart->format('d') : '');
 
         // Cache dashboard data for 30 minutes (1800 seconds)
-        $dashboardData = app(\MiningManager\Services\Character\CharacterNames::class)->remember($cacheKey, 300, function () use ($characterIds, $currentMonthStart, $currentMonthEnd, $last12MonthsStart, $user) {
+        $dashboardData = app(\MiningManager\Services\Character\CharacterNames::class)->remember($cacheKey, 300, function () use ($characterIds, $currentMonthStart, $currentMonthEnd, $last12MonthsStart, $user, $periodStart) {
             // === CURRENT MONTH STATISTICS ===
             $currentMonthStats = $this->getMemberCurrentMonthStats($characterIds, $currentMonthStart, $currentMonthEnd);
+            $currentPeriodStats = $periodStart ? $this->getMemberCurrentMonthStats($characterIds, $periodStart, $currentMonthEnd) : null;
 
             // === LAST 12 MONTHS STATISTICS ===
             $last12MonthsStats = $this->getMemberLast12MonthsStats($characterIds, $last12MonthsStart);
@@ -117,6 +120,7 @@ class DashboardController extends Controller
 
             return [
                 'currentMonthStats' => $currentMonthStats,
+                'currentPeriodStats' => $currentPeriodStats,
                 'last12MonthsStats' => $last12MonthsStats,
                 'topMiners12mAllOre' => $topMiners12mAllOre,
                 'topMiners12mMoonOre' => $topMiners12mMoonOre,
@@ -135,6 +139,7 @@ class DashboardController extends Controller
         });
 
         $dashboardData['taxBanner'] = $this->taxBanner($user);
+        $dashboardData['currentPeriodLabel'] = $periodLabel;
 
         return view('mining-manager::dashboard.member', $dashboardData);
     }
@@ -163,11 +168,13 @@ class DashboardController extends Controller
 
         // Only compute Personal tab data server-side.
         // Corporation tab data is loaded via AJAX when user clicks the tab.
-        $personalCacheKey = 'dashboard.director.personal.' . $user->id . '.' . $currentMonthStart->format('Y-m');
+        [$periodStart, , $periodLabel] = $this->currentTaxPeriod(app(\MiningManager\Services\Tax\TaxPeriodHelper::class)->periodTypeForMoonOwner());
+        $personalCacheKey = 'dashboard.director.personal.' . $user->id . '.' . $currentMonthStart->format('Y-m') . ($periodStart ? '.' . $periodStart->format('d') : '');
 
-        $dashboardData = app(\MiningManager\Services\Character\CharacterNames::class)->remember($personalCacheKey, 300, function () use ($characterIds, $currentMonthStart, $currentMonthEnd, $last12MonthsStart, $user) {
+        $dashboardData = app(\MiningManager\Services\Character\CharacterNames::class)->remember($personalCacheKey, 300, function () use ($characterIds, $currentMonthStart, $currentMonthEnd, $last12MonthsStart, $user, $periodStart) {
             // === PERSONAL STATISTICS (Director's own mining) ===
             $personalCurrentMonthStats = $this->getMemberCurrentMonthStats($characterIds, $currentMonthStart, $currentMonthEnd);
+            $personalCurrentPeriodStats = $periodStart ? $this->getMemberCurrentMonthStats($characterIds, $periodStart, $currentMonthEnd) : null;
             $personalLast12MonthsStats = $this->getMemberLast12MonthsStats($characterIds, $last12MonthsStart);
 
             // Personal rankings
@@ -196,6 +203,7 @@ class DashboardController extends Controller
 
             return [
                 'personalCurrentMonthStats' => $personalCurrentMonthStats,
+                'personalCurrentPeriodStats' => $personalCurrentPeriodStats,
                 'personalLast12MonthsStats' => $personalLast12MonthsStats,
                 'topMiners12mAllOre' => $topMiners12mAllOre,
                 'topMiners12mMoonOre' => $topMiners12mMoonOre,
@@ -217,6 +225,7 @@ class DashboardController extends Controller
         $dashboardData['corpTabUrl'] = route('mining-manager.dashboard.tab.corporation');
         $dashboardData['guestTabUrl'] = route('mining-manager.dashboard.tab.guest-miners');
         $dashboardData['taxBanner'] = $this->taxBanner(auth()->user());
+        $dashboardData['currentPeriodLabel'] = $periodLabel;
 
         return view('mining-manager::dashboard.combined-director', $dashboardData);
     }
@@ -235,10 +244,12 @@ class DashboardController extends Controller
         $currentMonthEnd = Carbon::now();
         $last12MonthsStart = Carbon::now()->subMonths(12)->startOfMonth();
 
-        $cacheKey = 'dashboard.corp-tab.' . $corporationId . '.' . $currentMonthStart->format('Y-m');
+        [$periodStart, $periodEnd, $periodLabel] = $this->currentTaxPeriod(app(\MiningManager\Services\Tax\TaxPeriodHelper::class)->periodTypeForMoonOwner());
+        $cacheKey = 'dashboard.corp-tab.' . $corporationId . '.' . $currentMonthStart->format('Y-m') . ($periodStart ? '.' . $periodStart->format('d') : '');
 
-        $data = app(\MiningManager\Services\Character\CharacterNames::class)->remember($cacheKey, 300, function () use ($corporationId, $currentMonthStart, $currentMonthEnd, $last12MonthsStart) {
+        $data = app(\MiningManager\Services\Character\CharacterNames::class)->remember($cacheKey, 300, function () use ($corporationId, $currentMonthStart, $currentMonthEnd, $last12MonthsStart, $periodStart, $periodEnd, $periodLabel) {
             $corpCurrentMonthStats = $this->getDirectorCurrentMonthStats($corporationId, $currentMonthStart, $currentMonthEnd);
+            $corpCurrentPeriodStats = $periodStart ? $this->getDirectorPeriodStats($corporationId, $periodStart, $periodEnd) : null;
             $corpLast12MonthsStats = $this->getDirectorLast12MonthsStats($corporationId, $last12MonthsStart);
 
             // Last 12 months rankings (matches the stats section above)
@@ -257,6 +268,8 @@ class DashboardController extends Controller
 
             return [
                 'corpCurrentMonthStats' => $corpCurrentMonthStats,
+                'corpCurrentPeriodStats' => $corpCurrentPeriodStats,
+                'currentPeriodLabel' => $periodLabel,
                 'corpLast12MonthsStats' => $corpLast12MonthsStats,
                 'topMiners12mAllOre' => $topMiners12mAllOre,
                 'topMiners12mMoonOre' => $topMiners12mMoonOre,
@@ -274,7 +287,7 @@ class DashboardController extends Controller
     }
 
     /**
-     * AJAX endpoint for the Guest Miners tab.
+     * AJAX endpoint for the Non-member Miners tab.
      * Returns miners who used corp structures but are confirmed to be in other corporations.
      * Accepts optional ?month=YYYY-MM query parameter (defaults to current month).
      */
@@ -362,8 +375,8 @@ class DashboardController extends Controller
     }
 
     /**
-     * Get character IDs of guest miners: people who mined at corp structures
-     * but are confirmed to be in a DIFFERENT corporation.
+     * Get character IDs of non-member miners: people who mined at corp
+     * structures but are confirmed to be outside every configured corporation.
      */
     private function getGuestMinerCharacterIds($corporationId, ?Carbon $monthDate = null)
     {
@@ -487,53 +500,6 @@ class DashboardController extends Controller
     }
 
     // ==================== HELPER METHODS ====================
-
-    /**
-     * Get or calculate monthly statistics (uses stored data for closed months)
-     *
-     * @param int $userId
-     * @param array $characterIds
-     * @param Carbon $startDate
-     * @param Carbon $endDate
-     * @return array|null Returns stored stats if available, null if needs calculation
-     */
-    private function getStoredMonthlyStats($userId, $characterIds, $startDate, $endDate)
-    {
-        // Only use stored stats for complete closed months
-        $isCurrentMonth = $startDate->isSameMonth(Carbon::now());
-        if ($isCurrentMonth) {
-            return null; // Current month data changes, calculate live
-        }
-
-        // Check if we have stored statistics for this closed month
-        $storedStats = MonthlyStatistic::where('user_id', $userId)
-            ->where('year', $startDate->year)
-            ->where('month', $startDate->month)
-            ->where('is_closed', true)
-            ->first();
-
-        if ($storedStats) {
-            // Return stats in the format expected by the dashboard
-            return [
-                'total_quantity' => $storedStats->total_quantity,
-                'total_value' => $storedStats->total_value,
-                'total_isk' => $storedStats->total_value,
-                'ore_value' => $storedStats->ore_value,
-                'mineral_value' => $storedStats->mineral_value,
-                'tax_isk' => $storedStats->tax_owed,
-                'mining_days' => $storedStats->mining_days,
-                'moon_ore_value' => $storedStats->moon_ore_value,
-                'ice_value' => $storedStats->ice_value,
-                'gas_value' => $storedStats->gas_value,
-                'regular_ore_value' => $storedStats->regular_ore_value,
-                'daily_chart_data' => $storedStats->daily_chart_data,
-                'ore_type_chart_data' => $storedStats->ore_type_chart_data,
-                'top_systems' => $storedStats->top_systems,
-            ];
-        }
-
-        return null; // No stored stats, need to calculate
-    }
 
     /**
      * Get current month statistics for member
@@ -672,20 +638,23 @@ class DashboardController extends Controller
     {
         $characterIds = $this->getCorporationCharacterIds($corporationId);
 
-        $stats = MiningLedgerDailySummary::whereIn('character_id', $characterIds)
-            ->whereBetween('date', [$startDate, $endDate])
+        $summaries = MiningLedgerDailySummary::whereIn('character_id', $characterIds)
+            ->whereBetween('date', [$startDate, $endDate]);
+        $stats = (clone $summaries)
             ->selectRaw('
                 SUM(total_value) as all_ore_value,
                 SUM(total_quantity) as all_ore_quantity,
-                SUM(moon_ore_value) as moon_ore_value,
-                COUNT(DISTINCT character_id) as active_miners
+                SUM(moon_ore_value) as moon_ore_value
             ')
             ->first();
 
         $allOreValue = $stats->all_ore_value ?? 0;
         $allOreQuantity = $stats->all_ore_quantity ?? 0;
         $moonOreValue = $stats->moon_ore_value ?? 0;
-        $activeMiners = $stats->active_miners ?? 0;
+
+        // Miners are counted as players, a main and their alts once, as the
+        // Top Miners boards beside them count them.
+        $miners = (clone $summaries)->distinct()->pluck('character_id')->all();
 
         // Supplement: if today has no daily summary yet, add today's data from MiningLedger
         $today = now()->format('Y-m-d');
@@ -695,14 +664,14 @@ class DashboardController extends Controller
                 ->exists();
 
             if (!$todayHasSummary) {
-                $todayStats = \MiningManager\Models\MiningLedger::whereIn('character_id', $characterIds)
+                $todayRows = \MiningManager\Models\MiningLedger::whereIn('character_id', $characterIds)
                     ->where('date', $today)
-                    ->whereNotNull('processed_at')
+                    ->whereNotNull('processed_at');
+                $todayStats = (clone $todayRows)
                     ->selectRaw('
                         SUM(total_value) as all_ore_value,
                         SUM(quantity) as all_ore_quantity,
-                        SUM(CASE WHEN is_moon_ore = 1 THEN total_value ELSE 0 END) as moon_ore_value,
-                        COUNT(DISTINCT character_id) as active_miners
+                        SUM(CASE WHEN is_moon_ore = 1 THEN total_value ELSE 0 END) as moon_ore_value
                     ')
                     ->first();
 
@@ -710,10 +679,11 @@ class DashboardController extends Controller
                     $allOreValue += (float) $todayStats->all_ore_value;
                     $allOreQuantity += (int) ($todayStats->all_ore_quantity ?? 0);
                     $moonOreValue += (float) ($todayStats->moon_ore_value ?? 0);
-                    $activeMiners = max($activeMiners, (int) ($todayStats->active_miners ?? 0));
+                    $miners = array_merge($miners, (clone $todayRows)->distinct()->pluck('character_id')->all());
                 }
             }
         }
+        $activeMiners = Players::count($miners);
 
         // Tax estimate from daily summaries (single source of truth)
         $taxAmount = (float) MiningLedgerDailySummary::whereIn('character_id', $characterIds)
@@ -755,21 +725,64 @@ class DashboardController extends Controller
     }
 
     /**
+     * The tax period we are in when it is shorter than the month: [start,
+     * end, label] for a period billed twice a month, nulls for a monthly
+     * one, where a period card would only repeat the month.
+     *
+     * @return array{0: Carbon|null, 1: Carbon|null, 2: string|null}
+     */
+    private function currentTaxPeriod(string $periodType): array
+    {
+        $periodHelper = app(\MiningManager\Services\Tax\TaxPeriodHelper::class);
+
+        if ($periodType !== 'biweekly') {
+            return [null, null, null];
+        }
+
+        [$start, $end] = $periodHelper->getPeriodBounds(Carbon::now(), 'biweekly');
+
+        return [$start, $end, $periodHelper->formatPeriod($start, $end, 'biweekly')];
+    }
+
+    /**
+     * The corporation's mining in a tax period, with what has been collected
+     * on the bills covering it. A period not billed yet has no bills, and
+     * says when they go out, two days after it ends.
+     */
+    private function getDirectorPeriodStats($corporationId, Carbon $start, Carbon $end): array
+    {
+        $stats = $this->getDirectorCurrentMonthStats($corporationId, $start, Carbon::now()->min($end));
+
+        $bills = MiningTax::whereIn('character_id', $this->getCorporationCharacterIds($corporationId))
+            ->whereNotIn('status', MiningTax::WRITTEN_OFF_STATUSES)
+            ->whereRaw('COALESCE(period_start, month) <= ?', [$end->toDateString()])
+            ->whereRaw('COALESCE(period_end, LAST_DAY(month)) >= ?', [$start->toDateString()])
+            ->get(['amount_paid']);
+
+        $stats['tax_collected'] = (float) $bills->sum('amount_paid');
+        $stats['bills_covering'] = $bills->count();
+        $stats['bills_go_out'] = $end->copy()->addDays(2)->format('M j');
+
+        return $stats;
+    }
+
+    /**
      * Get last 12 months statistics for director
      */
     private function getDirectorLast12MonthsStats($corporationId, $startDate)
     {
         $characterIds = $this->getCorporationCharacterIds($corporationId);
 
-        $stats = MiningLedgerDailySummary::whereIn('character_id', $characterIds)
-            ->where('date', '>=', $startDate)
+        $summaries = MiningLedgerDailySummary::whereIn('character_id', $characterIds)
+            ->where('date', '>=', $startDate);
+        $stats = (clone $summaries)
             ->selectRaw('
                 SUM(total_value) as all_ore_value,
                 SUM(total_quantity) as all_ore_quantity,
-                SUM(moon_ore_value) as moon_ore_value,
-                COUNT(DISTINCT character_id) as active_miners
+                SUM(moon_ore_value) as moon_ore_value
             ')
             ->first();
+        $activeMiners = Players::count((clone $summaries)->distinct()->pluck('character_id'));
 
         $allOreValue = $stats->all_ore_value ?? 0;
         $moonOreValue = $stats->moon_ore_value ?? 0;
@@ -788,7 +801,7 @@ class DashboardController extends Controller
             'moon_ore_total_value' => $moonOreValue,
             'moon_ore_quantity' => 0, // Not tracked separately in daily summaries
             'tax_collected' => $taxCollected,
-            'active_miners' => $stats->active_miners ?? 0,
+            'active_miners' => $activeMiners,
         ];
     }
 
@@ -877,7 +890,6 @@ class DashboardController extends Controller
             ->groupBy('character_id')
             ->having('total_value', '>', 0)
             ->orderByDesc('total_value')
-            ->limit($limit * 3)
             ->get();
 
         // Supplement: if today has no daily summary yet, add today's data from MiningLedger.
@@ -917,35 +929,6 @@ class DashboardController extends Controller
     }
 
     /**
-     * Get top miners for corporation (overall or for period)
-     */
-    private function getTopMinersOverall($corporationId, $oreType, $limit = 10)
-    {
-        // For moon ore, only count mining at corporation-owned moon structures
-        if ($oreType === 'moon_ore') {
-            return $this->getTopMoonMinersFromLedger($corporationId, null, null, $limit);
-        }
-
-        $characterIds = $this->filterLeaderboardCharacterIds(
-            $this->getCorporationCharacterIds($corporationId)
-        );
-
-        if (empty($characterIds)) {
-            return [];
-        }
-
-        $topCharacters = MiningLedgerDailySummary::whereIn('character_id', $characterIds)
-            ->selectRaw("character_id, SUM(total_value) as total_value, SUM(total_quantity) as total_quantity")
-            ->groupBy('character_id')
-            ->having('total_value', '>', 0)
-            ->orderByDesc('total_value')
-            ->limit($limit * 3)
-            ->get();
-
-        return $this->aggregateTopMinersFromSummary($topCharacters, $limit);
-    }
-
-    /**
      * Get top miners for specific period
      */
     private function getTopMinersForPeriod($corporationId, $oreType, $startDate, $endDate, $limit = 10)
@@ -969,7 +952,6 @@ class DashboardController extends Controller
             ->groupBy('character_id')
             ->having('total_value', '>', 0)
             ->orderByDesc('total_value')
-            ->limit($limit * 3)
             ->get();
 
         // Supplement: add today's data if no summary exists yet
@@ -1045,8 +1027,7 @@ class DashboardController extends Controller
             ->selectRaw("character_id, SUM(total_value) as total_value, SUM(quantity) as total_quantity")
             ->groupBy('character_id')
             ->having('total_value', '>', 0)
-            ->orderByDesc('total_value')
-            ->limit($limit * 3);
+            ->orderByDesc('total_value');
 
         if ($startDate && $endDate) {
             $query->whereBetween('date', [$startDate, $endDate]);
@@ -1058,58 +1039,13 @@ class DashboardController extends Controller
     }
 
     /**
-     * Aggregate top miners from mining data
-     * UPDATED: Uses CharacterInfoService for proper character/corp names
-     */
-    private function aggregateTopMiners($miningData, $limit)
-    {
-        // Get all unique character IDs
-        $characterIds = $miningData->pluck('character_id')->unique()->toArray();
-        
-        // Get character info in batch (optimized)
-        $charactersInfo = $this->characterInfoService->getBatchCharacterInfo($characterIds);
-        
-        // Group by main character
-        $grouped = $miningData->groupBy(function($entry) use ($charactersInfo) {
-            $charInfo = $charactersInfo[$entry->character_id] ?? null;
-            
-            // Use main_character_id if available, otherwise use character_id
-            if ($charInfo && $charInfo['main_character_id']) {
-                return $charInfo['main_character_id'];
-            }
-            
-            return $entry->character_id;
-        });
-
-        $miners = [];
-        foreach ($grouped as $mainCharId => $entries) {
-            $totalValue = $this->calculateTotalValue($entries);
-            
-            // ALWAYS get fresh info for the main character (not from cache of alts)
-            // This ensures we show the MAIN's corporation, not an alt's corporation
-            $mainCharInfo = $this->characterInfoService->getCharacterInfo($mainCharId);
-            
-            $miners[] = [
-                'character_id' => $mainCharId,
-                'character_name' => $mainCharInfo['name'],
-                'corporation_name' => $mainCharInfo['corporation_name'],
-                'total_value' => $totalValue,
-                'total_quantity' => $entries->sum('quantity'),
-                'is_registered' => $mainCharInfo['is_registered'],
-                'alt_count' => $entries->pluck('character_id')->unique()->count() - 1,
-            ];
-        }
-
-        usort($miners, function($a, $b) {
-            return $b['total_value'] <=> $a['total_value'];
-        });
-
-        return array_slice($miners, 0, $limit);
-    }
-
-    /**
      * Aggregate top miners from daily summary SQL results (fast path)
      * Groups by main character, resolves names in batch.
+     *
+     * The rows must be every member's total, not the top few. Accounts are
+     * only formed here, so a list cut by character beforehand drops any alt
+     * below the cut: its mining from the account's total, its count from the
+     * alts badge, and an account of many small miners from the ranking.
      */
     private function aggregateTopMinersFromSummary($summaryRows, $limit)
     {
@@ -1154,7 +1090,8 @@ class DashboardController extends Controller
                 'total_value' => $data['total_value'],
                 'total_quantity' => $data['total_quantity'],
                 'is_registered' => $mainCharInfo['is_registered'] ?? false,
-                'alt_count' => count(array_unique($data['alt_ids'])) - 1,
+                // Everyone but the main, who may not have mined in this period.
+                'alt_count' => count(array_diff(array_unique($data['alt_ids']), [$mainCharId])),
             ];
         }
 
@@ -1295,6 +1232,12 @@ class DashboardController extends Controller
                 $byType[$typeId]['quantity'] += (float) ($ore['quantity'] ?? 0);
                 $byType[$typeId]['value'] += (float) ($ore['total_value'] ?? 0);
             }
+        }
+
+        // The names SeAT's static data has now, ahead of the ones days were
+        // saved with: ore it did not know then shows as "Unknown Ore (id)".
+        foreach (LedgerSummaryService::currentOreNames(array_keys($byType)) as $typeId => $name) {
+            $byType[$typeId]['name'] = $name;
         }
 
         // Fallback: if no daily summaries exist yet, use raw ledger with SQL aggregation
@@ -2040,64 +1983,9 @@ class DashboardController extends Controller
         }
     }
 
-    /**
-     * FIXED METHOD - Now uses OreValuationService to respect ore_valuation_method setting
-     */
-    private function calculateTotalValue($miningData)
-    {
-        if ($miningData->isEmpty()) {
-            return 0;
-        }
-
-        // Use OreValuationService for proper valuation
-        $valuationService = app(\MiningManager\Services\Pricing\OreValuationService::class);
-
-        // Calculate total value using the configured valuation method
-        return $miningData->sum(function($entry) use ($valuationService) {
-            $values = $valuationService->calculateOreValue($entry->type_id, $entry->quantity);
-            return $values['total_value'];
-        });
-    }
-
-    /**
-     * FIXED: Calculate entry value using OreValuationService
-     * Respects ore_valuation_method setting (ore_price vs mineral_price)
-     * This is used by chart methods and performance calculations
-     */
-    private function calculateEntryValue($entry)
-    {
-        try {
-            // Use OreValuationService for proper valuation
-            $valuationService = app(\MiningManager\Services\Pricing\OreValuationService::class);
-
-            $values = $valuationService->calculateOreValue($entry->type_id, $entry->quantity);
-
-            return $values['total_value'];
-        } catch (\Exception $e) {
-            \Log::error('Error calculating entry value', [
-                'type_id' => $entry->type_id ?? 'unknown',
-                'entry_id' => $entry->id ?? 'unknown',
-                'error' => $e->getMessage()
-            ]);
-            return 0;
-        }
-    }
-
-    private function calculateTaxForPeriod($characterIds, $startDate, $endDate)
-    {
-        return MiningTax::whereIn('character_id', $characterIds)
-            ->whereBetween('month', [$startDate->format('Y-m-01'), $endDate->format('Y-m-01')])
-            ->sum('amount_owed');
-    }
-
     private function isMoonOre($typeId)
     {
         return TypeIdRegistry::isMoonOre($typeId);
-    }
-
-    private function getMoonOreTypeIds()
-    {
-        return TypeIdRegistry::getAllMoonOres();
     }
 
     private function getOreGroup($typeId)

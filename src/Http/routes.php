@@ -120,26 +120,6 @@ Route::group([
             'uses' => 'LedgerController@exportPersonal',
             'middleware' => 'can:mining-manager.member',
         ]);
-
-        // Director routes
-        Route::get('/export', [
-            'as' => 'mining-manager.ledger.export',
-            'uses' => 'LedgerController@export',
-            'middleware' => 'can:mining-manager.director',
-        ]);
-
-        // Delete routes - Admin
-        Route::delete('/delete/{id}', [
-            'as' => 'mining-manager.ledger.delete',
-            'uses' => 'LedgerController@delete',
-            'middleware' => 'can:mining-manager.admin',
-        ]);
-
-        Route::post('/bulk-delete', [
-            'as' => 'mining-manager.ledger.bulk-delete',
-            'uses' => 'LedgerController@bulkDelete',
-            'middleware' => 'can:mining-manager.admin',
-        ]);
     });
 
     // Tax Management Routes
@@ -393,11 +373,13 @@ Route::group([
             'middleware' => 'can:mining-manager.member',
         ]);
 
-        // Director - create (MUST be before /{id} wildcard to avoid route collision)
+        // Create (MUST be before /{id} wildcard to avoid route collision).
+        // Directors, and moon managers while the Events settings allow it,
+        // which EventAccess decides in the controller.
         Route::get('/create', [
             'as' => 'mining-manager.events.create',
             'uses' => 'EventController@create',
-            'middleware' => 'can:mining-manager.director',
+            'middleware' => 'can:mining-manager.member',
         ]);
 
         Route::get('/{id}', [
@@ -418,23 +400,37 @@ Route::group([
             'middleware' => 'can:mining-manager.member',
         ]);
 
-        // Director - edit, start/complete
+        // Saving and editing: directors, and a moon manager their own event
+        // until it starts, decided in the controller. Starting and
+        // completing by hand stay with the directors.
 
         Route::post('/', [
             'as' => 'mining-manager.events.store',
             'uses' => 'EventController@store',
-            'middleware' => 'can:mining-manager.director',
+            'middleware' => 'can:mining-manager.member',
         ]);
 
         Route::get('/{id}/edit', [
             'as' => 'mining-manager.events.edit',
             'uses' => 'EventController@edit',
-            'middleware' => 'can:mining-manager.director',
+            'middleware' => 'can:mining-manager.member',
         ]);
 
         Route::put('/{id}', [
             'as' => 'mining-manager.events.update',
             'uses' => 'EventController@update',
+            'middleware' => 'can:mining-manager.member',
+        ]);
+
+        Route::post('/{id}/approve', [
+            'as' => 'mining-manager.events.approve',
+            'uses' => 'EventController@approve',
+            'middleware' => 'can:mining-manager.director',
+        ]);
+
+        Route::post('/{id}/decline', [
+            'as' => 'mining-manager.events.decline',
+            'uses' => 'EventController@decline',
             'middleware' => 'can:mining-manager.director',
         ]);
 
@@ -456,11 +452,24 @@ Route::group([
             'middleware' => 'can:mining-manager.director',
         ]);
 
-        // Admin - delete
+        // Cancelling, bringing back and deleting depend on the event and on
+        // who asks, which EventAccess decides in the controller.
+        Route::post('/{id}/cancel', [
+            'as' => 'mining-manager.events.cancel',
+            'uses' => 'EventController@cancel',
+            'middleware' => 'can:mining-manager.member',
+        ]);
+
+        Route::post('/{id}/restore', [
+            'as' => 'mining-manager.events.restore',
+            'uses' => 'EventController@restore',
+            'middleware' => 'can:mining-manager.member',
+        ]);
+
         Route::delete('/{id}', [
             'as' => 'mining-manager.events.destroy',
             'uses' => 'EventController@destroy',
-            'middleware' => 'can:mining-manager.admin',
+            'middleware' => 'can:mining-manager.member',
         ]);
     });
 
@@ -924,15 +933,39 @@ Route::group([
             'middleware' => 'can:mining-manager.admin',
         ]);
 
-        Route::post('/general', [
-            'as' => 'mining-manager.settings.update-general',
-            'uses' => 'SettingsController@updateGeneral',
+        Route::post('/setup', [
+            'as' => 'mining-manager.settings.update-setup',
+            'uses' => 'SettingsController@updateSetup',
             'middleware' => 'can:mining-manager.admin',
         ]);
 
-        Route::post('/tax-rates', [
-            'as' => 'mining-manager.settings.update-tax-rates',
-            'uses' => 'SettingsController@updateTaxRates',
+        Route::post('/corporations/add', [
+            'as' => 'mining-manager.settings.corporations.add',
+            'uses' => 'SettingsController@addCorporation',
+            'middleware' => 'can:mining-manager.admin',
+        ]);
+
+        Route::post('/corporations/remove', [
+            'as' => 'mining-manager.settings.corporations.remove',
+            'uses' => 'SettingsController@removeCorporation',
+            'middleware' => 'can:mining-manager.admin',
+        ]);
+
+        Route::post('/profiles', [
+            'as' => 'mining-manager.settings.update-profiles',
+            'uses' => 'SettingsController@updateProfiles',
+            'middleware' => 'can:mining-manager.admin',
+        ]);
+
+        Route::post('/billing', [
+            'as' => 'mining-manager.settings.update-billing',
+            'uses' => 'SettingsController@updateBilling',
+            'middleware' => 'can:mining-manager.admin',
+        ]);
+
+        Route::post('/payments', [
+            'as' => 'mining-manager.settings.update-payments',
+            'uses' => 'SettingsController@updatePayments',
             'middleware' => 'can:mining-manager.admin',
         ]);
 
@@ -954,6 +987,18 @@ Route::group([
             'middleware' => 'can:mining-manager.admin',
         ]);
 
+        Route::post('/planner', [
+            'as' => 'mining-manager.settings.update-planner',
+            'uses' => 'SettingsController@updatePlanner',
+            'middleware' => 'can:mining-manager.admin',
+        ]);
+
+        Route::post('/events', [
+            'as' => 'mining-manager.settings.update-events',
+            'uses' => 'SettingsController@updateEvents',
+            'middleware' => 'can:mining-manager.admin',
+        ]);
+
         Route::post('/notifications', [
             'as' => 'mining-manager.settings.update-notifications',
             'uses' => 'SettingsController@updateNotifications',
@@ -972,7 +1017,7 @@ Route::group([
             'middleware' => 'can:mining-manager.admin',
         ]);
 
-        Route::get('/export', [
+        Route::post('/export', [
             'as' => 'mining-manager.settings.export',
             'uses' => 'SettingsController@export',
             'middleware' => 'can:mining-manager.admin',
@@ -1042,12 +1087,6 @@ Route::group([
         'middleware' => 'can:mining-manager.view',
     ]);
 
-    // Configured Corporations Route - Admin
-    Route::get('/configured-corporations', [
-        'as' => 'mining-manager.settings.configured-corporations',
-        'uses' => 'SettingsController@configuredCorporations',
-        'middleware' => 'can:mining-manager.admin',
-    ]);
 
     // Diagnostic Routes - Admin only
     Route::group(['prefix' => 'diagnostic'], function () {

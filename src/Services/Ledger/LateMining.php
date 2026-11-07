@@ -6,8 +6,8 @@ namespace MiningManager\Services\Ledger;
  * Mining that reaches the ledger after the invoice covering it has gone out.
  *
  * It is recorded, because it happened, but not taxed, because the invoice it
- * belongs to is already a record. Both importers write it, so the wording and
- * the arithmetic live here once.
+ * belongs to is already a record. Both importers write it and the character
+ * ledger reads it back, so the wording and the arithmetic live here once.
  */
 final class LateMining
 {
@@ -51,5 +51,60 @@ final class LateMining
             'unit_price' => $quantity > 0 ? $totalValue / $quantity : (float) $existing->unit_price,
             'notes' => $notes,
         ];
+    }
+
+    /**
+     * A billed day's row figures, with what came after the bill taken out.
+     *
+     * A row that arrived late is not taxed, unless it would not have been taxed
+     * on time either, which is the better reason to show. A row that grew keeps
+     * only the tax its billed part was charged, which is whatever the day's
+     * other rows leave of the day's tax. Its rate stays, because the billed part
+     * was charged at it, and billed_share says how much of the row that part
+     * is, so the page can explain a tax smaller than the rate gives and list
+     * the rest as not taxed. A day with nothing late comes back as it was.
+     *
+     * @param  iterable<object>  $rows  The day's ledger rows, each with id and notes.
+     * @param  array<int, array{taxed: bool, rate: float, tax: float, discount: float, reason: string|null}>  $figures  Row id => figures, as worked out from the day's breakdown.
+     * @param  float  $billed  The tax the day was billed at.
+     * @return array<int, array>  The figures with the day's rows corrected. A row cut back to its bill also has billed_share, from 0 to under 1.
+     */
+    public static function billedDay(iterable $rows, array $figures, float $billed): array
+    {
+        $grown = [];
+        $others = 0.0;
+
+        foreach ($rows as $row) {
+            $id = (int) $row->id;
+            $notes = (string) ($row->notes ?? '');
+
+            if (str_contains($notes, self::NEW_ROW_NOTE)) {
+                if ($figures[$id]['taxed'] || $figures[$id]['reason'] === 'not_counted') {
+                    $figures[$id] = ['taxed' => false, 'rate' => 0.0, 'tax' => 0.0, 'discount' => 0.0, 'reason' => 'after_bill'] + $figures[$id];
+                }
+            } elseif ($figures[$id]['taxed'] && str_contains($notes, self::GROWTH_NOTE)) {
+                $grown[] = $id;
+            } else {
+                $others += $figures[$id]['tax'];
+            }
+        }
+
+        $grownTax = array_sum(array_map(fn (int $id) => $figures[$id]['tax'], $grown));
+        if ($grownTax <= 0) {
+            return $figures;
+        }
+
+        $kept = max(0.0, min($grownTax, $billed - $others)) / $grownTax;
+        if ($kept >= 1) {
+            return $figures;
+        }
+
+        foreach ($grown as $id) {
+            $figures[$id]['tax'] = round($figures[$id]['tax'] * $kept, 2);
+            $figures[$id]['discount'] = round($figures[$id]['discount'] * $kept, 2);
+            $figures[$id]['billed_share'] = $kept;
+        }
+
+        return $figures;
     }
 }

@@ -18,6 +18,8 @@ return [
     'paid' => 'Paid',
     'partial' => 'Partial',
     'overdue' => 'Overdue',
+    'exempted' => 'Exempted',
+    'waived' => 'Waived',
     'pending' => 'Pending',
     'active' => 'Active',
     'expired' => 'Expired',
@@ -228,9 +230,9 @@ return [
     // Miner type breakdown
     'miner_type_breakdown' => 'Miner Type Breakdown',
     'corp_members' => 'Corp Members',
-    'guest_miners' => 'Guest Miners',
+    'guest_miners' => 'Non-member Miners',
     'corporation_member' => 'Corporation Member',
-    'guest_miner' => 'Guest Miner',
+    'guest_miner' => 'Non-member',
     'isk_owed' => 'ISK Owed',
     'isk_paid' => 'ISK Paid',
 
@@ -265,6 +267,7 @@ return [
     'auto_match_complete' => 'Auto-matching completed',
     'auto_match_error' => 'An error occurred during auto-matching',
     'payments_verified' => 'Payments verified successfully',
+    'verification_error' => 'An error occurred while checking payments',
 
     // Tax Code Management
     'no_unpaid_taxes_for_codes' => 'No unpaid taxes found to generate codes for',
@@ -420,7 +423,7 @@ return [
     'credit_applied' => 'Applied :amount ISK of held credit.',
 
     // Assigning a codeless payment to a player's balance rather than an invoice
-    'match_failed_upfront_not_held' => 'They owe nothing right now, and holding surplus as account balance is switched off, so there is nowhere for this to go. Turn on Hold surplus as credit under Settings, General, or assign it to an invoice instead.',
+    'match_failed_upfront_not_held' => 'They owe nothing right now, and holding surplus as account balance is switched off, so there is nowhere for this to go. Turn on Keep anything left over as credit against the next bill, under Settings, Payments, or assign it to an invoice instead.',
     'assign_balance_feature_off' => 'Upfront payments are switched off. Holding this as balance still works because you are a director and the payment has nowhere else to go, but you are overriding a setting somebody chose. The balance will be spendable against their future invoices as normal.',
     'assign_to_balance' => 'Hold as account balance',
     'assign_balance_option' => 'Hold as account balance (no invoice)',
@@ -484,6 +487,7 @@ return [
     'left_to_pay' => 'Left to Pay',
     'left_to_pay_short' => 'left',
     'left_to_pay_amount' => ':amount ISK left to pay',
+    'within_one_isk' => 'The cents can be left off: anything within 1 ISK of the bill counts as paid.',
     'left_of_billed' => 'ISK left of :owed for :period',
     'part_paid_received' => ':paid ISK of this :owed ISK bill has already been received, so only the rest is asked for below.',
     'due_in_days' => '{1} 1 day left to pay|[2,*] :count days left to pay',
@@ -496,4 +500,22 @@ return [
     'banner_many_bills' => ':amount ISK to pay across :count bills. The oldest is for :period, due :due.',
     'banner_part_paid' => 'Part paid: :paid ISK of the :owed ISK billed has already been received.',
     'banner_pay_now' => 'Pay now',
+
+    // An invoice's breakdown: only what it taxed
+    'taxed_value' => 'Taxed Value',
+    'of_mined' => 'of :amount ISK mined in the period',
+    'tax_by_category' => 'Tax by category',
+    'tax_by_category_hint' => 'What this bill taxed, by kind of ore with moon ore by rarity. Only mining that carried tax is counted, at the rate it was taxed at.',
+    'mining_breakdown_hint' => 'Only the mining this bill taxed, by character and ore.',
+    'category' => 'Category',
+    'tax_rate' => 'Tax Rate',
+    'share_of_tax' => 'Share of tax',
+    'total' => 'Total',
+    'nothing_taxed' => 'Nothing in this period carried tax.',
+    'event_discount_amount' => 'Event discount: :amount ISK',
+    'breakdown_differs' => 'This bill is :billed ISK, and the mining below comes to :rows ISK.',
+    'breakdown_raised_to_minimum' => 'It was raised to the minimum tax of :minimum ISK.',
+    'breakdown_adjusted' => 'It was adjusted by hand, as its notes say.',
+    'breakdown_early' => 'It was worked out on :date, before its period ended, so mining after that is not on it.',
+    'breakdown_rebuilt' => 'Some of its days were worked out again after it went out, at the rates set then, and a bill keeps what it was issued for.',
 ];
