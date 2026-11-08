@@ -487,10 +487,12 @@
         cursor: pointer;
     }
 
-    /* The What's New pill carries the release's name. When the heading and the
-       pill do not fit on one row, the pill moves under the heading rather than
-       squeezing it or running out of the box. */
-    .whats-new-box h3 {
+    /* The What's New pill carries the major release's name, and the Recent
+       changes pill the latest update's. When a heading and its pill do not fit
+       on one row, the pill moves under the heading rather than squeezing it or
+       running out of the box. */
+    .whats-new-box h3,
+    .recent-changes-box h4 {
         flex-wrap: wrap;
         justify-content: space-between;
         row-gap: 8px;
@@ -499,6 +501,18 @@
     .whats-new-box h3 .whats-new-tag {
         margin-left: 0;
         white-space: normal;
+    }
+
+    .recent-changes-box h4 .recent-changes-tag {
+        font-size: 0.6em;
+        font-weight: 600;
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
+        color: #c7d2fe !important;
+        background: rgba(102, 126, 234, 0.22);
+        border: 1px solid rgba(139, 156, 247, 0.4);
+        border-radius: 20px;
+        padding: 3px 12px;
     }
 
     @media (max-width: 768px) {
@@ -1006,9 +1020,30 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                     </ul>
                 </div>
 
-                {{-- A Recent changes box goes here, under What's New, once v3 has an update of its
-                     own: what that update changed that you can see on screen. Earlier updates of v3
-                     fold away inside it, until the next What's New is written. --}}
+                {{-- What the latest update of v3 changed that you can see on screen. Earlier updates
+                     of v3 fold away inside it, until the next What's New is written. --}}
+                <div class="recent-changes-box">
+                    <h4>
+                        <span><i class="fas fa-history"></i> In this update (3.0.1)</span>
+                        <span class="recent-changes-tag">Buy and Sell</span>
+                    </h4>
+                    <p>
+                        The changes in this release you will notice without going looking.
+                        <a href="https://github.com/MattFalahe/Mining-Manager/blob/main/CHANGELOG.md" target="_blank" rel="noopener">The changelog</a>
+                        has the complete record.
+                    </p>
+                    <h5>Prices</h5>
+                    <ul>
+                        <li>
+                            <strong>Buy Orders and Average from Manager Core.</strong> Buy Orders was read at the
+                            lowest buy order on the market, often a bid of 0.01 ISK, and Average halfway between
+                            that and the sell price. Buy Orders is now the highest buy order, and Average halfway
+                            between that and the lowest sell order. If you price either way through Manager Core,
+                            expect ore values and the tax on them to go up from this update on. Sell Orders and
+                            Janice prices have not changed.
+                        </li>
+                    </ul>
+                </div>
 
                 {{-- What is Mining Manager? --}}
                 <div class="help-card">
