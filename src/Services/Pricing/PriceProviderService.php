@@ -849,29 +849,34 @@ class PriceProviderService
             : ($pricingSettings['price_type'] ?? 'sell');
 
         foreach ($typeIds as $typeId) {
-            if (isset($data[$typeId])) {
-                $itemData = $data[$typeId];
-                
-                switch ($priceMethod) {
-                    case 'buy':
-                        $prices[$typeId] = (float) ($itemData['buy']['max'] ?? 0);
-                        break;
-                    case 'sell':
-                        $prices[$typeId] = (float) ($itemData['sell']['min'] ?? 0);
-                        break;
-                    case 'average':
-                    default:
-                        $buy = (float) ($itemData['buy']['max'] ?? 0);
-                        $sell = (float) ($itemData['sell']['min'] ?? 0);
-                        $prices[$typeId] = ($buy + $sell) / 2;
-                        break;
-                }
-            } else {
-                $prices[$typeId] = 0;
-            }
+            $prices[$typeId] = isset($data[$typeId]) ? self::fuzzworkPrice($data[$typeId], $priceMethod) : 0;
         }
 
         return $prices;
+    }
+
+    /**
+     * One type's price from Fuzzwork's aggregates: the highest buy, the lowest
+     * sell, or the split of the two. Fuzzwork gives a side with no orders as
+     * zeros.
+     *
+     * @param mixed  $itemData Fuzzwork's figures for the type
+     * @param string $method   'buy', 'sell' or 'average'
+     */
+    public static function fuzzworkPrice($itemData, string $method): float
+    {
+        if (!is_array($itemData)) {
+            return 0.0;
+        }
+
+        $buy = (float) ($itemData['buy']['max'] ?? 0);
+        $sell = (float) ($itemData['sell']['min'] ?? 0);
+
+        return match ($method) {
+            'buy' => $buy,
+            'sell' => $sell,
+            default => self::splitPrice($buy, $sell),
+        };
     }
 
     /**
@@ -894,12 +899,11 @@ class PriceProviderService
             ? ($this->fetchOverride['side'] === 'split' ? 'average' : $this->fetchOverride['side'])
             : ($pricingSettings['price_type'] ?? 'sell');
         $market = $this->fetchOverride['market'] ?? $pricingSettings['manager_core_market'] ?? 'jita';
-        $variant = $pricingSettings['manager_core_variant'] ?? 'min';
 
-        // For "average" we need both sides (we average buy.<variant> and
-        // sell.<variant> per type). MC's getPrice priceType='both' returns
-        // both at once in a single shot, so we ask for it here and combine
-        // in PHP rather than making 2× the calls.
+        // For "average" we need both sides (the split of the highest buy and
+        // the lowest sell). MC's getPrice priceType='both' returns both at
+        // once in a single shot, so we ask for it here and combine in PHP
+        // rather than making 2× the calls.
         $bridgePriceType = $priceType === 'average' ? 'both' : $priceType;
 
         // Cross-plugin call via the documented PluginBridge contract
@@ -973,26 +977,16 @@ class PriceProviderService
             // Detect which shape we're holding.
             $hasBuySell = is_array($entry) && (array_key_exists('buy', $entry) || array_key_exists('sell', $entry));
 
+            $prices[$typeId] = self::managerCorePrice($entry, $priceType);
+
             if ($priceType === 'average') {
                 // Need both sides — must be 'both' shape.
                 $sellStats = $hasBuySell ? ($entry['sell'] ?? null) : null;
                 $buyStats  = $hasBuySell ? ($entry['buy']  ?? null) : null;
 
-                $sellValue = $sellStats ? $this->extractVariant($sellStats, $variant) : 0;
-                $buyValue  = $buyStats  ? $this->extractVariant($buyStats,  $variant) : 0;
-
-                if ($sellStats && $buyStats) {
-                    $prices[$typeId] = ($sellValue + $buyValue) / 2;
-                } elseif ($sellStats) {
-                    $prices[$typeId] = $sellValue;
-                } elseif ($buyStats) {
-                    $prices[$typeId] = $buyValue;
-                } else {
-                    $prices[$typeId] = 0;
-                }
-
-                // Staleness check — use the older of the two updated_at
-                // timestamps. If either side is stale, the merge is too.
+                // Staleness is judged on one side, the sell side where there
+                // is one. Manager Core keeps a side's last figures once its
+                // orders run out, so the two sides' timestamps need not agree.
                 $usedStats = $sellStats ?? $buyStats;
                 if ($usedStats && $this->isStatsStale($usedStats, $stalenessThreshold)) {
                     $staleCount++;
@@ -1003,7 +997,6 @@ class PriceProviderService
             } else {
                 // priceType is 'buy' or 'sell' — entry is the inner stats shape.
                 $stats = $hasBuySell ? ($entry[$priceType] ?? null) : $entry;
-                $prices[$typeId] = $stats ? $this->extractVariant($stats, $variant) : 0;
 
                 if ($stats && $this->isStatsStale($stats, $stalenessThreshold)) {
                     $staleCount++;
@@ -1064,24 +1057,55 @@ class PriceProviderService
     }
 
     /**
-     * Pull the configured variant (min/max/avg/median/percentile) value out of
-     * an MC price-stats array. Single source of truth so both sides of the
-     * 'average' merge path use the same selector.
+     * One side of a Manager Core price at its best order: the lowest sell,
+     * the highest buy. Manager Core's figures describe the whole order book,
+     * and the lowest buy order is the cheapest bid anyone left on the market,
+     * nowhere near what the ore fetches.
      *
-     * @param array  $stats  MC formatPriceStats output
-     * @param string $variant
-     * @return float
+     * @param mixed  $stats MC formatPriceStats output for one side, or null
+     * @param string $side  'buy' or 'sell'
      */
-    protected function extractVariant(array $stats, string $variant): float
+    public static function bestPrice($stats, string $side): float
     {
-        return match ($variant) {
-            'min' => (float) ($stats['min'] ?? 0),
-            'max' => (float) ($stats['max'] ?? 0),
-            'avg' => (float) ($stats['avg'] ?? 0),
-            'median' => (float) ($stats['median'] ?? 0),
-            'percentile' => (float) ($stats['percentile'] ?? 0),
-            default => (float) ($stats['min'] ?? 0),
-        };
+        if (!is_array($stats)) {
+            return 0.0;
+        }
+
+        return (float) ($stats[$side === 'buy' ? 'max' : 'min'] ?? 0);
+    }
+
+    /**
+     * Halfway between buy and sell, or the one side that has a price. Moon ore
+     * often trades on one side only, and half of that side is not its price.
+     */
+    public static function splitPrice(float $buy, float $sell): float
+    {
+        if ($buy > 0 && $sell > 0) {
+            return ($buy + $sell) / 2;
+        }
+
+        return $buy > 0 ? $buy : $sell;
+    }
+
+    /**
+     * One type's price from Manager Core's pricing.getPrices answer. Asked for
+     * one side, Manager Core answers with that side's figures; asked for both,
+     * which the split needs, with ['buy' => figures, 'sell' => figures].
+     *
+     * @param mixed  $entry     Manager Core's answer for the type
+     * @param string $priceType 'buy', 'sell' or 'average'
+     */
+    public static function managerCorePrice($entry, string $priceType): float
+    {
+        $bothSides = is_array($entry) && (array_key_exists('buy', $entry) || array_key_exists('sell', $entry));
+
+        if ($priceType === 'average') {
+            return $bothSides
+                ? self::splitPrice(self::bestPrice($entry['buy'] ?? null, 'buy'), self::bestPrice($entry['sell'] ?? null, 'sell'))
+                : 0.0;
+        }
+
+        return self::bestPrice($bothSides ? ($entry[$priceType] ?? null) : $entry, $priceType);
     }
 
     /**
@@ -1392,13 +1416,10 @@ class PriceProviderService
 
         $pricingSettings = $this->settingsService->getPricingSettings();
         $priceType = $pricingSettings['price_type'] ?? 'sell';
-        $variant = $pricingSettings['manager_core_variant'] ?? 'min';
 
-        // The Jita-fallback path doesn't try to be clever about 'average'
-        // — if the user picked 'average', we just use sell-side here. This
-        // keeps the second-provider call bounded. The primary
-        // `getPricesFromManagerCore` does proper buy+sell averaging.
-        $bridgePriceType = $priceType === 'average' ? 'sell' : $priceType;
+        // Both sides come back in the one call, so the split costs no more
+        // than a single side.
+        $bridgePriceType = $priceType === 'average' ? 'both' : $priceType;
 
         try {
             $bridge = app(\ManagerCore\Services\PluginBridge::class);
@@ -1437,12 +1458,7 @@ class PriceProviderService
                 continue;
             }
 
-            // For priceType=buy/sell, MC returns the inner stats shape.
-            // For priceType=both, MC returns ['buy'=>..., 'sell'=>...].
-            $hasBuySell = is_array($entry) && (array_key_exists('buy', $entry) || array_key_exists('sell', $entry));
-            $stats = $hasBuySell ? ($entry[$bridgePriceType] ?? null) : $entry;
-
-            $prices[$typeId] = $stats ? $this->extractVariant($stats, $variant) : 0;
+            $prices[$typeId] = self::managerCorePrice($entry, $priceType);
         }
 
         return $prices;
@@ -1475,12 +1491,7 @@ class PriceProviderService
 
         foreach ($typeIds as $typeId) {
             if (isset($data[$typeId])) {
-                $itemData = $data[$typeId];
-                $prices[$typeId] = match ($priceMethod) {
-                    'buy' => (float) ($itemData['buy']['max'] ?? 0),
-                    'sell' => (float) ($itemData['sell']['min'] ?? 0),
-                    default => ((float) ($itemData['buy']['max'] ?? 0) + (float) ($itemData['sell']['min'] ?? 0)) / 2,
-                };
+                $prices[$typeId] = self::fuzzworkPrice($data[$typeId], $priceMethod);
             }
         }
 

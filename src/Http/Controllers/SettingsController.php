@@ -1160,9 +1160,8 @@ class SettingsController extends Controller
             // readout + deep-link instead. The local manager_core_market
             // setting is kept for the auto-subscribe call below (it's just
             // the bootstrap default — MC's preference wins on read).
-            // manager_core_variant dropped entirely; hardcoded to 'min' in
-            // CachePriceDataCommand because that's the only variant that
-            // makes sense for tax + payout (lowest sell = real buy price).
+            // manager_core_variant dropped entirely: each side is read at its
+            // best order, the lowest sell and the highest buy.
 
             // Refining settings
             'refining_efficiency' => 'required|numeric|min:0|max:100',

@@ -1100,13 +1100,7 @@ class SettingsManagerService
             // installs that hadn't run the migration yet, the row is
             // unused — this method is the only reader and it now consults
             // MC's pref first.
-            //
-            // manager_core_variant: hardcoded to 'min' because that's the
-            // only variant that produces meaningful tax + payout values
-            // (lowest sell = real buy price). Operator-selectable variant
-            // was removed from MM's UI in commit 583ea48.
             'manager_core_market' => $this->resolveMcMarket(),
-            'manager_core_variant' => 'min',
 
             // Refining settings
             'refining_efficiency' => $this->getSetting('pricing.refining_efficiency', 87.5),

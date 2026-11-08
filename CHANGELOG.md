@@ -2,6 +2,21 @@
 
 All notable changes to Mining Manager will be documented in this file.
 
+## [Unreleased]
+
+**Backwards compatible.** No migrations.
+
+### Pricing
+
+- Fixed: **with Manager Core as the price provider, Buy Orders priced items at the lowest buy order on the market.** Manager Core describes each side of the order book, and both sides were read at their lowest figure, so an item could be priced off a bid of 0.01 ISK, and Average came out halfway between that bid and the lowest sell order. At Jita on 7 November that made Tritanium 0.01 ISK on Buy Orders, where the highest buy order was 4.05, and 2.05 on Average, where it should have been 4.07. Buy Orders now reads the highest buy order, and Average halfway between that and the lowest sell order. The same goes for the Jita fallback through Manager Core and for `mining-manager:cache-prices`.
+- Fixed: **the Jita fallback through Manager Core priced Average at the lowest sell order.** It now asks Manager Core for both sides in one call and takes the halfway point.
+- Fixed: **an item with orders on one side only was priced on Average at half of that side**, by Fuzzwork and by `mining-manager:cache-prices`. It is now priced at the side that has orders.
+- Sell Orders and Janice prices were right before and have not changed. Prices are read this way from the update on, and the update does not go back over anything already priced.
+
+### Tests
+
+- Tests for reading prices from Manager Core and Fuzzwork, on Jita's order book as it stood on 7 November.
+
 ## [3.0.0] - 2026-11-07 - The Ecosystem Era: Eclipse
 
 **Forward-only.** On update, migration 000038 keeps a copy of every settings row in a new table, `mining_manager_settings_archive`, and moves your settings into tax profiles; 000039 then clears the rows nothing reads any more. Nobody has to set the plugin up again. Going back to 2.x means rolling both migrations back, which puts every row back from that copy.
