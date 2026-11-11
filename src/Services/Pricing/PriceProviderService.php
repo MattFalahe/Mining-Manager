@@ -109,8 +109,8 @@ class PriceProviderService
     public const FALLBACK_PROVIDERS = [self::PROVIDER_FUZZWORK, self::PROVIDER_JANICE, self::PROVIDER_MANAGER_CORE];
 
     /**
-     * The trade hubs the providers have in common, with the region Fuzzwork
-     * prices each one in.
+     * The trade hubs the providers have in common, with each one's region. A
+     * home region set to one of these means its hub.
      */
     public const HUB_REGIONS = [
         'jita' => 10000002,
@@ -120,8 +120,28 @@ class PriceProviderService
         'rens' => 10000030,
     ];
 
-    /** The hubs Janice prices at. */
-    public const JANICE_MARKETS = ['jita', 'amarr'];
+    /**
+     * The station Fuzzwork is asked about for each hub. Asked about a region,
+     * it answers with every order in it, so Jita's sell price would be the
+     * cheapest sell anywhere in The Forge, which can sit systems away and
+     * below anything Jita 4-4 sells at.
+     */
+    public const HUB_STATIONS = [
+        'jita' => 60003760,     // Jita IV - Moon 4 - Caldari Navy Assembly Plant
+        'amarr' => 60008494,    // Amarr VIII (Oris) - Emperor Family Academy
+        'dodixie' => 60011866,  // Dodixie IX - Moon 20 - Federation Navy Assembly Plant
+        'hek' => 60005686,      // Hek VIII - Moon 12 - Boundless Creation Factory
+        'rens' => 60004588,     // Rens VI - Moon 8 - Brutor Tribe Treasury
+    ];
+
+    /**
+     * The hubs Janice prices at, with Janice's market id for each. Its market
+     * 1 is The Forge, Jita's whole region, not Amarr.
+     */
+    public const JANICE_MARKETS = [
+        'jita' => '2',
+        'amarr' => '115',
+    ];
 
     /**
      * Threshold (in hours) beyond which a Manager Core price is considered
@@ -460,7 +480,7 @@ class PriceProviderService
     public function canPriceAt(string $provider, string $market): bool
     {
         return match ($provider) {
-            self::PROVIDER_JANICE => in_array($market, self::JANICE_MARKETS, true),
+            self::PROVIDER_JANICE => isset(self::JANICE_MARKETS[$market]),
             self::PROVIDER_MANAGER_CORE => isset(self::HUB_REGIONS[$market]),
             self::PROVIDER_FUZZWORK => isset(self::HUB_REGIONS[$market]) || ctype_digit($market),
             default => false,
@@ -509,6 +529,32 @@ class PriceProviderService
         $hub = array_search($regionId, self::HUB_REGIONS, true);
 
         return $hub === false ? (string) $regionId : $hub;
+    }
+
+    /** Janice's market id for a hub, and Jita's for anything Janice isn't asked about. */
+    public static function janiceMarketId(string $market): string
+    {
+        return self::JANICE_MARKETS[$market] ?? self::JANICE_MARKETS['jita'];
+    }
+
+    /**
+     * What Fuzzwork is asked about for a market: a hub's station, given the
+     * hub or its region, the region itself for any other region id, and Jita
+     * 4-4 for anything else.
+     *
+     * @return array{station: int}|array{region: int}
+     */
+    public static function fuzzworkScope(string $market): array
+    {
+        if (ctype_digit($market)) {
+            $hub = array_search((int) $market, self::HUB_REGIONS, true);
+            if ($hub === false) {
+                return ['region' => (int) $market];
+            }
+            $market = $hub;
+        }
+
+        return ['station' => self::HUB_STATIONS[$market] ?? self::HUB_STATIONS['jita']];
     }
 
     /**
@@ -618,7 +664,7 @@ class PriceProviderService
             throw new Exception('Janice API key not configured. Set it in Settings UI or MINING_MANAGER_JANICE_API_KEY env variable.');
         }
 
-        $market = ($this->fetchOverride['market'] ?? $pricingSettings['janice_market'] ?? 'jita') === 'jita' ? '2' : '1';
+        $market = self::janiceMarketId((string) ($this->fetchOverride['market'] ?? $pricingSettings['janice_market'] ?? 'jita'));
         $method = $this->fetchOverride['side'] ?? $pricingSettings['janice_price_method'] ?? 'buy';
         $batchSize = max(1, min(500, (int) $this->settingsService->getSetting('janice_batch_size', self::JANICE_BATCH_SIZE)));
         $pause = max(0, (int) $this->settingsService->getSetting('janice_rate_limit_delay', self::JANICE_BATCH_PAUSE_US));
@@ -815,9 +861,9 @@ class PriceProviderService
     protected function getPricesFromFuzzwork(array $typeIds): array
     {
         $generalSettings = $this->settingsService->getGeneralSettings();
-        $regionId = $this->fetchOverride
-            ? (self::HUB_REGIONS[$this->fetchOverride['market']] ?? (int) $this->fetchOverride['market'])
-            : ($generalSettings['default_region_id'] ?? self::DEFAULT_REGION_ID);
+        $scope = self::fuzzworkScope((string) ($this->fetchOverride
+            ? $this->fetchOverride['market']
+            : ($generalSettings['default_region_id'] ?? self::DEFAULT_REGION_ID)));
 
         // Fuzzwork takes the ids in the query string, so a whole refresh in
         // one call is a URL thousands of characters long. Chunk it.
@@ -833,8 +879,7 @@ class PriceProviderService
         $pricingSettings = $this->settingsService->getPricingSettings();
         $typeIdsString = implode(',', $typeIds);
 
-        $response = Http::timeout(10)->get(self::FUZZWORK_MARKET_URL, [
-            'region' => $regionId,
+        $response = Http::timeout(10)->get(self::FUZZWORK_MARKET_URL, $scope + [
             'types' => $typeIdsString
         ]);
 
@@ -1181,7 +1226,7 @@ class PriceProviderService
         $currentMarket = match ($provider) {
             self::PROVIDER_JANICE => $pricingSettings['janice_market'] ?? 'jita',
             self::PROVIDER_MANAGER_CORE => $pricingSettings['manager_core_market'] ?? 'jita',
-            default => 'jita', // SeAT/Fuzzwork default to Jita region
+            default => 'jita', // SeAT/Fuzzwork default to Jita
         };
 
         // No fallback needed if already using Jita
@@ -1222,7 +1267,7 @@ class PriceProviderService
             $jitaPrices = match ($provider) {
                 self::PROVIDER_JANICE => $this->getPricesFromJaniceWithMarket($zeroTypeIds, 'jita'),
                 self::PROVIDER_MANAGER_CORE => $this->getPricesFromManagerCoreWithMarket($zeroTypeIds, 'jita'),
-                self::PROVIDER_FUZZWORK => $this->getPricesFromFuzzworkWithRegion($zeroTypeIds, self::DEFAULT_REGION_ID),
+                self::PROVIDER_FUZZWORK => $this->getPricesFromFuzzworkWithMarket($zeroTypeIds, 'jita'),
                 default => [],
             };
 
@@ -1381,7 +1426,7 @@ class PriceProviderService
         return $this->fetchJaniceBatch(
             array_values(array_unique(array_map('intval', $typeIds))),
             $apiKey,
-            $market === 'jita' ? '2' : '1',
+            self::janiceMarketId($market),
             $pricingSettings['janice_price_method'] ?? 'buy'
         );
     }
@@ -1465,20 +1510,19 @@ class PriceProviderService
     }
 
     /**
-     * Fetch Fuzzwork prices with a specific region override
+     * Fetch Fuzzwork prices with a specific market override
      *
      * @param array $typeIds
-     * @param int $regionId
+     * @param string $market a hub name or a region id
      * @return array
      */
-    protected function getPricesFromFuzzworkWithRegion(array $typeIds, int $regionId): array
+    protected function getPricesFromFuzzworkWithMarket(array $typeIds, string $market): array
     {
         $pricingSettings = $this->settingsService->getPricingSettings();
         $priceMethod = $pricingSettings['price_type'] ?? 'sell';
         $typeIdsString = implode(',', $typeIds);
 
-        $response = Http::timeout(10)->get(self::FUZZWORK_MARKET_URL, [
-            'region' => $regionId,
+        $response = Http::timeout(10)->get(self::FUZZWORK_MARKET_URL, self::fuzzworkScope($market) + [
             'types' => $typeIdsString,
         ]);
 

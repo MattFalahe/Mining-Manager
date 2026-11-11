@@ -11,11 +11,13 @@ All notable changes to Mining Manager will be documented in this file.
 - Fixed: **with Manager Core as the price provider, Buy Orders priced items at the lowest buy order on the market.** Manager Core describes each side of the order book, and both sides were read at their lowest figure, so an item could be priced off a bid of 0.01 ISK, and Average came out halfway between that bid and the lowest sell order. At Jita on 7 November that made Tritanium 0.01 ISK on Buy Orders, where the highest buy order was 4.05, and 2.05 on Average, where it should have been 4.07. Buy Orders now reads the highest buy order, and Average halfway between that and the lowest sell order. The same goes for the Jita fallback through Manager Core and for `mining-manager:cache-prices`.
 - Fixed: **the Jita fallback through Manager Core priced Average at the lowest sell order.** It now asks Manager Core for both sides in one call and takes the halfway point.
 - Fixed: **an item with orders on one side only was priced on Average at half of that side**, by Fuzzwork and by `mining-manager:cache-prices`. It is now priced at the side that has orders.
-- Sell Orders and Janice prices were right before and have not changed. Prices are read this way from the update on, and the update does not go back over anything already priced.
+- Fixed: **Janice never priced Amarr.** With Janice's market set to Amarr, Mining Manager asked Janice for market 1, which in Janice's own list of markets is The Forge, Jita's whole region, and Janice never answered it: every request timed out after 30 seconds or came back HTTP 400, so Amarr prices came from the fallback price provider or stayed as cached. It asks for Janice's Amarr market (115) now, and so does the fallback price provider when it's Janice and the market is Amarr.
+- Fixed: **Fuzzwork priced each trade hub from its whole region.** Jita was every order in The Forge, Amarr every order in Domain and so on, so Sell Orders was the cheapest sell order anywhere in the region, which can sit systems away and well under what the hub sells at, and Buy Orders the highest buy order in the region. On my test install on 8 November, Tritanium at Jita came back 3.50 sell and 3.92 buy, where Jita 4-4 had 4.16 and 3.92. Fuzzwork is now asked about the hub's station: Jita 4-4, Amarr VIII, Dodixie IX Moon 20, Hek VIII Moon 12 or Rens VI Moon 8. A home region that isn't a hub's is still priced across the region. This covers Fuzzwork as the price provider and as the fallback price provider, which it is by default.
+- Sell Orders through Manager Core and Janice at Jita were right before and have not changed. Prices are read this way from the update on, and the update does not go back over anything already priced.
 
 ### Tests
 
-- Tests for reading prices from Manager Core and Fuzzwork, on Jita's order book as it stood on 7 November.
+- Tests for reading prices from Manager Core and Fuzzwork, on Jita's order book as it stood on 7 November, and for the market Janice and Fuzzwork are asked about at each hub.
 
 ## [3.0.0] - 2026-11-07 - The Ecosystem Era: Eclipse
 

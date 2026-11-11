@@ -84,4 +84,35 @@ class MarketPriceTest extends TestCase
         $this->assertSame(15420.0, PriceProviderService::fuzzworkPrice($sellOnly, 'average'));
         $this->assertSame(0.0, PriceProviderService::fuzzworkPrice(null, 'sell'));
     }
+
+    /** Janice's market 1 is The Forge, Jita's whole region, and Janice never answered it. */
+    public function test_janice_is_asked_for_its_own_amarr_market(): void
+    {
+        $this->assertSame('115', PriceProviderService::janiceMarketId('amarr'));
+        $this->assertSame('2', PriceProviderService::janiceMarketId('jita'));
+        $this->assertSame('2', PriceProviderService::janiceMarketId('dodixie'));
+    }
+
+    /**
+     * Asked about a region, Fuzzwork answers with every order in it: on 8
+     * November The Forge's cheapest Tritanium sat outside Jita, under what
+     * Jita 4-4 sold it for.
+     */
+    public function test_fuzzwork_is_asked_about_each_hub_at_its_station(): void
+    {
+        $this->assertSame(['station' => 60003760], PriceProviderService::fuzzworkScope('jita'));
+        $this->assertSame(['station' => 60008494], PriceProviderService::fuzzworkScope('amarr'));
+        $this->assertSame(['station' => 60011866], PriceProviderService::fuzzworkScope('dodixie'));
+        $this->assertSame(['station' => 60005686], PriceProviderService::fuzzworkScope('hek'));
+        $this->assertSame(['station' => 60004588], PriceProviderService::fuzzworkScope('rens'));
+    }
+
+    /** The home region is a region id, and a hub's region means that hub. */
+    public function test_fuzzwork_takes_a_hubs_region_for_the_hub_and_any_other_region_whole(): void
+    {
+        $this->assertSame(['station' => 60003760], PriceProviderService::fuzzworkScope('10000002'));
+        $this->assertSame(['station' => 60008494], PriceProviderService::fuzzworkScope('10000043'));
+        $this->assertSame(['region' => 10000060], PriceProviderService::fuzzworkScope('10000060'));
+        $this->assertSame(['station' => 60003760], PriceProviderService::fuzzworkScope('somewhere'));
+    }
 }

@@ -1039,8 +1039,22 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                             lowest buy order on the market, often a bid of 0.01 ISK, and Average halfway between
                             that and the sell price. Buy Orders is now the highest buy order, and Average halfway
                             between that and the lowest sell order. If you price either way through Manager Core,
-                            expect ore values and the tax on them to go up from this update on. Sell Orders and
-                            Janice prices have not changed.
+                            expect ore values and the tax on them to go up from this update on. Sell Orders
+                            through Manager Core has not changed.
+                        </li>
+                        <li>
+                            <strong>Janice at Amarr.</strong> With Janice's market set to Amarr, Mining Manager
+                            asked Janice for The Forge region by mistake, which Janice never answered, so Amarr
+                            prices came from the fallback price provider. Janice prices Amarr itself now. Janice
+                            at Jita has not changed.
+                        </li>
+                        <li>
+                            <strong>Fuzzwork at the hub.</strong> Fuzzwork was asked about a hub's whole region,
+                            so Sell Orders could come from a cheaper order systems away from the hub, and Buy
+                            Orders from a higher bid elsewhere. It now prices at the hub's own station (Jita 4-4,
+                            Amarr VIII and the other three). From this update on, expect Fuzzwork's Sell Orders to
+                            come out the same or higher and Buy Orders the same or lower. The fallback price
+                            provider is Fuzzwork unless you picked another, so this reaches it too.
                         </li>
                     </ul>
                 </div>
