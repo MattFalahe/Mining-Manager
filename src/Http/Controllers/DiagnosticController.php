@@ -4407,6 +4407,7 @@ class DiagnosticController extends Controller
     protected function testDiscordChannel(array &$logs, array &$summary, string $type, array $data, int $characterId, string $characterName, $webhookId, $customWebhookUrl, array $settings, bool $testPing = false): void
     {
         // Resolve webhook URL
+        $webhook = null;
         $webhookUrl = null;
         $webhookName = 'Custom URL';
 
