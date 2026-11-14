@@ -14,6 +14,20 @@ All notable changes to Mining Manager will be documented in this file.
 - Fixed: **Janice never priced Amarr.** With Janice's market set to Amarr, Mining Manager asked Janice for market 1, which in Janice's own list of markets is The Forge, Jita's whole region, and Janice never answered it: every request timed out after 30 seconds or came back HTTP 400, so Amarr prices came from the fallback price provider or stayed as cached. It asks for Janice's Amarr market (115) now, and so does the fallback price provider when it's Janice and the market is Amarr.
 - Fixed: **Fuzzwork priced each trade hub from its whole region.** Jita was every order in The Forge, Amarr every order in Domain and so on, so Sell Orders was the cheapest sell order anywhere in the region, which can sit systems away and well under what the hub sells at, and Buy Orders the highest buy order in the region. On my test install on 8 November, Tritanium at Jita came back 3.50 sell and 3.92 buy, where Jita 4-4 had 4.16 and 3.92. Fuzzwork is now asked about the hub's station: Jita 4-4, Amarr VIII, Dodixie IX Moon 20, Hek VIII Moon 12 or Rens VI Moon 8. A home region that isn't a hub's is still priced across the region. This covers Fuzzwork as the price provider and as the fallback price provider, which it is by default.
 - Sell Orders through Manager Core and Janice at Jita were right before and have not changed. Prices are read this way from the update on, and the update does not go back over anything already priced.
+- Fixed: **`mining-manager:cache-prices` crashed in its own error handling.** When the call to Manager Core failed, or Manager Core answered in a shape the command didn't expect, it went to write a warning to the log and stopped with `Class "MiningManager\Console\Commands\Log" not found` instead. It writes the warning now, and a failed call ends the sync the way it was meant to.
+
+### Notifications
+
+- Fixed: **Discord role names went into the role picker as HTML.** The picker next to each Discord Role ID on Settings > Notifications built its list straight from the names Discord gave, so a role whose name held markup ran it in the browser of whoever opened the picker. Anyone with Manage Roles on the linked Discord server could do that. Names show as plain text now.
+- Fixed: **narrowing the role picker to one source hid the roles both sources have.** A role on both the SeAT Broadcast and the SeAT Connector list counted under only one of them, so choosing the other left it out and its count came out low. A role now shows and counts under every source it's in.
+
+### Diagnostics
+
+- Fixed: **Notification Testing couldn't preview the theft notifications on a custom URL.** Theft Detected, Critical Theft, Active Theft and Incident Resolved failed to build their embed with "Undefined variable $webhook" when you pasted a webhook URL instead of picking a saved webhook, so nothing usable went to the channel. They build and send now.
+
+### Commands
+
+- Fixed: **`mining-manager:diagnose-affiliation` told you to run `composer update`** to update SeAT. A bare `composer update` is the wrong way to update a Docker install, and on Composer 2.11 it fails outright. It now says to use SeAT's own upgrade steps.
 
 ### Tests
 

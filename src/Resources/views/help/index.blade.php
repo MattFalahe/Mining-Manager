@@ -1057,6 +1057,15 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                             provider is Fuzzwork unless you picked another, so this reaches it too.
                         </li>
                     </ul>
+                    <h5>Notifications</h5>
+                    <ul>
+                        <li>
+                            <strong>The Discord role picker.</strong> Narrowing the list to SeAT Connector or SeAT
+                            Broadcast now shows every role that source has, including the ones both sources have,
+                            and the counts above the list include them too. Role names show exactly as Discord has
+                            them, as plain text.
+                        </li>
+                    </ul>
                 </div>
 
                 {{-- What is Mining Manager? --}}
