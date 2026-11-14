@@ -1022,6 +1022,14 @@ $(document).ready(function() {
         @endif
     }
 
+    // Role names are whatever someone with Manage Roles typed on Discord, so
+    // they are escaped before they go into the picker's markup.
+    function escapeHtml(s) {
+        return String(s).replace(/[&<>"']/g, function (c) {
+            return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c];
+        });
+    }
+
     function renderInlineRolePickerBody($body, res, pickerId) {
         if (!res.roles || res.roles.length === 0) {
             $body.html(`
@@ -1032,8 +1040,16 @@ $(document).ready(function() {
             return;
         }
 
+        const sourcesOf = function (r) {
+            return (r.sources && r.sources.length) ? r.sources : [r.source];
+        };
+
+        // A role in two sources counts under both, because narrowing to a
+        // source has to show all of it.
         const perSource = {};
-        res.roles.forEach(function (r) { perSource[r.source] = (perSource[r.source] || 0) + 1; });
+        res.roles.forEach(function (r) {
+            sourcesOf(r).forEach(function (s) { perSource[s] = (perSource[s] || 0) + 1; });
+        });
         const sourceLabels = {
             'discord-roles-table':  'SeAT Broadcast',
             'seat-connector':       'SeAT Connector',
@@ -1087,12 +1103,12 @@ $(document).ready(function() {
                 ? `<span class="badge badge-secondary" style="color:#fff; font-weight:600; font-size:0.65rem; padding:2px 6px; margin-left:2px;" title="Also in: ${alsoIn.map(s => sourceLabels[s]||s).join(', ')}">+${alsoIn.length}</span>`
                 : '';
             html += `<button type="button" class="btn btn-sm btn-outline-primary js-mm-role-pick-btn"
-                data-role-id="${r.id}"
-                data-role-name="${r.name}"
-                data-source="${primarySrc}"
+                data-role-id="${escapeHtml(r.id)}"
+                data-role-name="${escapeHtml(r.name)}"
+                data-sources="${escapeHtml(sourcesOf(r).join(' '))}"
                 style="text-align:left;">
-                ${dot}${r.name}
-                <small style="opacity:0.55; margin-left:4px;">#${r.id.slice(-6)}</small>
+                ${dot}${escapeHtml(r.name)}
+                <small style="opacity:0.55; margin-left:4px;">#${escapeHtml(String(r.id).slice(-6))}</small>
                 ${primaryBadge}${extraBadge}
             </button>`;
         });
@@ -1104,9 +1120,9 @@ $(document).ready(function() {
             const textV = ($('#' + filterId).val() || '').toLowerCase();
             const srcV  = $('#' + sourceFilterId).val() || '';
             $('#' + listId + ' .js-mm-role-pick-btn').each(function () {
-                const n = ($(this).data('role-name') + ' ' + $(this).data('role-id')).toLowerCase();
-                const s = $(this).data('source');
-                $(this).toggle(n.includes(textV) && (!srcV || s === srcV));
+                const n = ($(this).attr('data-role-name') + ' ' + $(this).attr('data-role-id')).toLowerCase();
+                const s = ($(this).attr('data-sources') || '').split(' ');
+                $(this).toggle(n.includes(textV) && (!srcV || s.indexOf(srcV) !== -1));
             });
         };
         $('#' + filterId).on('input', applyFilter);
