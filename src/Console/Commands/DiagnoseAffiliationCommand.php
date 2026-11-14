@@ -254,7 +254,7 @@ class DiagnoseAffiliationCommand extends Command
         
         $this->info('Next steps:');
         $this->line('• Check your SeAT version: Should be 5.x or higher');
-        $this->line('• Update SeAT if needed: composer update');
+        $this->line('• Update SeAT if needed with SeAT\'s own upgrade steps (on Docker, pull the new images and restart)');
         $this->line('• Run SeAT migrations: php artisan migrate');
         $this->line('• Clear caches: php artisan config:clear && php artisan cache:clear');
         
