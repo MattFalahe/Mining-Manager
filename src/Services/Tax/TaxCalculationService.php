@@ -438,35 +438,10 @@ class TaxCalculationService
                             Log::info("Mining Manager: applied " . number_format($creditApplied, 2) . " ISK of held credit to invoice {$newTax->id}");
                         }
 
-                        // B1a: announce on the cross-plugin event bus so other
-                        // plugins (Discord Pings, HR Manager, etc.) can react.
-                        // Topics handles publisher attribution and Discord
-                        // sanitization. Standalone-safe: when MC is not installed,
-                        // the class_exists guard makes this a complete no-op.
-                        if (class_exists(\ManagerCore\Topics::class)) {
-                            \ManagerCore\Topics::publish('mining.tax_created', [
-                                // One per bill. Manager Core's own key is the period and
-                                // the character, which two bills of a twice-monthly or
-                                // weekly month share, so the second could be taken for
-                                // a repeat of the first.
-                                'idempotency_key' => "tax_created:{$newTax->id}",
-                                'tax_id'         => $newTax->id,
-                                'character_id'   => $mainCharacterId,
-                                'period'         => $calendarMonth,            // calendar month the period starts in
-                                'period_type'    => $periodType,
-                                'period_start'   => $startDate->format('Y-m-d'),
-                                'period_end'     => $endDate->format('Y-m-d'),
-                                'amount_owed'    => round($combinedTaxAmount, 2),
-                                // Held credit can settle some or all of a bill as it is
-                                // raised, so what is left to pay is not always the bill.
-                                'amount_paid'    => round((float) $newTax->amount_paid, 2),
-                                'outstanding'    => $newTax->getRemainingBalance(),
-                                'status'         => $newTax->status,
-                                'due_date'       => $dueDate->format('Y-m-d'),
-                                'corporation_id' => null, // visibility scoping (subscriber may filter)
-                                'role_id'        => null,
-                            ]);
-                        }
+                        // Told to other plugins once this bill is committed,
+                        // so a subscriber never runs inside this transaction
+                        // or hears of a bill that was rolled back.
+                        ManagerCoreEvents::taxCreated($newTax);
                     }
 
                     $calculated++;

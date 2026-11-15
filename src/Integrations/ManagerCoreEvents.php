@@ -13,8 +13,7 @@ use MiningManager\Models\TaxInvoice;
 use MiningManager\Models\TheftIncident;
 
 /**
- * What Mining Manager tells other plugins through Manager Core's event bus,
- * besides a bill being raised.
+ * What Mining Manager tells other plugins through Manager Core's event bus.
  *
  * Each event goes out once, when the thing it names happens, and only after
  * the change behind it is saved: one sent from inside a transaction that then
@@ -25,19 +24,55 @@ use MiningManager\Models\TheftIncident;
 class ManagerCoreEvents
 {
     /**
+     * Bills raised whose mining.tax_created has not gone out yet, by id.
+     *
+     * @var array<int, bool>
+     */
+    private static array $raised = [];
+
+    /**
+     * A bill was raised. It goes out once the bill is committed, saying what
+     * held credit has paid of it by then.
+     */
+    public static function taxCreated(MiningTax $tax): void
+    {
+        if (!self::carries('mining.tax_created')) {
+            return;
+        }
+
+        self::$raised[$tax->id] = true;
+
+        DB::afterCommit(function () use ($tax) {
+            self::announceRaised($tax);
+        });
+    }
+
+    /**
      * A bill was paid in full, by the wallet, held credit or a director.
      */
     public static function taxPaid(MiningTax $tax): void
     {
+        if (!self::carries('mining.tax_paid')) {
+            return;
+        }
+
         $dueEnd = $tax->effectiveDueDate()->copy()->endOfDay();
         $paidAt = $tax->paid_at ? Carbon::parse($tax->paid_at) : Carbon::now();
 
-        self::publish('mining.tax_paid', self::bill($tax) + [
+        $payload = self::bill($tax) + [
             // One per bill: two bills of a twice-monthly month share a period.
             'idempotency_key' => "tax_paid:{$tax->id}",
             'paid_at' => $paidAt->toIso8601String(),
             'late' => $paidAt->gt($dueEnd),
-        ]);
+        ];
+
+        DB::afterCommit(function () use ($tax, $payload) {
+            // Held credit can pay a bill off in the transaction that raises
+            // it, and Laravel runs what an inner transaction queued before
+            // what the outer one did. Raised has to come before paid.
+            self::announceRaised($tax);
+            self::send('mining.tax_paid', $payload);
+        });
     }
 
     /**
@@ -186,26 +221,67 @@ class ManagerCoreEvents
         ];
     }
 
-    private static function publish(string $topic, array $payload): void
+    /**
+     * Send mining.tax_created for a bill, once. The bill is read again here
+     * because held credit is applied after it is raised, and subscribers are
+     * told what is left to pay. A bill whose transaction rolled back is gone,
+     * and nothing is sent for it.
+     */
+    private static function announceRaised(MiningTax $tax): void
     {
-        if (!class_exists(\ManagerCore\Topics::class)) {
+        if (!isset(self::$raised[$tax->id])) {
             return;
         }
 
-        // A Manager Core older than a topic would log a warning for every
-        // publish of it. The event starts going out once Manager Core is updated.
-        if (\ManagerCore\Topics::describe($topic) === null) {
+        unset(self::$raised[$tax->id]);
+
+        try {
+            $bill = $tax->fresh();
+        } catch (\Throwable $e) {
+            $bill = null;
+        }
+
+        if (!$bill) {
+            return;
+        }
+
+        self::send('mining.tax_created', [
+            // One per bill. Manager Core's own key was once the period and the
+            // character, which two bills of a twice-monthly or weekly month share.
+            'idempotency_key' => "tax_created:{$bill->id}",
+        ] + self::bill($bill));
+    }
+
+    private static function publish(string $topic, array $payload): void
+    {
+        if (!self::carries($topic)) {
             return;
         }
 
         DB::afterCommit(function () use ($topic, $payload) {
-            try {
-                \ManagerCore\Topics::publish($topic, $payload);
-            } catch (\Throwable $e) {
-                Log::warning("Mining Manager: could not publish {$topic} to Manager Core", [
-                    'error' => $e->getMessage(),
-                ]);
-            }
+            self::send($topic, $payload);
         });
+    }
+
+    private static function carries(string $topic): bool
+    {
+        if (!class_exists(\ManagerCore\Topics::class)) {
+            return false;
+        }
+
+        // A Manager Core older than a topic would log a warning for every
+        // publish of it. The event starts going out once Manager Core is updated.
+        return \ManagerCore\Topics::describe($topic) !== null;
+    }
+
+    private static function send(string $topic, array $payload): void
+    {
+        try {
+            \ManagerCore\Topics::publish($topic, $payload);
+        } catch (\Throwable $e) {
+            Log::warning("Mining Manager: could not publish {$topic} to Manager Core", [
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 }
