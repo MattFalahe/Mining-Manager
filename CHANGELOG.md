@@ -16,6 +16,15 @@ All notable changes to Mining Manager will be documented in this file.
 - Sell Orders through Manager Core and Janice at Jita were right before and have not changed. Prices are read this way from the update on, and the update does not go back over anything already priced.
 - Fixed: **`mining-manager:cache-prices` crashed in its own error handling.** When the call to Manager Core failed, or Manager Core answered in a shape the command didn't expect, it went to write a warning to the log and stopped with `Class "MiningManager\Console\Commands\Log" not found` instead. It writes the warning now, and a failed call ends the sync the way it was meant to.
 
+### Payments
+
+- Fixed: **a payment quoting the code of an exempted bill opened the bill again.** Setting a bill to Exempted leaves its payment code live, and a payment quoting that code was put on the bill whatever its status: a short payment left it Partial and owed again, and a full one was taken by a bill nobody owed. The payment now goes to the member's other open bills, oldest first, and what is left is held as credit, the same as a payment that names no bill. With nothing else owed and credit switched off it stays on the pending list. This applies to payments matched from the update on; nothing already recorded changes.
+- Fixed: **Verify and `mining-manager:verify-payments` called a payment held as credit a failure.** A payment that went wholly to account balance, because nothing was open to put it against, was reported as "could not be matched" or "Matched but not applied" although the money had landed. Both now say it was held.
+
+### Manager Core
+
+- Fixed: **`mining.tax_created` went out before the bill was saved.** It was published from inside the bill's database transaction, so a plugin listening for it, HR Manager for one, did its work inside the tax run's transaction and could hear of a bill that was then rolled back. It goes out once the bill is committed now, like every other event. The topic, its fields and its key are unchanged, and a bill that held credit pays off as it is raised is still announced before its `mining.tax_paid`.
+
 ### Notifications
 
 - Fixed: **Discord role names went into the role picker as HTML.** The picker next to each Discord Role ID on Settings > Notifications built its list straight from the names Discord gave, so a role whose name held markup ran it in the browser of whoever opened the picker. Anyone with Manage Roles on the linked Discord server could do that. Names show as plain text now.

@@ -1066,6 +1066,15 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                             them, as plain text.
                         </li>
                     </ul>
+                    <h5>Payments</h5>
+                    <ul>
+                        <li>
+                            <strong>A payment quoting an exempted bill's code.</strong> A bill set to Exempted keeps
+                            its payment code, and a payment quoting it used to land on that bill and leave it
+                            Partial, owed again. It now goes to the member's other open bills, oldest first, and
+                            anything left is held as credit. The exempted bill stays as it is.
+                        </li>
+                    </ul>
                 </div>
 
                 {{-- What is Mining Manager? --}}
