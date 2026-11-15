@@ -1069,6 +1069,12 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                     <h5>Payments</h5>
                     <ul>
                         <li>
+                            <strong>Assign to invoice.</strong> Assigning a wallet payment to a bill by hand answered
+                            "Could not assign this payment" on every assignment after the first an install ever made,
+                            although the payment had gone onto the bill. It answers correctly now. If you saw that
+                            error before, the payment was applied: check the bill before assigning anything again.
+                        </li>
+                        <li>
                             <strong>A payment quoting an exempted bill's code.</strong> A bill set to Exempted keeps
                             its payment code, and a payment quoting it used to land on that bill and leave it
                             Partial, owed again. It now goes to the member's other open bills, oldest first, and
