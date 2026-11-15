@@ -267,7 +267,7 @@
                         </button>
                     @endif
                     <div class="text-muted small mt-2">
-                        Open <strong>Manager Core → Pricing Preferences</strong> to change market or price type for Mining Manager. Saving in MC takes effect immediately.
+                        Open <strong>Manager Core → Pricing Preferences</strong> to change market or price type for Mining Manager. A market saved there reaches Mining Manager's prices once Manager Core has fetched it, at the latest at the next scheduled price refresh.
                     </div>
                 </div>
 

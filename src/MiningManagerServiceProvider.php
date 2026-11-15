@@ -113,13 +113,10 @@ class MiningManagerServiceProvider extends AbstractSeatPlugin
         // extraction_started pass to avoid double-firing.
         \MiningManager\Integrations\MoonFastPollIntegration::registerHandler();
 
-        // Subscribe to MC's pricing.preference_changed event so an
-        // operator's change in MC's Pricing Preferences UI invalidates
-        // MM's local price cache immediately. Without this subscription,
-        // operator changes propagate only after MM's next scheduled
-        // cache cycle (up to 4h). Subscribed unconditionally when MC is
-        // installed — the handler short-circuits internally for events
-        // with plugin_key != 'mining-manager'.
+        // Follow Manager Core's pricing: a market the operator changes on
+        // its Pricing Preferences page, and each refresh of that market's
+        // prices. Subscribed whenever MC is installed; the handlers decide
+        // whether an event is for Mining Manager.
         $this->registerPricingPreferenceSubscription();
 
         // Idempotently re-register MM's pricing type subscriptions with
@@ -505,10 +502,11 @@ class MiningManagerServiceProvider extends AbstractSeatPlugin
     }
 
     /**
-     * Subscribe to MC's `pricing.preference_changed` event so an operator
-     * change in MC's Pricing Preferences UI invalidates MM's local price
-     * cache immediately, rather than waiting up to 4 hours for MM's next
-     * scheduled refresh cycle.
+     * Subscribe to MC's `pricing.preference_changed`, so a market the
+     * operator changes on MC's Pricing Preferences page is subscribed and
+     * fetched there at once, and to `pricing.market_refreshed`, so Mining
+     * Manager copies a market's prices as soon as MC has fetched them
+     * rather than at its own next scheduled refresh.
      *
      * Subscribed unconditionally when MC is installed — the
      * PricingPreferenceChangedHandler filters internally for events whose
@@ -556,8 +554,30 @@ class MiningManagerServiceProvider extends AbstractSeatPlugin
                 'pricing.preference_changed',
                 'pricing.preference_changed_handler',
                 [
-                    'queued' => false,    // Sync dispatch — single payload cache flush is fast
-                    'priority' => 5,      // Above default 0; cache flush should happen before any downstream listeners
+                    'queued' => false,    // Sync dispatch: it only re-points a subscription
+                    'priority' => 5,
+                ]
+            );
+
+            // Manager Core saying a market's prices are in. Queued, because
+            // the copy that follows can be a live fetch through Manager Core
+            // when a provider override is set, and that takes a while.
+            $bridge->registerCapability(
+                'mining-manager',
+                'pricing.market_refreshed_handler',
+                function (string $eventName, string $publisher, array $payload) {
+                    $this->app->make(\MiningManager\Services\Pricing\MarketRefreshedHandler::class)
+                        ->handle($eventName, $publisher, $payload);
+                }
+            );
+
+            $eventBus->subscribe(
+                'mining-manager',
+                'pricing.market_refreshed',
+                'pricing.market_refreshed_handler',
+                [
+                    'queued' => true,
+                    'timeout_seconds' => 300,
                 ]
             );
         } catch (\Throwable $e) {

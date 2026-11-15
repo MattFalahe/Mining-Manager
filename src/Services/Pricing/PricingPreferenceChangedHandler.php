@@ -4,38 +4,28 @@ namespace MiningManager\Services\Pricing;
 
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
+use MiningManager\Services\Configuration\SettingsManagerService;
 
 /**
  * Subscriber for Manager Core's `pricing.preference_changed` EventBus topic.
  *
  * Fired by MC's PricingPreferencesController whenever an operator updates or
- * resets a row in the Pricing Preferences admin UI. Mining Manager subscribes
- * (in MiningManagerServiceProvider::registerCrossPluginPricingSubscription)
- * so an operator's MC-side change takes effect immediately, not after the
- * next scheduled cache cycle.
+ * resets a row in the Pricing Preferences admin UI. It runs inside that save,
+ * so it only does what is quick: it points Manager Core at the new market.
  *
- * Filter: we only care about events whose `plugin_key` payload field equals
- * 'mining-manager'. Other plugins' preference changes are no-ops for us.
+ * Mining Manager's prices live in mining_price_cache, and they can only move
+ * once Manager Core holds prices for the new market. So on a market change
+ * this subscribes Mining Manager's types there with an immediate refresh,
+ * which has Manager Core fetch them on its queue, and drops them from the old
+ * market. The copy into mining_price_cache follows when Manager Core says the
+ * market is refreshed (MarketRefreshedHandler), or at the next scheduled
+ * `mining-manager:cache-prices` on a Manager Core that does not say so.
  *
- * Action: flush MM's local price cache tagged ['mining-manager', 'prices'].
- * MM's PriceService::getPriceData() reads through this cache, so a flush
- * forces the next read to go fetch fresh prices from MC via the bridge,
- * picking up the operator's new market/price_type.
+ * The price type on that page is not read: Buy, Sell or Average is Mining
+ * Manager's own setting.
  *
- * Why not also dispatch a refresh job here:
- *   - The scheduled `mining-manager:cache-prices` cron will refresh on its
- *     next tick anyway. Forcing an immediate refresh would inflate operator
- *     wait time on the save click + double the bridge load if MC was already
- *     about to refresh.
- *   - If the operator wants an immediate refresh, the Settings page already
- *     has the "Refresh prices now" button + the artisan command is
- *     documented in the Manual Price Cache Management card.
- *
- * Failure handling: any exception is caught and logged at warning. Cache
- * driver mismatches (file/database cache backends don't support `tags()`)
- * fall through to a tagless `cache()->flush()` last-resort. Either way the
- * handler is non-fatal — worst case the operator sees stale prices until
- * the next scheduled refresh.
+ * Failure handling: nothing here may break the operator's save, so every
+ * failure is logged and left to the scheduled refresh.
  */
 class PricingPreferenceChangedHandler
 {
@@ -51,42 +41,56 @@ class PricingPreferenceChangedHandler
      */
     public function handle(string $eventName, string $publisher, array $payload): void
     {
-        // Filter: this handler only acts on Mining Manager's own pref changes.
-        // Other plugins (Buyback Manager, etc.) have their own subscribers
-        // for their own rows.
-        $pluginKey = $payload['plugin_key'] ?? null;
-        if ($pluginKey !== 'mining-manager') {
+        // Other plugins' rows are theirs to follow.
+        if (($payload['plugin_key'] ?? null) !== 'mining-manager') {
             return;
         }
 
-        $action       = $payload['action']       ?? 'update';
-        $oldMarket    = $payload['old_market']    ?? '(null)';
-        $newMarket    = $payload['new_market']    ?? '(unknown)';
-        $oldPriceType = $payload['old_price_type'] ?? '(null)';
-        $newPriceType = $payload['new_price_type'] ?? '(unknown)';
+        $settings = app(SettingsManagerService::class);
 
-        Log::info(sprintf(
-            '[MM] pricing.preference_changed received: action=%s, market %s → %s, price_type %s → %s. Flushing local price cache.',
-            $action,
-            $oldMarket,
-            $newMarket,
-            $oldPriceType,
-            $newPriceType
-        ));
+        // The market was read once already while this request booted, before
+        // the save. Anything pricing from here on has to ask again.
+        $settings->forgetMcMarket();
 
-        // Flush MM's price cache so next read fetches fresh values from MC
-        // via the bridge. Two-attempt path because Laravel's cache `tags()`
-        // method only works on supported drivers (redis, memcached). File
-        // and database drivers throw BadMethodCallException.
+        $provider = $settings->getPricingSettings()['price_provider'] ?? null;
+        if ($provider !== PriceProviderService::PROVIDER_MANAGER_CORE) {
+            Log::info('[MM] pricing.preference_changed received, but prices do not come from Manager Core. Nothing to do.');
+
+            return;
+        }
+
+        $oldMarket = (string) ($payload['old_market'] ?? '');
+        $newMarket = (string) ($payload['new_market'] ?? '');
+
+        if ($newMarket === '' || $newMarket === $oldMarket) {
+            Log::info('[MM] pricing.preference_changed received with the market unchanged. Prices follow at the next refresh.');
+
+            return;
+        }
+
         try {
-            Cache::tags(['mining-manager', 'prices'])->flush();
-            Cache::tags(['mining-manager', 'moon-values'])->flush();
-            Log::info('[MM] Flushed tagged price caches after pricing.preference_changed.');
-        } catch (\Throwable $tagEx) {
-            // Cache driver doesn't support tags — log + soldier on. The
-            // scheduled cache refresh will eventually surface the new
-            // market's prices; we just lose the "immediate" property.
-            Log::debug('[MM] Cache driver does not support tags; skipping tag-based flush after pricing.preference_changed: ' . $tagEx->getMessage());
+            $count = app(PriceProviderService::class)->subscribeToManagerCore($newMarket, true);
+
+            // The boot-time check compares against this, and it describes the
+            // old market now.
+            Cache::forget('mining-manager:mc-subscription-signature');
+
+            Log::info("[MM] Market changed in Manager Core, {$oldMarket} to {$newMarket}: {$count} types subscribed there and a refresh asked for. Prices follow once Manager Core has them.");
+        } catch (\Throwable $e) {
+            Log::warning('[MM] Could not subscribe to the new Manager Core market, the scheduled refresh will: ' . $e->getMessage());
+
+            return;
+        }
+
+        // Left subscribed, Manager Core would keep fetching the old market
+        // for nobody.
+        if ($oldMarket !== '') {
+            try {
+                app(\ManagerCore\Services\PluginBridge::class)
+                    ->call('ManagerCore', 'pricing.unsubscribeTypes', 'mining-manager', $oldMarket);
+            } catch (\Throwable $e) {
+                Log::debug('[MM] Could not drop the old Manager Core market subscriptions: ' . $e->getMessage());
+            }
         }
     }
 }

@@ -1116,12 +1116,11 @@ class SettingsManagerService
      * operator-configured market without each one calling the bridge
      * independently.
      *
-     * Cached for the request (one bridge call max per HTTP request) since
-     * getPricingSettings() can be invoked many times during a single page
-     * render (Dashboard / Diagnostic / Moon views all touch it). The
-     * pricing.preference_changed EventBus subscription flushes downstream
-     * caches when the operator saves a change in MC; this in-request
-     * memo is just to avoid hammering the bridge.
+     * Remembered for a minute, since getPricingSettings() can be invoked many
+     * times during a single page render (Dashboard / Diagnostic / Moon views
+     * all touch it). Only a minute, because a queue worker lives for hours
+     * and would otherwise price at the market it started with long after the
+     * operator changed it in Manager Core.
      *
      * @return string Market key (e.g. 'jita', 'c-j6mt'). Falls back to
      *                'jita' if MC's bridge call fails for any reason
@@ -1130,10 +1129,8 @@ class SettingsManagerService
      */
     protected function resolveMcMarket(): string
     {
-        // Static cache for the request — avoids N bridge calls per page
-        static $cached = null;
-        if ($cached !== null) {
-            return $cached;
+        if (self::$mcMarket !== null && time() - self::$mcMarketReadAt < 60) {
+            return self::$mcMarket;
         }
 
         $market = 'jita';
@@ -1151,9 +1148,23 @@ class SettingsManagerService
             // this is expected on older MC versions without the capability.
         }
 
-        $cached = $market;
-        return $cached;
+        self::$mcMarket = $market;
+        self::$mcMarketReadAt = time();
+
+        return $market;
     }
+
+    /**
+     * Ask Manager Core for the market again on the next read, for a caller
+     * that has just been told it changed.
+     */
+    public function forgetMcMarket(): void
+    {
+        self::$mcMarket = null;
+    }
+
+    private static ?string $mcMarket = null;
+    private static int $mcMarketReadAt = 0;
 
     /**
      * Update pricing settings

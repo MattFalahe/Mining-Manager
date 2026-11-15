@@ -37,7 +37,8 @@ class CachePriceDataCommand extends Command
     protected $signature = 'mining-manager:cache-prices
                             {--type=all : Type to cache (ore|compressed-ore|moon|materials|minerals|ice|ice-products|gas|compressed|all)}
                             {--region=10000002 : Region ID (default: The Forge)}
-                            {--force : Refresh every price, including ones refreshed recently}';
+                            {--force : Refresh every price, including ones refreshed recently}
+                            {--manager-core-only : Copy from Manager Core and stop; never ask a price provider}';
 
     /**
      * The console command description.
@@ -130,6 +131,15 @@ class CachePriceDataCommand extends Command
             $synced = $provider === 'manager-core'
                 && PriceProviderService::isManagerCoreInstalled()
                 && $this->syncFromManagerCore($typeIds, $regionId);
+
+            // Asked for by the copy that follows Manager Core's own refresh.
+            // It runs on a queue worker with a minute or two to spare, and
+            // going to a provider and its fallback is the scheduled run's job.
+            if (!$synced && $this->option('manager-core-only')) {
+                $this->warn('Nothing copied from Manager Core. Left for the scheduled refresh.');
+
+                return Command::SUCCESS;
+            }
 
             if (!$synced) {
                 $this->priceService->stopFetchingAfter($this->budgetEndsAt());
