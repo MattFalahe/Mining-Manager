@@ -295,6 +295,13 @@ class VerifyWalletPaymentsCommand extends Command
             return;
         }
 
+        if (!$result['applied'] && $result['credited'] > 0) {
+            $this->line("Held as credit for character {$transaction->first_party_id}: " .
+                "{$amount} ISK, nothing open to put it against [{$divLabel}]");
+
+            return;
+        }
+
         if (!$result['applied']) {
             $this->warn("Matched but not applied for character {$transaction->first_party_id}: " .
                 "{$amount} ISK ({$result['reason']})");

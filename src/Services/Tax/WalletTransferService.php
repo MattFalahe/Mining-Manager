@@ -393,7 +393,10 @@ class WalletTransferService
         $result['allocations'] = $allocation['allocations'];
         $result['credited'] = $allocation['credited'];
 
-        if (!$allocation['applied']) {
+        // The code can be for a bill that has since been let off. Then the
+        // money goes to their other bills or their balance, and it only
+        // counts as not applied when it found neither.
+        if (!$allocation['applied'] && $allocation['credited'] <= 0) {
             $result['reason'] = $allocation['reason'];
         }
 

@@ -160,6 +160,19 @@ class PaymentAllocationService
             return $result;
         }
 
+        // A bill a director let off owes nothing, but its payment code stays
+        // live, so a member can still quote it. That payment is treated as one
+        // that named no bill: it goes to what they do owe, or is held.
+        if ($primaryTaxId !== null && $this->isWrittenOff($primaryTaxId)) {
+            Log::info('Mining Manager: payment named a bill that was let off, so it goes to their open bills or balance instead', [
+                'transaction_id' => $transactionId,
+                'character_id' => $payerCharacterId,
+                'tax_id' => $primaryTaxId,
+            ]);
+
+            $primaryTaxId = null;
+        }
+
         $eligibleCharacterIds = $this->eligibleCharacterIds($payerCharacterId, $acceptAlts);
 
         DB::transaction(function () use (
@@ -201,7 +214,9 @@ class PaymentAllocationService
 
                 $tax = MiningTax::where('id', $taxId)->lockForUpdate()->first();
 
-                if (!$tax) {
+                // Read again under the lock: it may have been let off since
+                // the list was built.
+                if (!$tax || in_array($tax->status, MiningTax::WRITTEN_OFF_STATUSES, true)) {
                     continue;
                 }
 
@@ -411,6 +426,13 @@ class PaymentAllocationService
         ]);
 
         return $result;
+    }
+
+    protected function isWrittenOff(int $taxId): bool
+    {
+        return MiningTax::where('id', $taxId)
+            ->whereIn('status', MiningTax::WRITTEN_OFF_STATUSES)
+            ->exists();
     }
 
     /**

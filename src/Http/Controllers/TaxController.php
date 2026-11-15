@@ -2155,7 +2155,9 @@ class TaxController extends Controller
                 try {
                     $outcome = $this->walletService->matchTransaction((int) $transactionId, ['apply' => true]);
 
-                    if ($outcome['applied']) {
+                    // Held as credit is the money landing too: nothing was
+                    // open to put it against.
+                    if ($outcome['applied'] || $outcome['credited'] > 0) {
                         $results['verified']++;
                         continue;
                     }
