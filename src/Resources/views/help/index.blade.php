@@ -1074,6 +1074,13 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                             Partial, owed again. It now goes to the member's other open bills, oldest first, and
                             anything left is held as credit. The exempted bill stays as it is.
                         </li>
+                        <li>
+                            <strong>Change Status to Unpaid or Overdue.</strong> This is how you undo Mark as Paid,
+                            and it used to change the label only, leaving the bill showing everything as paid. It
+                            now takes off what was recorded by hand and makes the payment code live again. Wallet
+                            payments and held credit stay on the bill, which becomes Partial for that amount, and
+                            the page tells you what came off and what stayed.
+                        </li>
                     </ul>
                 </div>
 
@@ -4347,6 +4354,10 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                                 <tr>
                                     <td><code>mining-manager:cache-prices --force</code></td>
                                     <td>Force refresh all cached prices even if cache is fresh</td>
+                                </tr>
+                                <tr>
+                                    <td><code>mining-manager:cache-prices --manager-core-only</code></td>
+                                    <td>Copy prices from Manager Core and stop. If they can't be copied, nothing else is asked and the cached prices stay</td>
                                 </tr>
                                 <tr>
                                     <td><code>mining-manager:process-ledger --recalculate</code></td>
