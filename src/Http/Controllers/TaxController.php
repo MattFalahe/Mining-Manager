@@ -3111,12 +3111,63 @@ class TaxController extends Controller
             // Wrap mining_taxes update + tax_codes update atomically so a partial
             // failure can't leave active tax codes after a tax row is marked paid
             // (which would cause the wallet listener to double-process).
-            $oldStatus = DB::transaction(function () use ($id, $validated, $userName) {
+            $change = DB::transaction(function () use ($id, $validated, $userName) {
                 // Locked for the same reason as markPaid(): a wallet payment
                 // landing meanwhile would otherwise be overwritten.
                 $tax = MiningTax::where('id', $id)->lockForUpdate()->firstOrFail();
                 $oldStatus = $tax->status;
                 $tax->status = $validated['status'];
+                $change = ['old' => $oldStatus, 'taken_off' => 0.0, 'left' => 0.0, 'refused' => false];
+
+                // Unpaid or Overdue on a bill with money on it. This is the
+                // only way to undo Mark as Paid, so what was recorded by hand
+                // comes off. A wallet payment or held credit is real money and
+                // stays where it is, and the bill is whatever that leaves it.
+                if (in_array($validated['status'], ['unpaid', 'overdue'], true) && (float) ($tax->amount_paid ?? 0) > 0) {
+                    $byHand = in_array($oldStatus, ['paid', 'partial'], true)
+                        ? PaymentAllocation::where('mining_tax_id', $tax->id)
+                            ->whereNull('transaction_id')
+                            ->whereNull('credit_id')
+                            ->get()
+                        : collect();
+
+                    $takenOff = round(min((float) $tax->amount_paid, (float) $byHand->sum('amount')), 2);
+                    $left = round((float) $tax->amount_paid - $takenOff, 2);
+
+                    if ($takenOff <= 0 && in_array($oldStatus, ['paid', 'partial'], true)) {
+                        return ['refused' => true, 'left' => $left] + $change;
+                    }
+
+                    if ($takenOff > 0) {
+                        PaymentAllocation::whereIn('id', $byHand->pluck('id'))->delete();
+
+                        $note = Carbon::now()->format('Y-m-d H:i') . " - Status changed to {$validated['status']} by {$userName}: "
+                            . number_format($takenOff, 0) . ' ISK recorded by hand taken off.';
+                        $tax->notes = $tax->notes ? $tax->notes . "\n\n" . $note : $note;
+                    }
+
+                    $tax->amount_paid = $left;
+
+                    if ($left > 0) {
+                        $settled = round((float) $tax->amount_owed - $left, 2) < PaymentAllocationService::SETTLED_TOLERANCE;
+                        $tax->status = $settled ? 'paid' : 'partial';
+                    } else {
+                        $tax->paid_at = null;
+                        $tax->transaction_id = null;
+                    }
+
+                    // An open bill needs a code the member can quote again.
+                    // MANUAL marks a payment assigned by hand and was never one.
+                    if ($tax->status !== 'paid') {
+                        $tax->taxCodes()->where('status', 'used')->where('code', '!=', 'MANUAL')->update([
+                            'status' => 'active',
+                            'used_at' => null,
+                        ]);
+                    }
+
+                    $change['taken_off'] = $takenOff;
+                    $change['left'] = $left;
+                }
 
                 // If marking as paid, set payment date and deactivate tax codes
                 if ($validated['status'] === 'paid' && $oldStatus !== 'paid') {
@@ -3153,19 +3204,53 @@ class TaxController extends Controller
                     ]);
                 }
 
-                return $oldStatus;
+                return ['new' => $tax->status] + $change;
             });
+
+            if ($change['refused']) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => trans('mining-manager::taxes.status_keeps_wallet_money', [
+                        'amount' => number_format($change['left'], 0),
+                        'status' => ucfirst($change['old']),
+                    ]),
+                ], 422);
+            }
 
             Log::info('Tax status updated', [
                 'tax_id' => $id,
-                'old_status' => $oldStatus,
-                'new_status' => $validated['status'],
+                'old_status' => $change['old'],
+                'asked_for' => $validated['status'],
+                'new_status' => $change['new'],
+                'taken_off' => $change['taken_off'],
+                'left_on_bill' => $change['left'],
                 'updated_by' => auth()->user()->name,
             ]);
 
+            $message = trans('mining-manager::taxes.status_updated');
+
+            $parts = [];
+
+            if ($change['taken_off'] > 0) {
+                $parts[] = trans('mining-manager::taxes.status_updated_taken_off', [
+                    'taken_off' => number_format($change['taken_off'], 0),
+                ]);
+            }
+
+            if ($change['left'] > 0) {
+                $parts[] = trans('mining-manager::taxes.status_updated_money_stays', [
+                    'left' => number_format($change['left'], 0),
+                    'status' => ucfirst($change['new']),
+                ]);
+            }
+
+            if (!empty($parts)) {
+                $message = implode(' ', $parts);
+            }
+
             return response()->json([
                 'status' => 'success',
-                'message' => trans('mining-manager::taxes.status_updated'),
+                'message' => $message,
             ]);
 
         } catch (\Exception $e) {

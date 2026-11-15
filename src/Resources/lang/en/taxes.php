@@ -292,6 +292,9 @@ return [
     // Status & Record Management
     'status_updated' => 'Status updated successfully',
     'status_update_error' => 'An error occurred updating the status',
+    'status_updated_taken_off' => ':taken_off ISK recorded by hand was taken off the bill.',
+    'status_updated_money_stays' => ':left ISK from wallet payments or held credit stays on it, so the bill is :status.',
+    'status_keeps_wallet_money' => 'Nothing on this bill was recorded by hand. The :amount ISK on it came from wallet payments or held credit, so it stays :status.',
     'cannot_delete_paid' => 'Cannot delete a paid tax record',
     'cannot_delete_with_payments' => 'Cannot delete a tax record with payments recorded against it: the member would lose what they have paid',
     'tax_deleted' => 'Tax record deleted successfully',
