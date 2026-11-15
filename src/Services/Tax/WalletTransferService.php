@@ -566,25 +566,11 @@ class WalletTransferService
             $result['reason'] = $allocation['reason'];
         }
 
-        // A codeless payment leaves no trail back to the invoice, so record
-        // one. The code reads MANUAL rather than a generated string because it
-        // was never quoted by the member.
-        if ($allocation['applied']) {
-            TaxCode::firstOrCreate(
-                [
-                    'mining_tax_id' => $tax->id,
-                    'character_id' => $tax->character_id,
-                    'transaction_id' => $transactionId,
-                ],
-                [
-                    'code' => 'MANUAL',
-                    'status' => 'used',
-                    'generated_at' => Carbon::now(),
-                    'used_at' => Carbon::now(),
-                    'notes' => $options['notes'] ?? 'Assigned by hand from wallet verification',
-                ]
-            );
-        }
+        // The allocation rows are the trail back to the invoice: who assigned
+        // it, when and with what note. A payment code row called MANUAL used
+        // to be written here as well. Codes are unique, so only the first
+        // assignment on an install could write it, and every one after failed
+        // on it with the payment already applied.
 
         return $result;
     }

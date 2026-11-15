@@ -637,6 +637,7 @@ class VerifyWalletPaymentsCommand extends Command
             if (!$settled) {
                 TaxCode::where('mining_tax_id', $taxId)
                     ->where('status', 'used')
+                    ->where('code', '!=', 'MANUAL')
                     ->update([
                         'status' => 'active',
                         'used_at' => null,

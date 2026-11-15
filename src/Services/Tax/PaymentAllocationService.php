@@ -653,9 +653,12 @@ class PaymentAllocationService
                 // An invoice that is no longer settled needs a live code again,
                 // otherwise the member has nothing to quote on their next payment.
                 if (!$settled) {
+                    // MANUAL is the marker older versions left on a payment
+                    // assigned by hand, never a code anyone could pay with.
                     TaxCode::where('mining_tax_id', $tax->id)
                         ->where('status', 'used')
                         ->where('transaction_id', $transactionId)
+                        ->where('code', '!=', 'MANUAL')
                         ->update([
                             'status' => 'active',
                             'used_at' => null,
