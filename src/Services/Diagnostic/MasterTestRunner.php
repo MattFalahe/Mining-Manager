@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Schema;
 use MiningManager\Models\MoonExtraction;
 use MiningManager\Models\WebhookConfiguration;
 use MiningManager\Integrations\MoonFastPollIntegration;
+use MiningManager\Services\Moon\AnnouncedStarts;
 use MiningManager\Services\Tax\ClassificationEpoch;
 use MiningManager\Services\OreClassifier;
 use MiningManager\Services\TypeIdRegistry;
@@ -1106,18 +1107,15 @@ class MasterTestRunner
     /**
      * Extraction Started alerts still unsent well past their wait.
      *
-     * Only the SeAT-native path holds an alert back, waiting up to six hours for
-     * the notification that names who started the extraction. Manager Core
-     * fast-poll sends straight from that notification, so there is nothing to
-     * check when it is the one sending.
+     * The scheduled pass holds an alert back, waiting up to six hours for the
+     * notification that names who started the extraction. With Manager Core
+     * fast-poll on, that pass is the safety net for a start fast-poll did not
+     * announce, and it marks the ones it did, so nothing should stay unsent
+     * in either mode.
      */
     protected function checkExtractionStartedBacklog(): array
     {
         $name = 'Extraction Started alerts going out';
-
-        if (MoonFastPollIntegration::isFastPollEnabled()) {
-            return $this->skip($name, 'notifications', 'Sent by Manager Core fast-poll, which does not hold alerts back');
-        }
 
         if (!Schema::hasColumn('moon_extractions', 'extraction_started_sent')) {
             return $this->skip($name, 'notifications', 'extraction_started_sent column not present');
@@ -1131,6 +1129,18 @@ class MasterTestRunner
             ->where('extraction_started_sent', false)
             ->where('chunk_arrival_time', '>', $now)
             ->where('extraction_start_time', '>=', $now->copy()->subHours(72));
+
+        // With fast-poll on, the pass leaves alone the starts fast-poll
+        // announced before records were kept, so they are not a backlog.
+        if (MoonFastPollIntegration::isFastPollEnabled()) {
+            $since = app(AnnouncedStarts::class)->since(false);
+
+            if ($since === null) {
+                return $this->skip($name, 'notifications', 'The scheduled check has not run since the update yet');
+            }
+
+            $unsent->where('extraction_start_time', '>=', $since);
+        }
 
         $overdue = (clone $unsent)->where('extraction_start_time', '<', $now->copy()->subHours(7))->count();
         $waiting = (clone $unsent)->where('extraction_start_time', '>=', $now->copy()->subHours(7))->count();

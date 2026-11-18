@@ -38,6 +38,13 @@ class CheckExtractionArrivalsCommand extends Command
 
     protected $description = 'Fire moon_arrival + moon_chunk_unstable notifications based on stored timestamps';
 
+    /**
+     * How long a start is left to Manager Core fast-poll before this pass
+     * announces it. ESI caches notifications for ten minutes, so fast-poll can
+     * see a start that late, and the row can turn up in SeAT before then.
+     */
+    private const FAST_POLL_HEAD_START_MINUTES = 15;
+
     protected MoonExtractionService $extractionService;
     protected SettingsManagerService $settingsService;
 
@@ -300,29 +307,34 @@ class CheckExtractionArrivalsCommand extends Command
             // history backfill or a fresh deploy doesn't fire for extractions
             // that started long ago — only genuinely recent starts notify.
             //
-            // SUPPRESSED when Manager Core fast-poll owns extraction_started —
-            // MC's notification handler fires it ~2 min after the drill is
-            // lit, far ahead of this endpoint-driven pass. Running both would
-            // double-fire (they dedup on different keys). Mutual exclusion
-            // mirrors Structure Manager's fast-poll vs SeAT-native model.
+            // When Manager Core fast-poll is on it announces a start first,
+            // about two minutes after the drill is lit and well before the
+            // row exists, and leaves a record of it. This pass then only
+            // marks that row as announced. It still announces a start with
+            // no record: one Manager Core never delivered, or one whose alert
+            // reached no channel. Fast-poll gets a head start, so a start it
+            // is about to announce is not announced here as well.
             // ================================================================
-            if (\MiningManager\Integrations\MoonFastPollIntegration::isFastPollEnabled()) {
-                $this->info('Extraction-started handled by Manager Core fast-poll — skipping SeAT-native pass.');
-
-                if ($dryRun) {
-                    $this->warn("DRY RUN — no notifications fired, no flags updated.");
-                } else {
-                    $this->info("Arrival dispatched: {$dispatched}" . ($failed > 0 ? ", Failed: {$failed}" : ''));
-                }
-
-                return Command::SUCCESS;
-            }
+            $fastPoll = \MiningManager\Integrations\MoonFastPollIntegration::isFastPollEnabled();
+            $announced = app(\MiningManager\Services\Moon\AnnouncedStarts::class);
 
             $startedQuery = MoonExtraction::query()
                 ->where('status', 'extracting')
                 ->where('chunk_arrival_time', '>', $now)
                 ->where('extraction_start_time', '>=', $windowStart)
                 ->where('extraction_started_sent', false);
+
+            // Set on the first run in either mode, so a start made after the
+            // update is caught whichever mode is on when it comes up.
+            $since = $announced->since(!$dryRun) ?? $now;
+
+            if ($fastPoll) {
+                // Fast-poll announced the starts before the update without
+                // leaving a record; the net only covers the ones after it.
+                $startedQuery
+                    ->where('extraction_start_time', '>=', $since)
+                    ->where('extraction_start_time', '<=', $now->copy()->subMinutes(self::FAST_POLL_HEAD_START_MINUTES));
+            }
 
             if ($moonOwnerCorpId !== null) {
                 $startedQuery->where('corporation_id', $moonOwnerCorpId);
@@ -341,6 +353,21 @@ class CheckExtractionArrivalsCommand extends Command
                 foreach ($started as $extraction) {
                     $moonLabel = $extraction->moon_name ?? "Moon {$extraction->moon_id}";
                     $this->line("  #{$extraction->id} — {$moonLabel} — arrives {$extraction->chunk_arrival_time->diffForHumans()}");
+
+                    // Announced already, from the in-game notification. The
+                    // record is looked for in either mode, so switching to
+                    // SeAT-native never announces a recent start again.
+                    if ($announced->covers($extraction)) {
+                        $this->line('    Announced by Manager Core fast-poll already.');
+
+                        if (!$dryRun) {
+                            MoonExtraction::where('id', $extraction->id)
+                                ->where('extraction_started_sent', false)
+                                ->update(['extraction_started_sent' => true]);
+                        }
+
+                        continue;
+                    }
 
                     if ($dryRun) {
                         $startedDispatched++;

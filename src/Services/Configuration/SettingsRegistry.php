@@ -170,6 +170,8 @@ final class SettingsRegistry
         'pricing.provider_status' => self::STATE,
         'payment.last_outstanding_digest_at' => self::STATE,
         'notifications.schedule_needs_filling_last_sent' => self::STATE,
+        'notifications.extraction_started_announced' => self::STATE,
+        'notifications.extraction_started_announced_since' => self::STATE,
         'notifications.moon_scan_missing_daily_last_sent' => self::STATE,
         'notifications.slack_legacy_success_count' => self::STATE,
         'notifications.slack_legacy_failure_count' => self::STATE,

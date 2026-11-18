@@ -6,6 +6,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use MiningManager\Models\MoonExtraction;
 use MiningManager\Services\Configuration\SettingsManagerService;
+use MiningManager\Services\Moon\AnnouncedStarts;
 use MiningManager\Services\Moon\MoonNotificationCharacter;
 use MiningManager\Services\Notification\NotificationService;
 use Carbon\Carbon;
@@ -23,6 +24,12 @@ use Carbon\Carbon;
  * ->parsed_data (array), ->notification_id. MC dispatches each notification
  * exactly once (dedup on notification_id + dispatched flag), so this handler
  * doesn't need its own re-dispatch guard.
+ *
+ * Manager Core hands a notification over once and counts it as delivered
+ * whatever happens here. So an alert that went out is recorded (see
+ * AnnouncedStarts), and one that did not is left for the every-minute pass in
+ * mining-manager:check-extraction-arrivals, which announces any start with
+ * no record.
  */
 class MoonNotificationHandler
 {
@@ -117,20 +124,76 @@ class MoonNotificationHandler
             ? Carbon::now()->diffForHumans($arrival, ['parts' => 2, 'syntax' => Carbon::DIFF_ABSOLUTE])
             : null;
 
-        app(NotificationService::class)->sendExtractionStarted(array_filter([
-            'moon_name' => $moonName,
-            'structure_name' => $structureName,
-            'started_by' => MoonNotificationCharacter::describe($data, 'startedBy'),
-            'chunk_arrival_time' => $arrival ? $arrival->format('Y-m-d H:i') : null,
-            'time_until_arrival' => $timeUntil,
-            'extraction_url' => $extractionUrl,
-        ], fn ($v) => $v !== null));
+        try {
+            $results = app(NotificationService::class)->sendExtractionStarted(array_filter([
+                'moon_name' => $moonName,
+                'structure_name' => $structureName,
+                'started_by' => MoonNotificationCharacter::describe($data, 'startedBy'),
+                'chunk_arrival_time' => $arrival ? $arrival->format('Y-m-d H:i') : null,
+                'time_until_arrival' => $timeUntil,
+                'extraction_url' => $extractionUrl,
+            ], fn ($v) => $v !== null));
+        } catch (\Throwable $e) {
+            $results = ['error' => $e->getMessage()];
+        }
+
+        if (self::refused($results)) {
+            // Nothing took it. Free the row again and leave no record, so the
+            // every-minute pass announces this start.
+            if ($row) {
+                MoonExtraction::where('id', $row->id)->update(['extraction_started_sent' => false]);
+            }
+
+            Log::warning(sprintf(
+                '[Mining Manager] fast-poll extraction_started for structure %d (notification #%s) reached no channel, left for the scheduled pass',
+                $structureId,
+                $notification->notification_id ?? '?'
+            ));
+
+            return;
+        }
+
+        app(AnnouncedStarts::class)->record($structureId, $arrival);
 
         Log::info(sprintf(
             '[Mining Manager] fast-poll extraction_started fired for structure %d (notification #%s)',
             $structureId,
             $notification->notification_id ?? '?'
         ));
+    }
+
+    /**
+     * True when the alert was tried and every channel refused it. An alert
+     * that was skipped, because the type is switched off or no webhook takes
+     * it, was not refused: nobody was waiting for it.
+     */
+    public static function refused(array $results): bool
+    {
+        if (isset($results['error'])) {
+            return true;
+        }
+
+        if (!empty($results['skipped'])) {
+            return false;
+        }
+
+        $tried = false;
+
+        foreach ($results as $channel) {
+            if (!is_array($channel) || !empty($channel['skipped'])) {
+                continue;
+            }
+
+            if (!empty($channel['sent'])) {
+                return false;
+            }
+
+            if (!empty($channel['failed']) || isset($channel['error'])) {
+                $tried = true;
+            }
+        }
+
+        return $tried;
     }
 
     /**

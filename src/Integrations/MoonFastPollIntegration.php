@@ -17,12 +17,14 @@ use MiningManager\Services\Configuration\SettingsManagerService;
  * moon-extraction ESI endpoint to refresh (~30 min cache) before MM even
  * learns a new pull began.
  *
- * **Mutual exclusion** (the "same like Structure Manager does it" bit): when
- * fast-poll is enabled, the SeAT-native `extraction_started` pass in
- * CheckExtractionArrivalsCommand is suppressed so the two paths can't
- * double-fire. When MC is absent (or the operator forces `seat_native`), the
- * cron owns it as before. Whichever path is active, the latch on the
- * extraction row keeps a single notification per extraction.
+ * When fast-poll is enabled it announces the start first and leaves a record
+ * (AnnouncedStarts). The SeAT-native `extraction_started` pass in
+ * CheckExtractionArrivalsCommand still runs behind it: it marks the starts
+ * fast-poll announced and announces only the ones it did not, because MC
+ * counts a notification as delivered whether or not our alert went out. When
+ * MC is absent (or the operator forces `seat_native`), the cron owns it as
+ * before, and still honours the records so a recent start is not announced
+ * twice after a switch.
  *
  * Operator escape hatch: `notifications.moon_extraction_fastpoll_mode`
  *   - 'auto'        (default) — fast-poll when MC present, else SeAT-native

@@ -109,8 +109,8 @@ class MiningManagerServiceProvider extends AbstractSeatPlugin
         // ~2 min instead of waiting on the corp moon-extraction endpoint's
         // ~30 min cache. Unconditional (queue workers must register it too);
         // no-ops when MC is absent or the operator forced SeAT-native. When
-        // active, CheckExtractionArrivalsCommand suppresses its own
-        // extraction_started pass to avoid double-firing.
+        // active, CheckExtractionArrivalsCommand's extraction_started pass
+        // only catches the starts fast-poll did not announce.
         \MiningManager\Integrations\MoonFastPollIntegration::registerHandler();
 
         // Follow Manager Core's pricing: a market the operator changes on

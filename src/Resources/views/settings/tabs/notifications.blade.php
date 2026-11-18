@@ -883,8 +883,9 @@
                 reacts to the in-game <code>MoonminingExtractionStarted</code> notification in ~2 minutes.
                 <strong>SeAT-native</strong> waits for the corp moon-extraction endpoint to refresh
                 (~30 min cache), then for the in-game notification that names who started it, for
-                up to six hours. The two paths are mutually exclusive — only one fires, so there are
-                no duplicate notifications.
+                up to six hours. Only one alert goes out per extraction. With Manager Core, the
+                scheduled check still runs behind fast-poll and sends any alert fast-poll could not
+                deliver.
                 @if(!$mmFastPollAvailable)
                     <span class="d-block mt-1 text-warning">
                         <i class="fas fa-info-circle"></i>
