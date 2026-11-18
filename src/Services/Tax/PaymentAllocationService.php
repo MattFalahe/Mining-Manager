@@ -192,6 +192,13 @@ class PaymentAllocationService
                     'matched_at' => Carbon::now(),
                 ]);
             } catch (QueryException $e) {
+                // Only a duplicate key means another path has the payment. A
+                // lock timeout or a deadlock is a failure, and saying "already
+                // claimed" for it hid the real error.
+                if ((int) ($e->errorInfo[1] ?? 0) !== 1062) {
+                    throw $e;
+                }
+
                 $result['reason'] = 'already_claimed';
                 Log::info("Mining Manager: transaction {$transactionId} already claimed, skipping double-credit attempt");
 
