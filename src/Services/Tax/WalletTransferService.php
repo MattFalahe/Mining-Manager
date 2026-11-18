@@ -753,8 +753,10 @@ class WalletTransferService
             $donations->pluck('id')->map(fn ($id) => (int) $id)->all()
         );
 
+        $byHand = array_flip($this->assignedByHand(array_keys($claimed)));
+
         return $donations
-            ->map(function ($donation) use ($claimed) {
+            ->map(function ($donation) use ($claimed, $byHand) {
                 $id = (int) $donation->id;
 
                 // Being claimed is what makes a payment verified. Pointing at
@@ -762,9 +764,36 @@ class WalletTransferService
                 $donation->verified = array_key_exists($id, $claimed);
                 $donation->mismatch = false;
                 $donation->matched_tax_id = $claimed[$id] ?? null;
+                $donation->undoable = isset($byHand[$id]);
 
                 return $donation;
             });
+    }
+
+    /**
+     * The payments among these that a director assigned by hand, to a bill or
+     * to account balance. Those are the ones Undo assignment is offered on: a
+     * payment the matcher placed would only be matched again on its next run.
+     *
+     * @param  array<int>  $transactionIds
+     * @return array<int>
+     */
+    private function assignedByHand(array $transactionIds): array
+    {
+        if (empty($transactionIds)) {
+            return [];
+        }
+
+        $toBills = PaymentAllocation::whereIn('transaction_id', $transactionIds)
+            ->whereNull('credit_id')
+            ->where('source', PaymentAllocation::SOURCE_MANUAL)
+            ->pluck('transaction_id');
+
+        $toBalance = \MiningManager\Models\PaymentCredit::whereIn('transaction_id', $transactionIds)
+            ->whereNotNull('created_by')
+            ->pluck('transaction_id');
+
+        return $toBills->merge($toBalance)->map(fn ($id) => (int) $id)->unique()->values()->all();
     }
 
     /**

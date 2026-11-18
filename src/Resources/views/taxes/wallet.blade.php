@@ -238,6 +238,11 @@
                                         <i class="fas fa-times"></i>
                                     </button>
                                     @endif
+                                    @if(($transaction->undoable ?? false) && (($isDirector ?? false) || ($isAdmin ?? false)))
+                                    <button class="btn btn-sm btn-outline-warning" onclick="unassignTransaction({{ $transaction->id }})" title="{{ trans('mining-manager::taxes.unassign') }}">
+                                        <i class="fas fa-undo"></i>
+                                    </button>
+                                    @endif
                                 </td>
                             </tr>
                             @empty
@@ -363,6 +368,26 @@ function dismissTransaction(id) {
         },
         error: function(xhr) {
             mmError(xhr, 'Dismiss failed');
+        }
+    });
+}
+
+{{-- Take a payment assigned by hand back off its invoices --}}
+function unassignTransaction(id) {
+    if (!confirm(@json(trans('mining-manager::taxes.unassign_confirm')))) return;
+    $.ajax({
+        url: '{{ route("mining-manager.taxes.wallet.unassign") }}',
+        type: 'POST',
+        data: {
+            _token: '{{ csrf_token() }}',
+            transaction_id: id
+        },
+        success: function(response) {
+            toastr.success(response.message || @json(trans('mining-manager::taxes.unassign')));
+            setTimeout(function() { location.reload(); }, 1200);
+        },
+        error: function(xhr) {
+            mmError(xhr, @json(trans('mining-manager::taxes.unassign_failed')));
         }
     });
 }

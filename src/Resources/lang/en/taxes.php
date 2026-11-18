@@ -341,7 +341,8 @@ return [
     'unassign_confirm' => 'Undo this assignment? The payment goes back to the pending list and the invoices it settled are reopened.',
     'unassign_success' => 'Assignment undone across :count invoice(s).',
     'unassign_failed' => 'Could not undo this assignment',
-    'unassign_credit_spent' => 'Part of the surplus from this payment has already gone towards another invoice, so it cannot be undone automatically. Reverse that invoice first.',
+    'unassign_nothing_recorded' => 'This payment was credited before payments were recorded one by one, so there is nothing here to undo.',
+    'unassign_credit_spent' => 'Part of the surplus from this payment has already gone towards another invoice, so it cannot be undone.',
 
     // Why a payment is still sitting in the queue
     'blocker_no_tax_code' => 'No tax code',

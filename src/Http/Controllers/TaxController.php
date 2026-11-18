@@ -2337,16 +2337,18 @@ class TaxController extends Controller
 
         try {
             $user = auth()->user();
-            $actorId = $user->main_character_id ?? $user->id;
+            $actorId = $user->main_character_id ?: $user->id;
 
             $result = $this->walletService->unassign((int) $validated['transaction_id'], $actorId);
 
             if (!$result['reversed']) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => $result['reason'] === 'credit_partially_spent'
-                        ? trans('mining-manager::taxes.unassign_credit_spent')
-                        : trans('mining-manager::taxes.unassign_failed'),
+                    'message' => match ($result['reason']) {
+                        'credit_partially_spent' => trans('mining-manager::taxes.unassign_credit_spent'),
+                        'nothing_recorded' => trans('mining-manager::taxes.unassign_nothing_recorded'),
+                        default => trans('mining-manager::taxes.unassign_failed'),
+                    },
                 ], 422);
             }
 

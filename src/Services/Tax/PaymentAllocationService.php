@@ -640,6 +640,16 @@ class PaymentAllocationService
                 ->whereNull('credit_id')
                 ->get();
 
+            // A payment credited before payments were recorded one by one has
+            // a claim and nothing else. Releasing the claim would put it back
+            // on the pending list with its money still on the bill, ready to
+            // be credited a second time.
+            if ($allocations->isEmpty() && !$credit) {
+                $result['reason'] = 'nothing_recorded';
+
+                return;
+            }
+
             foreach ($allocations as $allocation) {
                 $tax = MiningTax::where('id', $allocation->mining_tax_id)->lockForUpdate()->first();
 
@@ -660,11 +670,12 @@ class PaymentAllocationService
                 // An invoice that is no longer settled needs a live code again,
                 // otherwise the member has nothing to quote on their next payment.
                 if (!$settled) {
+                    // Whichever payment had closed it: a later one may have
+                    // settled the bill, and the one undone here reopens it.
                     // MANUAL is the marker older versions left on a payment
                     // assigned by hand, never a code anyone could pay with.
                     TaxCode::where('mining_tax_id', $tax->id)
                         ->where('status', 'used')
-                        ->where('transaction_id', $transactionId)
                         ->where('code', '!=', 'MANUAL')
                         ->update([
                             'status' => 'active',
