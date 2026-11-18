@@ -81,7 +81,9 @@ class ApiController extends Controller
     {
         $request->validate([
             'character_id' => 'nullable|integer',
-            'status' => 'nullable|string|in:unpaid,paid,overdue,exempt,waived',
+            // exempt is what this filter was first written with. The status
+            // has always been stored as exempted, so it is read as that.
+            'status' => 'nullable|string|in:unpaid,partial,paid,overdue,exempted,exempt,waived',
             'month' => 'nullable|date',
             'limit' => 'nullable|integer|min:1|max:1000',
         ]);
@@ -97,7 +99,7 @@ class ApiController extends Controller
         }
 
         if ($status) {
-            $query->where('status', $status);
+            $query->where('status', $status === 'exempt' ? 'exempted' : $status);
         }
 
         if ($month) {
@@ -124,7 +126,15 @@ class ApiController extends Controller
     public function events(Request $request)
     {
         $request->validate([
-            'status' => 'nullable|string|in:planned,active,completed,cancelled',
+            'status' => 'nullable|string|in:' . implode(',', [
+                MiningEvent::STATUS_AWAITING_APPROVAL,
+                MiningEvent::STATUS_DECLINED,
+                MiningEvent::STATUS_PLANNED,
+                MiningEvent::STATUS_ACTIVE,
+                MiningEvent::STATUS_HELD,
+                MiningEvent::STATUS_COMPLETED,
+                MiningEvent::STATUS_CANCELLED,
+            ]),
             'start_date' => 'nullable|date',
             'end_date' => 'nullable|date',
             'limit' => 'nullable|integer|min:1|max:500',
@@ -167,7 +177,7 @@ class ApiController extends Controller
     public function extractions(Request $request)
     {
         $request->validate([
-            'status' => 'nullable|string|in:extracting,ready,completed,expired',
+            'status' => 'nullable|string|in:extracting,ready,fractured,completed,expired,cancelled',
             'corporation_id' => 'nullable|integer',
             'structure_id' => 'nullable|integer',
             'limit' => 'nullable|integer|min:1|max:500',
@@ -263,6 +273,8 @@ class ApiController extends Controller
             'taxes' => [
                 'unpaid' => MiningTax::where('status', 'unpaid')->sum('amount_owed'),
                 'overdue' => MiningTax::where('status', 'overdue')->sum('amount_owed'),
+                // What is left to pay on part-paid bills, which neither figure above holds.
+                'partial' => (float) MiningTax::where('status', 'partial')->sum(DB::raw('amount_owed - amount_paid')),
                 'paid_this_month' => MiningTax::where('status', 'paid')
                     ->where('paid_at', '>=', $thisMonth)
                     ->sum('amount_paid'),
@@ -328,6 +340,9 @@ class ApiController extends Controller
                 'total_owed' => $taxes->sum('amount_owed'),
                 'total_paid' => $taxes->sum('amount_paid'),
                 'unpaid' => $taxes->where('status', 'unpaid')->sum('amount_owed'),
+                // Everything still owed: unpaid, overdue and what is left on part-paid bills.
+                'outstanding' => round((float) $taxes->whereIn('status', MiningTax::OUTSTANDING_STATUSES)
+                    ->sum(fn ($tax) => $tax->getRemainingBalance()), 2),
             ],
         ];
 
