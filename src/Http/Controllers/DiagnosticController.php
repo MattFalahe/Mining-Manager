@@ -2740,7 +2740,7 @@ class DiagnosticController extends Controller
                 $results['mining_summary'] = [
                     'total_volume' => $analyticsService->getTotalVolume($startDate, $endDate),
                     'total_value' => round($analyticsService->getTotalValue($startDate, $endDate), 2),
-                    'unique_miners' => $analyticsService->getUniqueMinerCount($startDate, $endDate),
+                    'unique_miners' => $analyticsService->getUniquePlayerCount($startDate, $endDate),
                 ];
             } catch (\Exception $e) {
                 $results['mining_summary'] = ['error' => $e->getMessage()];

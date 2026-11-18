@@ -281,7 +281,7 @@ return [
     // Tooltips
     'tooltip_total_volume' => 'Total volume of ore mined in cubic meters',
     'tooltip_total_value' => 'Total ISK value of all mined ore',
-    'tooltip_unique_miners' => 'Number of unique characters who mined',
+    'tooltip_unique_miners' => 'Number of players who mined. A main and their alts count once',
     'tooltip_mining_trends' => 'Shows mining activity over time',
     'tooltip_ore_distribution' => 'Breakdown of ore types mined',
     

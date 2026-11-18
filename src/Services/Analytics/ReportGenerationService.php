@@ -121,7 +121,8 @@ class ReportGenerationService
     {
         $totalQuantity = $this->analyticsService->getTotalVolume($startDate, $endDate);
         $totalValue = $this->analyticsService->getTotalValue($startDate, $endDate);
-        $uniqueMiners = $this->analyticsService->getUniqueMinerCount($startDate, $endDate);
+        // Players, a main and their alts counted once, as Analytics counts them.
+        $uniqueMiners = $this->analyticsService->getUniquePlayerCount($startDate, $endDate);
 
         return [
             'total_quantity' => $totalQuantity,
@@ -142,7 +143,7 @@ class ReportGenerationService
     private function getMinerData(Carbon $startDate, Carbon $endDate): array
     {
         $topMinersCount = config('mining-manager.reports.top_miners_count', 10);
-        $topMiners = $this->analyticsService->getTopMiners($startDate, $endDate, $topMinersCount);
+        $topMiners = $this->analyticsService->getTopMinersByAccount($startDate, $endDate, $topMinersCount);
 
         return [
             'top_miners' => $topMiners->map(function ($miner) {
@@ -152,20 +153,21 @@ class ReportGenerationService
                     'value' => $miner->total_value ?? 0,
                 ];
             })->toArray(),
-            'total_count' => $this->analyticsService->getUniqueMinerCount($startDate, $endDate),
+            'total_count' => $this->analyticsService->getUniquePlayerCount($startDate, $endDate),
         ];
     }
 
     /**
-     * Every miner in the range, one row each, for the Miner Statistics export.
+     * Every player in the range, one row each under their main, for the Miner
+     * Statistics export.
      * The report's own miner data is a top list with a count beside it, which
      * is no table.
      */
     private function getMinerExport(Carbon $startDate, Carbon $endDate): array
     {
-        $count = $this->analyticsService->getUniqueMinerCount($startDate, $endDate);
+        $count = $this->analyticsService->getUniquePlayerCount($startDate, $endDate);
 
-        return $this->analyticsService->getTopMiners($startDate, $endDate, max(1, $count))
+        return $this->analyticsService->getTopMinersByAccount($startDate, $endDate, max(1, $count))
             ->map(fn ($miner) => [
                 'name' => $miner->name,
                 'quantity' => $miner->total_quantity,
