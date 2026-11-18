@@ -57,6 +57,11 @@
         display: block;
     }
 
+    /* While searching, every section is open, so a match anywhere shows. */
+    .help-content.help-searching .help-section {
+        display: block;
+    }
+
     @keyframes fadeIn {
         from { opacity: 0; transform: translateY(10px); }
         to { opacity: 1; transform: translateY(0); }
@@ -4714,6 +4719,9 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
 @push('javascript')
 <script>
 $(document).ready(function() {
+    // Everything a search shows or hides: the boxes that sit straight inside a section.
+    const searchable = '.help-section > .help-card, .help-section > .whats-new-box, .help-section > .recent-changes-box, .help-section > .warning-box';
+
     // Navigation
     $('.help-nav .nav-link').on('click', function(e) {
         e.preventDefault();
@@ -4730,6 +4738,11 @@ $(document).ready(function() {
 
         // Update URL hash
         window.location.hash = section;
+
+        // Picking a section ends a search.
+        $('#helpSearch').val('');
+        $('.help-content').removeClass('help-searching');
+        $(searchable).show();
 
         // Scroll to top of content
         $('.help-content').scrollTop(0);
@@ -4753,21 +4766,22 @@ $(document).ready(function() {
         $(this).closest('.faq-item').toggleClass('open');
     });
 
-    // Search functionality
+    // Search. Every section is searched, not only the open one.
     let searchTimeout;
     $('#helpSearch').on('input', function() {
         clearTimeout(searchTimeout);
         const query = $(this).val().toLowerCase();
 
-        if (query.length < 2) {
-            $('.help-card').show();
-            return;
-        }
-
         searchTimeout = setTimeout(() => {
-            $('.help-card').each(function() {
-                const text = $(this).text().toLowerCase();
-                $(this).toggle(text.includes(query));
+            if (query.length < 2) {
+                $('.help-content').removeClass('help-searching');
+                $(searchable).show();
+                return;
+            }
+
+            $('.help-content').addClass('help-searching');
+            $(searchable).each(function() {
+                $(this).toggle($(this).text().toLowerCase().includes(query));
             });
         }, 300);
     });
