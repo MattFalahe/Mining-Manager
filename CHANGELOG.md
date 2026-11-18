@@ -22,6 +22,9 @@ All notable changes to Mining Manager will be documented in this file.
 - Fixed: **a payment quoting the code of an exempted bill opened the bill again.** Setting a bill to Exempted leaves its payment code live, and a payment quoting that code was put on the bill whatever its status: a short payment left it Partial and owed again, and a full one was taken by a bill nobody owed. The payment now goes to the member's other open bills, oldest first, and what is left is held as credit, the same as a payment that names no bill. With nothing else owed and credit switched off it stays on the pending list. This applies to payments matched from the update on; nothing already recorded changes.
 - Fixed: **Change Status to Unpaid or Overdue left the money on the bill.** Only the status changed, so a bill marked paid by mistake and set back to Unpaid still showed everything as paid: nothing was left to pay on it, it went overdue and was reminded, and no payment could close it. Change Status is the way to undo Mark as Paid, so it now takes off what was recorded by hand (Mark as Paid, Change Status to paid, the bulk mark and payments recorded by hand) and makes the payment code live again. Wallet payments and held credit are real money and stay on the bill: with some on it the bill becomes Partial for that amount, and with nothing recorded by hand the change is refused and says why. The page says what was taken off and what stayed. Bills changed before the update are left as they are.
 - Fixed: **Verify and `mining-manager:verify-payments` called a payment held as credit a failure.** A payment that went wholly to account balance, because nothing was open to put it against, was reported as "could not be matched" or "Matched but not applied" although the money had landed. Both now say it was held.
+- **Undo a payment assigned by hand.** A payment assigned by hand, to a bill or as credit, has an Undo assignment button in Wallet Transactions on Wallet Verification, for directors and admins. It takes the payment off and puts it back on the pending list. Credit the member has already spent can't be undone, and neither can a payment from before 2.0.4, which kept no record of where it went. When the bill opens again, its payment code is live again, whichever payment had closed it.
+- Fixed: **a lock timeout or deadlock while claiming a wallet payment was logged as "already claimed".** Only a payment another run really has is logged that way now; anything else is logged as the error it is, and the payment is tried again on the next pass, as it was before.
+- Fixed: **a payment assigned or a bill changed by SeAT's built-in admin account was recorded as done by 0.** That account has no main character, and the user id meant to stand in for it was never used. It is now.
 
 ### Manager Core
 
@@ -32,8 +35,24 @@ All notable changes to Mining Manager will be documented in this file.
 
 ### Notifications
 
+- Fixed: **an Extraction Started alert from Manager Core's fast-poll was lost when it reached no channel.** Manager Core hands the in-game notification over once and counts it as delivered, and the plugin's own check stood aside while fast-poll was on, so a Discord outage at that moment meant no alert at all. The check now runs behind fast-poll. Fast-poll leaves a record of each start it announces, the check marks those, and it sends any start with no record from 15 minutes after the start, the time fast-poll gets to see it first. This covers starts from the update on.
+- Fixed: **switching Extraction Started from Fast (Manager Core) to SeAT-native could announce recent starts a second time.** The check didn't know what fast-poll had announced, so a start from the last three days that it found unsent went out again. It looks for fast-poll's record in either mode now, for starts announced from the update on.
 - Fixed: **Discord role names went into the role picker as HTML.** The picker next to each Discord Role ID on Settings > Notifications built its list straight from the names Discord gave, so a role whose name held markup ran it in the browser of whoever opened the picker. Anyone with Manage Roles on the linked Discord server could do that. Names show as plain text now.
 - Fixed: **narrowing the role picker to one source hid the roles both sources have.** A role on both the SeAT Broadcast and the SeAT Connector list counted under only one of them, so choosing the other left it out and its count came out low. A role now shows and counts under every source it's in.
+
+### Reports
+
+- Fixed: **reports counted characters where Analytics counts players.** A member mining on three characters counted three times in a report's miner count and could hold three places in its top miners, while Analytics counted them once under their main. Reports, the Miner Statistics export and the mining summary on Diagnostics count players now, with each player's top-list row under their main. Reports already generated keep the figures they were made with.
+
+### Pages
+
+- Fixed: **eight dialogs could open behind the page's dimmed backdrop.** Investigate and Resolve on Theft Detection (the list and an incident's page), New Schedule on Scheduled Reports, Send to Discord on a report, Generate Code on Payment Codes and the webhook dialog on Settings stayed inside the page, where AdminLTE's layout can leave them under the backdrop and out of reach. They open on top of the page now.
+- Fixed: **Help's search only looked in the section that was open.** A match in any other section stayed hidden. It searches every section now, and choosing a section from the menu clears the search.
+
+### REST API
+
+- Fixed: **the status filters didn't know every status.** `/taxes` turned away `partial` and `exempted`, and its `exempt` matched nothing, since the status is stored as `exempted`; `exempt` still works and means `exempted`. `/events` turned away `awaiting_approval`, `declined` and `held`, and `/extractions` turned away `fractured` and `cancelled`.
+- `/metrics` has `partial`, what is left to pay on part-paid bills, and a character's summary has `outstanding`, everything still owed. Neither was in any figure before. Nothing already returned changes.
 
 ### Diagnostics
 

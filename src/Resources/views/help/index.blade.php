@@ -508,6 +508,20 @@
         white-space: normal;
     }
 
+    .mm-new-badge {
+        display: inline-block;
+        margin-left: 8px;
+        padding: 2px 8px;
+        border-radius: 10px;
+        background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+        color: #fff !important;
+        font-size: 0.7rem;
+        font-weight: 700;
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
+        vertical-align: middle;
+    }
+
     .recent-changes-box h4 .recent-changes-tag {
         font-size: 0.6em;
         font-weight: 600;
@@ -1065,6 +1079,12 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                     <h5>Notifications</h5>
                     <ul>
                         <li>
+                            <strong>Extraction Started with Manager Core.</strong> An alert fast-poll could not get
+                            to Discord used to be lost. The plugin's own check now sends it, from 15 minutes after
+                            the extraction started, and switching Detection Speed to SeAT-native no longer
+                            announces a recent start twice.
+                        </li>
+                        <li>
                             <strong>The Discord role picker.</strong> Narrowing the list to SeAT Connector or SeAT
                             Broadcast now shows every role that source has, including the ones both sources have,
                             and the counts above the list include them too. Role names show exactly as Discord has
@@ -1091,6 +1111,28 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                             now takes off what was recorded by hand and makes the payment code live again. Wallet
                             payments and held credit stay on the bill, which becomes Partial for that amount, and
                             the page tells you what came off and what stayed.
+                        </li>
+                        <li>
+                            <strong>Undo assignment.</strong> A payment assigned by hand has an Undo assignment
+                            button in Wallet Transactions on Wallet Verification, which puts it back on the pending
+                            list.
+                        </li>
+                    </ul>
+                    <h5>Reports and pages</h5>
+                    <ul>
+                        <li>
+                            <strong>Reports count players.</strong> A member mining on several characters counts
+                            once in a report's miner count and top miners, under their main, the way Analytics
+                            counts them. Reports already generated keep their figures.
+                        </li>
+                        <li>
+                            <strong>Help search.</strong> The search box looks through every section of this page,
+                            not only the open one.
+                        </li>
+                        <li>
+                            <strong>Dialogs.</strong> Investigate and Resolve on Theft Detection, New Schedule,
+                            Send to Discord, Generate Code and the webhook dialog open on top of the page and take
+                            clicks.
                         </li>
                     </ul>
                 </div>
@@ -1756,6 +1798,10 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                         <li>{{ trans('mining-manager::help.assign_payment_effect_5') }}</li>
                     </ul>
                     <p>{{ trans('mining-manager::help.assign_payment_vs_mark_paid') }}</p>
+                    <p>
+                        {{ trans('mining-manager::help.assign_payment_undo') }}
+                        <span class="mm-new-badge">{{ trans('mining-manager::help.new_badge') }}</span>
+                    </p>
                 </div>
 
                 {{-- Verification cutover --}}
@@ -4367,7 +4413,7 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                                     <td>Force refresh all cached prices even if cache is fresh</td>
                                 </tr>
                                 <tr>
-                                    <td><code>mining-manager:cache-prices --manager-core-only</code></td>
+                                    <td><code>mining-manager:cache-prices --manager-core-only</code> <span class="mm-new-badge">{{ trans('mining-manager::help.new_badge') }}</span></td>
                                     <td>Copy prices from Manager Core and stop. If they can't be copied, nothing else is asked and the cached prices stay</td>
                                 </tr>
                                 <tr>

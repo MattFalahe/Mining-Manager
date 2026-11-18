@@ -297,6 +297,8 @@ return [
     'assign_payment_effect_3' => 'Whatever is still left once they have no open invoices is held as credit against that character and comes off their next invoice automatically. Held credit is listed on the Wallet Verification page.',
     'assign_payment_effect_4' => 'The transfer is claimed, so it disappears from the pending list and can never be credited twice.',
     'assign_payment_effect_5' => 'A payment record is written against every invoice it touched. The invoice detail page shows the full list under Payments received.',
+    'assign_payment_undo' => 'Undo assignment, beside a payment assigned by hand in Wallet Transactions, takes it off again and puts it back on the pending list, for directors and admins. A bill it had closed opens again with its payment code live. Credit the member has already spent can\'t be undone.',
+    'new_badge' => 'NEW in v3.0.1',
     'assign_payment_vs_mark_paid' => 'Assign to invoice versus Mark as Paid: Mark as Paid settles the invoice but has no connection to the ISK that arrived, so the transfer keeps sitting in the pending queue and you have to dismiss it separately. Assign to invoice ties the two together. Use Mark as Paid for payments that never went through the wallet at all, such as a contract or a waiver.',
 
     // Verification cutover
