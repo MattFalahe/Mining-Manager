@@ -104,6 +104,15 @@
 <script src="{{ asset('vendor/mining-manager/js/vendor/jquery.dataTables.min.js') }}"></script>
 <script>
 $(document).ready(function() {
+    // AdminLTE's content wrapper traps a modal under its own backdrop, so each
+    // one moves to <body> as it opens, taking the plugin's classes with it for
+    // its styles.
+    $(document).on('show.bs.modal', '#generateCodeModal', function () {
+        if (!$(this).parent().is('body')) {
+            $(this).addClass('mining-manager-wrapper mining-dashboard').appendTo('body');
+        }
+    });
+
     if ($('#taxCodesTable tbody tr').length > 0 && !$('#taxCodesTable tbody tr td[colspan]').length) {
     $('#taxCodesTable').DataTable({
         pageLength: 25,

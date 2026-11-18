@@ -29,8 +29,9 @@ function openWebhookModal(webhookId = null) {
         updateWebhookTypeSettings('discord');
     }
 
-    // Show modal
-    $('#webhookModal').modal('show');
+    // AdminLTE's content wrapper traps a modal under its own backdrop, so it
+    // moves to <body> first, taking the plugin's classes with it for its styles.
+    $('#webhookModal').addClass('mining-manager-wrapper mining-dashboard').appendTo('body').modal('show');
 }
 
 /**

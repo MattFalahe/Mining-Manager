@@ -489,6 +489,15 @@
 @push('javascript')
 <script>
 $(document).ready(function() {
+    // AdminLTE's content wrapper traps a modal under its own backdrop, so each
+    // one moves to <body> as it opens, taking the plugin's classes with it for
+    // its styles.
+    $(document).on('show.bs.modal', '[id^="investigateModal"], [id^="resolveModal"]', function () {
+        if (!$(this).parent().is('body')) {
+            $(this).addClass('mining-manager-wrapper mining-dashboard').appendTo('body');
+        }
+    });
+
     // Auto-submit form on filter change
     $('#filterForm select').on('change', function() {
         $('#filterForm').submit();
