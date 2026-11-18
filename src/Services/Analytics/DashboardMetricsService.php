@@ -216,33 +216,6 @@ class DashboardMetricsService
     }
 
     /**
-     * Get mining chart data for dashboard.
-     *
-     * @param Carbon $startDate
-     * @param Carbon $endDate
-     * @return array
-     */
-    public function getMiningChartData(Carbon $startDate, Carbon $endDate): array
-    {
-        $cacheKey = "mining-manager:dashboard:chart-data:{$startDate->format('Ymd')}:{$endDate->format('Ymd')}";
-        $cacheDuration = config('mining-manager.performance.query_cache_duration', 15);
-
-        return Cache::remember($cacheKey, now()->addMinutes($cacheDuration), function () use ($startDate, $endDate) {
-            $dailyData = MiningLedgerDailySummary::whereBetween('date', [$startDate, $endDate])
-                ->selectRaw('date, SUM(total_value) as value, SUM(total_quantity) as total_quantity, COUNT(DISTINCT character_id) as unique_miners')
-                ->groupBy('date')
-                ->orderBy('date')
-                ->get();
-
-            return [
-                'labels' => $dailyData->pluck('date')->map(fn($date) => Carbon::parse($date)->format('M d'))->toArray(),
-                'quantity' => $dailyData->pluck('total_quantity')->toArray(),
-                'miners' => $dailyData->pluck('unique_miners')->toArray(),
-            ];
-        });
-    }
-
-    /**
      * Get recent mining activity.
      *
      * @param int $limit
@@ -322,20 +295,5 @@ class DashboardMetricsService
         }
 
         return (($current - $previous) / $previous) * 100;
-    }
-
-    /**
-     * Clear dashboard cache.
-     *
-     * @return void
-     */
-    public function clearCache(): void
-    {
-        try {
-            Cache::tags(['mining-manager', 'dashboard'])->flush();
-        } catch (\BadMethodCallException $e) {
-            // Fallback for cache drivers that don't support tags
-            Cache::flush();
-        }
     }
 }

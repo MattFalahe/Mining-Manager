@@ -650,92 +650,6 @@ class MoonValueCalculationService
     }
 
     /**
-     * Get ore composition breakdown with values.
-     *
-     * @param MoonExtraction $extraction
-     * @return array
-     */
-    public function getOreCompositionBreakdown(MoonExtraction $extraction): array
-    {
-        if (!$extraction->ore_composition) {
-            return [];
-        }
-
-        // Ensure ore_composition is an array
-        $oreComposition = is_string($extraction->ore_composition)
-            ? json_decode($extraction->ore_composition, true)
-            : $extraction->ore_composition;
-
-        if (!is_array($oreComposition)) {
-            return [];
-        }
-
-        $regionId = ($this->settingsService->getGeneralSettings()['default_region_id'] ?? 10000002);
-        $priceType = ($this->settingsService->getPricingSettings()['price_type'] ?? 'sell');
-        $chunkSize = ($this->settingsService->getMoonSettings()['estimated_chunk_size'] ?? 150000);
-
-        $breakdown = [];
-        $totalValue = 0;
-
-        foreach ($oreComposition as $oreName => $oreData) {
-            // Handle both old and new structure
-            if (is_array($oreData) && isset($oreData['type_id'])) {
-                $typeId = $oreData['type_id'];
-                $percentage = $oreData['percentage'] ?? 0;
-            } else {
-                // Old structure
-                $typeId = is_numeric($oreName) ? (int) $oreName : null;
-                $percentage = 0;
-                $quantity = is_numeric($oreData) ? $oreData : 0;
-                $oreName = $this->getOreName($typeId);
-            }
-
-            if (!$typeId) {
-                continue;
-            }
-
-            // Calculate quantity from percentage if we have it
-            if ($percentage > 0) {
-                $oreVolume = $this->getOreVolume($typeId);
-                if ($oreVolume > 0) {
-                    $quantity = ($percentage / 100) * ($chunkSize / $oreVolume);
-                } else {
-                    $quantity = 0;
-                }
-            }
-
-            $price = $this->getOrePrice($typeId, $regionId, $priceType);
-            $value = ($price && $quantity > 0) ? $quantity * $price : 0;
-            $totalValue += $value;
-
-            $breakdown[] = [
-                'type_id' => $typeId,
-                'ore_name' => is_numeric($oreName) ? $this->getOreName($typeId) : $oreName,
-                'percentage' => $percentage,
-                'quantity' => round($quantity, 2),
-                'unit_price' => $price,
-                'total_value' => round($value, 2),
-            ];
-        }
-
-        // Sort by value descending
-        usort($breakdown, fn($a, $b) => $b['total_value'] <=> $a['total_value']);
-
-        // Add percentage of total
-        foreach ($breakdown as &$item) {
-            $item['percentage_of_total'] = $totalValue > 0 
-                ? round(($item['total_value'] / $totalValue) * 100, 2) 
-                : 0;
-        }
-
-        return [
-            'total_value' => round($totalValue, 2),
-            'ore_types' => $breakdown,
-            'chunk_size' => $chunkSize,
-        ];
-    }
-
-    /**
      * Get ore name from type ID.
      *
      * @param int $typeId
@@ -1003,26 +917,5 @@ class MoonValueCalculationService
             'most_profitable' => $moonStats->first(),
             'least_profitable' => $moonStats->last(),
         ];
-    }
-
-    /**
-     * Clear value calculation cache.
-     *
-     * @param int|null $extractionId
-     * @return void
-     */
-    public function clearValueCache(?int $extractionId = null): void
-    {
-        if ($extractionId) {
-            Cache::forget("mining-manager:moon-value:{$extractionId}");
-        } else {
-            // Clear all moon value caches
-            try {
-                Cache::tags(['mining-manager', 'moon-values'])->flush();
-            } catch (\Exception $e) {
-                // File/database cache driver doesn't support tags - log and continue
-                Log::debug('Mining Manager: Cache driver does not support tags, skipping tag-based flush');
-            }
-        }
     }
 }

@@ -350,26 +350,6 @@ class MarketDataService
     }
 
     /**
-     * Clear all price caches
-     *
-     * @return void
-     */
-    public function clearAllCaches(): void
-    {
-        // Try tagged cache first (Redis/Memcached), fall back to forgetting known keys
-        try {
-            Cache::tags(['mining-manager', 'prices'])->flush();
-        } catch (\Exception $e) {
-            // File/database driver doesn't support tags - clear known keys individually
-            $oreTypeIds = $this->getAllOreTypeIds();
-            $cacheKey = $this->getPriceCacheKey($oreTypeIds);
-            Cache::forget($cacheKey);
-        }
-
-        Log::info('Cleared all price caches');
-    }
-
-    /**
      * Clear cache for specific types
      *
      * @param array $typeIds
