@@ -1271,7 +1271,7 @@ class TaxController extends Controller
                     'character_id' => (int) $tax->character_id,
                     'amount' => $amountPaid,
                     'source' => PaymentAllocation::SOURCE_MANUAL,
-                    'allocated_by' => auth()->user()->main_character_id ?? auth()->id(),
+                    'allocated_by' => auth()->user()->main_character_id ?: auth()->id(),
                     'notes' => $paymentNote,
                     'allocated_at' => Carbon::now(),
                 ]);
@@ -1353,7 +1353,7 @@ class TaxController extends Controller
             $result = $this->allocationService->recordPaymentByHand(
                 $characterId,
                 $amount,
-                $user->main_character_id ?? $user->id,
+                $user->main_character_id ?: $user->id,
                 $paymentNote
             );
 
@@ -1460,7 +1460,7 @@ class TaxController extends Controller
             $paymentDate = Carbon::parse($request->input('payment_date', Carbon::now()));
 
             $user = auth()->user();
-            $actorId = $user->main_character_id ?? $user->id;
+            $actorId = $user->main_character_id ?: $user->id;
             $actorName = $user->main_character->name ?? $user->name ?? 'Unknown';
 
             // Was a single mass UPDATE setting amount_paid = amount_owed. That
@@ -2246,7 +2246,7 @@ class TaxController extends Controller
 
         try {
             $user = auth()->user();
-            $actorId = $user->main_character_id ?? $user->id;
+            $actorId = $user->main_character_id ?: $user->id;
             $actorName = $user->main_character->name ?? $user->name ?? 'Unknown';
 
             $notes = trim("Assigned by {$actorName}" . (!empty($validated['notes']) ? ": {$validated['notes']}" : ''));
@@ -2417,7 +2417,7 @@ class TaxController extends Controller
             $transactionId = (int) $validated['transaction_id'];
 
             $user = auth()->user();
-            $dismissedBy = $user->main_character_id ?? $user->id;
+            $dismissedBy = $user->main_character_id ?: $user->id;
 
             DB::table('mining_manager_dismissed_transactions')->updateOrInsert(
                 ['transaction_id' => $transactionId],
@@ -2595,7 +2595,7 @@ class TaxController extends Controller
 
         try {
             $user = auth()->user();
-            $actorId = $user->main_character_id ?? $user->id;
+            $actorId = $user->main_character_id ?: $user->id;
             $actorName = $user->main_character->name ?? $user->name ?? 'Unknown';
 
             $result = app(\MiningManager\Services\Tax\RefundService::class)->record(
@@ -2658,7 +2658,7 @@ class TaxController extends Controller
 
         try {
             $user = auth()->user();
-            $actorId = $user->main_character_id ?? $user->id;
+            $actorId = $user->main_character_id ?: $user->id;
             $actorName = $user->main_character->name ?? $user->name ?? 'Unknown';
 
             $result = app(\MiningManager\Services\Tax\RefundService::class)->markSent(
@@ -2709,7 +2709,7 @@ class TaxController extends Controller
 
         try {
             $user = auth()->user();
-            $actorId = $user->main_character_id ?? $user->id;
+            $actorId = $user->main_character_id ?: $user->id;
             $actorName = $user->main_character->name ?? $user->name ?? 'Unknown';
 
             $result = app(\MiningManager\Services\Tax\RefundService::class)->revertToPending(
@@ -3186,7 +3186,7 @@ class TaxController extends Controller
                             'character_id' => (int) $tax->character_id,
                             'amount' => $delta,
                             'source' => PaymentAllocation::SOURCE_MANUAL,
-                            'allocated_by' => auth()->user()->main_character_id ?? auth()->id(),
+                            'allocated_by' => auth()->user()->main_character_id ?: auth()->id(),
                             'notes' => "Status changed to paid by {$userName}",
                             'allocated_at' => Carbon::now(),
                         ]);

@@ -1454,7 +1454,7 @@ class MoonController extends Controller
             }
 
             // Get the reporting character
-            $characterId = auth()->user()->main_character_id ?? auth()->user()->id;
+            $characterId = auth()->user()->main_character_id ?: auth()->user()->id;
             $characterName = DB::table('character_infos')
                 ->where('character_id', $characterId)
                 ->value('name') ?? 'Unknown';
