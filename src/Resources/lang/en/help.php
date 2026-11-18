@@ -48,8 +48,6 @@ return [
     'welcome_desc' => 'Your comprehensive mining management and tax collection system for EVE Online corporations using SeAT.',
 
     // Overview Section - What is
-    'what_is_mining_manager' => 'What is Mining Manager?',
-    'what_is_mining_manager_desc' => 'Mining Manager is a comprehensive SeAT plugin designed to help EVE Online corporations track mining activities, calculate and collect taxes, organize mining events, monitor moon extractions, detect unauthorized mining, and provide detailed analytics on mining performance.',
     'key_benefits' => 'Key Benefits',
     'key_benefits_desc' => 'Automated tax calculation, wallet payment verification, moon extraction tracking, theft detection, Discord/Slack notifications, and comprehensive analytics.',
 

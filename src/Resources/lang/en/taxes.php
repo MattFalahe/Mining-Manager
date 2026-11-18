@@ -83,7 +83,6 @@ return [
     'generate_codes' => 'Generate Tax Codes',
     'assign_codes' => 'Assign Codes',
     'no_codes' => 'No tax codes found',
-    'copy' => 'Copy',
     'expiry_days' => 'Expires in :days days',
 
     // Payment

@@ -27,8 +27,6 @@ return [
     'extraction_id' => 'ID',
     
     // Statistics
-    'active_extractions' => 'Active Extractions',
-    'ready_to_mine' => 'Ready to Mine',
     'upcoming_7d' => 'Next 7 Days',
     'next_week' => 'Next Week',
     'this_month' => 'This Month',

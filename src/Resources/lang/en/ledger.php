@@ -35,7 +35,6 @@ return [
     'ore_type' => 'Ore Type',
     'quantity' => 'Quantity',
     'price_per_unit' => 'Price/Unit',
-    'total_value' => 'Total Value',
     'tax_rate' => 'Tax Rate',
     'tax_amount' => 'Tax Amount',
     'actions' => 'Actions',
@@ -99,7 +98,6 @@ return [
     'chart_title_ores' => 'Top Ores by Value',
     'chart_title_characters' => 'Mining by Character',
     'isk' => 'ISK',
-    'units' => 'Units',
 
     // Pagination
     'showing' => 'Showing',

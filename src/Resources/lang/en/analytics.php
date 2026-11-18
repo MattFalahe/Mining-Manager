@@ -27,7 +27,6 @@ return [
     'source_my_moons' => 'My moons only',
     'source_any_moons' => 'All moon ore',
     'source_other_moons' => 'Other moons only',
-    'ore_type' => 'Ore',
     'ore_type_all' => 'All ore types',
     'player' => 'Player',
     'player_all' => 'All players',
@@ -55,7 +54,6 @@ return [
     'trend_day' => 'Day :day',
     
     // Distribution
-    'ore_distribution' => 'Ore Distribution',
     'miner_activity' => 'Miner Activity',
     'system_activity' => 'System Activity',
     'value_distribution' => 'Value Distribution',
@@ -68,7 +66,6 @@ return [
     'rank' => 'Rank',
     'name' => 'Name',
     'value' => 'Value',
-    'quantity' => 'Quantity',
     'percentage' => 'Percentage',
     
     // Chart Types
@@ -198,7 +195,6 @@ return [
     'declining' => 'Declining',
     
     // Aggregation
-    'total' => 'Total',
     'average' => 'Average',
     'median' => 'Median',
     'minimum' => 'Minimum',
@@ -236,7 +232,6 @@ return [
     'cancel' => 'Cancel',
     
     // Chart Labels
-    'volume_m3' => 'Volume (m³)',
     'value_isk' => 'Value (ISK)',
     'miners_count' => 'Number of Miners',
     'ore_quantity' => 'Ore Quantity',
