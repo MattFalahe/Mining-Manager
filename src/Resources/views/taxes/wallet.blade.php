@@ -156,6 +156,19 @@
             <div class="card card-dark">
                 <div class="card-header">
                     <h3 class="card-title">{{ trans('mining-manager::taxes.wallet_transactions') }}</h3>
+                    {{-- Pending is the work queue. A payment leaves it once it is
+                         applied, so All is where an assigned one can be undone. --}}
+                    @php $walletPending = ($status ?? 'pending') === 'pending'; @endphp
+                    <div class="card-tools">
+                        <div class="btn-group btn-group-sm" role="group">
+                            <a href="{{ route('mining-manager.taxes.wallet', array_filter(['show_legacy' => ($showLegacy ?? false) ? 1 : null])) }}" class="btn btn-outline-primary {{ $walletPending ? 'active' : '' }}">
+                                <i class="fas fa-hourglass-half"></i> {{ trans('mining-manager::taxes.pending') }}
+                            </a>
+                            <a href="{{ route('mining-manager.taxes.wallet', array_filter(['status' => 'all', 'show_legacy' => ($showLegacy ?? false) ? 1 : null])) }}" class="btn btn-outline-primary {{ $walletPending ? '' : 'active' }}">
+                                <i class="fas fa-list"></i> {{ trans('mining-manager::taxes.wallet_filter_all') }}
+                            </a>
+                        </div>
+                    </div>
                 </div>
                 <div class="card-body p-0">
                     <table class="table table-dark table-striped" id="walletTable">

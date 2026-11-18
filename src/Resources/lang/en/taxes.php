@@ -166,6 +166,7 @@ return [
 
     // Wallet & Transactions
     'wallet_transactions' => 'Wallet Transactions',
+    'wallet_filter_all' => 'All',
     'auto_match' => 'Auto-Match',
     'manual_entry' => 'Manual Entry',
     'matched_tax' => 'Matched Tax',

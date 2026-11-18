@@ -1113,9 +1113,9 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                             the page tells you what came off and what stayed.
                         </li>
                         <li>
-                            <strong>Undo assignment.</strong> A payment assigned by hand has an Undo assignment
-                            button in Wallet Transactions on Wallet Verification, which puts it back on the pending
-                            list.
+                            <strong>Undo assignment.</strong> Wallet Transactions on Wallet Verification has a Pending
+                            and an All switch. Under All, a payment assigned by hand has an Undo assignment button,
+                            which puts it back on the pending list.
                         </li>
                     </ul>
                     <h5>Reports and pages</h5>
