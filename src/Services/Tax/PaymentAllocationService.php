@@ -763,6 +763,10 @@ class PaymentAllocationService
      * invoice the member has since been told is settled. In that case the
      * credit has to be dealt with first.
      *
+     * Money taken off a reopened bill is different: it is this payment
+     * settling bills again, not surplus, so what it paid back is undone with
+     * the rest, the same as the bills the payment settled directly.
+     *
      * @return array  reversed, reason, invoices
      */
     public function unallocate(int $transactionId, ?int $actorId = null): array
@@ -777,15 +781,17 @@ class PaymentAllocationService
             // More than one when part of the payment was taken off a reopened
             // bill: the surplus held when it arrived, and what came off.
             $credits = PaymentCredit::where('transaction_id', $transactionId)->lockForUpdate()->get();
+            $reopenedIds = $credits->where('source', PaymentCredit::SOURCE_REOPENED)->pluck('id')->all();
 
-            if ($credits->contains(fn ($credit) => round((float) $credit->remaining, 2) < round((float) $credit->amount, 2))) {
+            if ($credits->contains(fn ($credit) => $credit->source !== PaymentCredit::SOURCE_REOPENED
+                && round((float) $credit->remaining, 2) < round((float) $credit->amount, 2))) {
                 $result['reason'] = 'credit_partially_spent';
 
                 return;
             }
 
             $allocations = PaymentAllocation::where('transaction_id', $transactionId)
-                ->whereNull('credit_id')
+                ->where(fn ($q) => $q->whereNull('credit_id')->orWhereIn('credit_id', $reopenedIds))
                 ->get();
 
             // A payment credited before payments were recorded one by one has
@@ -838,12 +844,10 @@ class PaymentAllocationService
                 ];
             }
 
-            // Scoped to the direct allocations. A credit drawdown carries the
+            // Only what was undone above. A drawdown of the surplus carries the
             // same transaction id but belongs to whatever invoice it later went
             // to, and the guard above already refused when any of it was spent.
-            PaymentAllocation::where('transaction_id', $transactionId)
-                ->whereNull('credit_id')
-                ->delete();
+            PaymentAllocation::whereIn('id', $allocations->pluck('id'))->delete();
 
             PaymentCredit::whereIn('id', $credits->pluck('id'))->delete();
 
