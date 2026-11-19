@@ -20,6 +20,12 @@ use MiningManager\Services\OreClassifier;
 class TaxCalculationService
 {
     /**
+     * Where announcePartPaidPastDue() got to: due dates before it have been
+     * looked at.
+     */
+    public const PART_PAID_OVERDUE_CHECKED_TO = 'tax.part_paid_overdue_checked_to';
+
+    /**
      * Settings manager service
      *
      * @var SettingsManagerService
@@ -1029,7 +1035,62 @@ class TaxCalculationService
             Log::info("Mining Manager: Marked {$updated} taxes as overdue (ESI lag buffer: {$esiGraceHours}h)");
         }
 
+        $this->announcePartPaidPastDue($overdueThreshold);
+
         return $updated;
+    }
+
+    /**
+     * A part-paid bill stays partial past its due date, so it never turns
+     * overdue above. It is announced to Manager Core once as it passes the
+     * same point, with part_paid set.
+     *
+     * Each run looks at the due dates passed since the last one. The first
+     * run after the update only marks where it starts, so a bill already past
+     * its due date before then is never announced.
+     */
+    protected function announcePartPaidPastDue(Carbon $overdueThreshold): void
+    {
+        try {
+            $checkedTo = $this->settingsService->getSettingForCorporation(self::PART_PAID_OVERDUE_CHECKED_TO, null, null);
+            $this->settingsService->updateGlobalSetting(self::PART_PAID_OVERDUE_CHECKED_TO, $overdueThreshold->getTimestamp());
+
+            if (!is_numeric($checkedTo) || (int) $checkedTo <= 0) {
+                return;
+            }
+
+            $from = Carbon::createFromTimestamp((int) $checkedTo);
+            if ($from->gte($overdueThreshold)) {
+                return;
+            }
+
+            // A bill's due date, else the end of its period, as above. Bills
+            // with neither are older than this check can reach.
+            $bills = MiningTax::where('status', 'partial')
+                ->where(function ($q) use ($from, $overdueThreshold) {
+                    $q->where(function ($inner) use ($from, $overdueThreshold) {
+                        $inner->whereNotNull('due_date')
+                            ->where('due_date', '>=', $from)
+                            ->where('due_date', '<', $overdueThreshold);
+                    })->orWhere(function ($inner) use ($from, $overdueThreshold) {
+                        $inner->whereNull('due_date')
+                            ->whereNotNull('period_end')
+                            ->where('period_end', '>=', $from)
+                            ->where('period_end', '<', $overdueThreshold);
+                    });
+                })
+                ->get();
+
+            foreach ($bills as $bill) {
+                ManagerCoreEvents::taxOverdue($bill);
+            }
+
+            if ($bills->isNotEmpty()) {
+                Log::info("Mining Manager: {$bills->count()} part-paid bill(s) passed their due date");
+            }
+        } catch (\Throwable $e) {
+            Log::warning('Mining Manager: could not look for part-paid bills past their due date: ' . $e->getMessage());
+        }
     }
 
     /**

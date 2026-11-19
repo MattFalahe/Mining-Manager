@@ -61,7 +61,9 @@ class ManagerCoreEvents
 
         $payload = self::bill($tax) + [
             // One per bill: two bills of a twice-monthly month share a period.
-            'idempotency_key' => "tax_paid:{$tax->id}",
+            // And one per time it is paid, since a bill can reopen and be
+            // paid again, which a key of the bill alone would drop.
+            'idempotency_key' => "tax_paid:{$tax->id}:" . self::when($tax),
             'paid_at' => $paidAt->toIso8601String(),
             'late' => $paidAt->gt($dueEnd),
         ];
@@ -76,13 +78,16 @@ class ManagerCoreEvents
     }
 
     /**
-     * A bill nothing was paid on went past its due date.
+     * A bill went past its due date with money still owed: one nothing was
+     * paid on turns overdue, and one part paid stays partial, which part_paid
+     * says.
      */
     public static function taxOverdue(MiningTax $tax): void
     {
         self::publish('mining.tax_overdue', self::bill($tax) + [
-            'idempotency_key' => "tax_overdue:{$tax->id}",
+            'idempotency_key' => "tax_overdue:{$tax->id}:" . self::when($tax),
             'days_overdue' => max(0, -$tax->daysUntilDue()),
+            'part_paid' => (float) ($tax->amount_paid ?? 0) > 0,
         ]);
     }
 
@@ -93,9 +98,24 @@ class ManagerCoreEvents
     public static function taxWrittenOff(MiningTax $tax): void
     {
         self::publish('mining.tax_written_off', array_merge(self::bill($tax), [
+            'idempotency_key' => "tax_written_off:{$tax->id}:" . self::when($tax),
             // Nothing is left to pay on a bill let off, whatever was paid of it.
             'outstanding' => 0.0,
         ]));
+    }
+
+    /**
+     * A bill that was paid or let off is open again: a director set it back
+     * to Unpaid or Overdue, a payment on it was undone, or what it owes went
+     * up. A plugin that heard it was settled should chase it again.
+     */
+    public static function taxReopened(MiningTax $tax, string $previousStatus): void
+    {
+        self::publish('mining.tax_reopened', self::bill($tax) + [
+            'idempotency_key' => "tax_reopened:{$tax->id}:" . self::when($tax),
+            'previous_status' => $previousStatus,
+            'reopened_at' => Carbon::now()->toIso8601String(),
+        ]);
     }
 
     /**
@@ -204,6 +224,15 @@ class ManagerCoreEvents
             'corporation_id' => null, // visibility scoping (subscriber may filter)
             'role_id' => null,
         ];
+    }
+
+    /**
+     * When a bill's status changed, for keys that are one per change rather
+     * than one per bill.
+     */
+    private static function when(MiningTax $tax): int
+    {
+        return $tax->updated_at ? Carbon::parse($tax->updated_at)->getTimestamp() : Carbon::now()->getTimestamp();
     }
 
     private static function event(MiningEvent $event): array

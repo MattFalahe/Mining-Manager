@@ -55,16 +55,23 @@ class MiningTax extends Model
         // A bill paid off is announced once, when its status turns paid,
         // however the money came: the wallet, held credit, Mark as Paid,
         // Change Status or the bulk mark. A bill let off is announced when
-        // it turns waived or exempted. All of them save the bill.
+        // it turns waived or exempted, and one that was either and is open
+        // again when it turns unpaid, partial or overdue. All of them save
+        // the bill.
         static::updated(function (MiningTax $tax) {
             if (!$tax->wasChanged('status')) {
                 return;
             }
 
+            $was = $tax->getOriginal('status');
+
             if ($tax->status === 'paid') {
                 ManagerCoreEvents::taxPaid($tax);
             } elseif (in_array($tax->status, self::WRITTEN_OFF_STATUSES, true)) {
                 ManagerCoreEvents::taxWrittenOff($tax);
+            } elseif (($was === 'paid' || in_array($was, self::WRITTEN_OFF_STATUSES, true))
+                && in_array($tax->status, ['unpaid', 'partial', 'overdue'], true)) {
+                ManagerCoreEvents::taxReopened($tax, (string) $was);
             }
         });
     }

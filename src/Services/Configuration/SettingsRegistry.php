@@ -166,6 +166,7 @@ final class SettingsRegistry
         'classification.epoch' => self::STATE,
         'payment.dedup_epoch' => self::STATE,
         'tax.part_payment_epoch' => self::STATE,
+        'tax.part_paid_overdue_checked_to' => self::STATE,
         'theft.counting_from' => self::STATE,
         'pricing.provider_status' => self::STATE,
         'payment.last_outstanding_digest_at' => self::STATE,
