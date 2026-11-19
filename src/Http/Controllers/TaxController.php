@@ -2850,7 +2850,11 @@ class TaxController extends Controller
         }
 
         foreach ($credits as $credit) {
-            $settled = (float) ($settledByPayment[$credit->transaction_id] ?? 0);
+            // Taken off a reopened bill: the rest of that payment is
+            // accounted for elsewhere, so this row is only what came off.
+            $settled = $credit->source === PaymentCredit::SOURCE_REOPENED
+                ? 0.0
+                : (float) ($settledByPayment[$credit->transaction_id] ?? 0);
 
             $credit->settled_on_arrival = $settled;
             $credit->payment_total = round($settled + (float) $credit->amount, 2);
@@ -3119,14 +3123,19 @@ class TaxController extends Controller
                 $tax = MiningTax::where('id', $id)->lockForUpdate()->firstOrFail();
                 $oldStatus = $tax->status;
                 $tax->status = $validated['status'];
-                $change = ['old' => $oldStatus, 'taken_off' => 0.0, 'left' => 0.0, 'refused' => false];
+                $change = ['old' => $oldStatus, 'taken_off' => 0.0, 'moved' => 0.0, 'left' => 0.0, 'refused' => false];
 
                 // Unpaid or Overdue on a bill with money on it. This is the
                 // only way to undo Mark as Paid, so what was recorded by hand
-                // comes off. A wallet payment or held credit is real money and
-                // stays where it is, and the bill is whatever that leaves it.
+                // comes off. Wallet payments and held credit are the member's
+                // money: they move to the member's balance, and the next
+                // wallet check pays their oldest open bill with them. Only a
+                // payment credited before payments were recorded one by one
+                // has nothing to move, and stays on the bill.
                 if (in_array($validated['status'], ['unpaid', 'overdue'], true) && (float) ($tax->amount_paid ?? 0) > 0) {
-                    $byHand = in_array($oldStatus, ['paid', 'partial'], true)
+                    $settledBefore = in_array($oldStatus, ['paid', 'partial'], true);
+
+                    $byHand = $settledBefore
                         ? PaymentAllocation::where('mining_tax_id', $tax->id)
                             ->whereNull('transaction_id')
                             ->whereNull('credit_id')
@@ -3134,17 +3143,37 @@ class TaxController extends Controller
                         : collect();
 
                     $takenOff = round(min((float) $tax->amount_paid, (float) $byHand->sum('amount')), 2);
-                    $left = round((float) $tax->amount_paid - $takenOff, 2);
-
-                    if ($takenOff <= 0 && in_array($oldStatus, ['paid', 'partial'], true)) {
-                        return ['refused' => true, 'left' => $left] + $change;
-                    }
 
                     if ($takenOff > 0) {
                         PaymentAllocation::whereIn('id', $byHand->pluck('id'))->delete();
+                    }
 
-                        $note = Carbon::now()->format('Y-m-d H:i') . " - Status changed to {$validated['status']} by {$userName}: "
-                            . number_format($takenOff, 0) . ' ISK recorded by hand taken off.';
+                    $moved = $settledBefore
+                        ? round(min(
+                            (float) $tax->amount_paid - $takenOff,
+                            $this->allocationService->holdPaymentsOfReopenedBill(
+                                $tax,
+                                auth()->user()->main_character_id ?: auth()->id(),
+                                "Taken off bill #{$tax->id} when {$userName} set it to {$validated['status']}"
+                            )
+                        ), 2)
+                        : 0.0;
+
+                    $left = round(max(0, (float) $tax->amount_paid - $takenOff - $moved), 2);
+
+                    if ($takenOff <= 0 && $moved <= 0 && $settledBefore) {
+                        return ['refused' => true, 'left' => $left] + $change;
+                    }
+
+                    $said = [];
+                    if ($takenOff > 0) {
+                        $said[] = number_format($takenOff, 0) . ' ISK recorded by hand taken off.';
+                    }
+                    if ($moved > 0) {
+                        $said[] = number_format($moved, 0) . " ISK from wallet payments or held credit moved to the member's balance.";
+                    }
+                    if ($said) {
+                        $note = Carbon::now()->format('Y-m-d H:i') . " - Status changed to {$validated['status']} by {$userName}: " . implode(' ', $said);
                         $tax->notes = $tax->notes ? $tax->notes . "\n\n" . $note : $note;
                     }
 
@@ -3168,6 +3197,7 @@ class TaxController extends Controller
                     }
 
                     $change['taken_off'] = $takenOff;
+                    $change['moved'] = $moved;
                     $change['left'] = $left;
                 }
 
@@ -3212,7 +3242,7 @@ class TaxController extends Controller
             if ($change['refused']) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => trans('mining-manager::taxes.status_keeps_wallet_money', [
+                    'message' => trans('mining-manager::taxes.status_keeps_unrecorded_money', [
                         'amount' => number_format($change['left'], 0),
                         'status' => ucfirst($change['old']),
                     ]),
@@ -3225,6 +3255,7 @@ class TaxController extends Controller
                 'asked_for' => $validated['status'],
                 'new_status' => $change['new'],
                 'taken_off' => $change['taken_off'],
+                'moved_to_balance' => $change['moved'],
                 'left_on_bill' => $change['left'],
                 'updated_by' => auth()->user()->name,
             ]);
@@ -3236,6 +3267,15 @@ class TaxController extends Controller
             if ($change['taken_off'] > 0) {
                 $parts[] = trans('mining-manager::taxes.status_updated_taken_off', [
                     'taken_off' => number_format($change['taken_off'], 0),
+                ]);
+            }
+
+            if ($change['moved'] > 0) {
+                $autoMatch = (bool) ($this->settingsService->getPaymentSettings()['auto_match_payments'] ?? true);
+                $parts[] = trans($autoMatch
+                    ? 'mining-manager::taxes.status_updated_moved_to_balance'
+                    : 'mining-manager::taxes.status_updated_moved_to_balance_no_auto_match', [
+                    'moved' => number_format($change['moved'], 0),
                 ]);
             }
 

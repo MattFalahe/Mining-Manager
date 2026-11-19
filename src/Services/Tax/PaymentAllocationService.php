@@ -610,6 +610,152 @@ class PaymentAllocationService
     }
 
     /**
+     * Take the wallet payments and held credit off a bill a director is
+     * setting back to Unpaid or Overdue, and hold them for the member instead.
+     *
+     * The money stays the member's: applyReopenedCredits() pays their open
+     * bills with it on the next wallet check, oldest first, which may be this
+     * bill again. Each slice keeps its payment's transaction id, so undoing
+     * that payment later still finds every part of it.
+     *
+     * Call inside the caller's transaction, with the bill locked.
+     *
+     * @return float how much was taken off
+     */
+    public function holdPaymentsOfReopenedBill(MiningTax $tax, ?int $actorId = null, ?string $notes = null): float
+    {
+        $slices = PaymentAllocation::where('mining_tax_id', $tax->id)
+            ->where(fn ($q) => $q->whereNotNull('transaction_id')->orWhereNotNull('credit_id'))
+            ->lockForUpdate()
+            ->get();
+
+        if ($slices->isEmpty()) {
+            return 0.0;
+        }
+
+        $moved = 0.0;
+
+        foreach ($slices->groupBy(fn ($slice) => $slice->character_id . ':' . ($slice->transaction_id ?? '')) as $group) {
+            $amount = round((float) $group->sum('amount'), 2);
+            $first = $group->first();
+
+            PaymentCredit::create([
+                'character_id' => (int) $first->character_id,
+                'transaction_id' => $first->transaction_id,
+                'amount' => $amount,
+                'remaining' => $amount,
+                'source' => PaymentCredit::SOURCE_REOPENED,
+                'created_by' => $actorId,
+                'notes' => $notes,
+            ]);
+
+            $moved = round($moved + $amount, 2);
+        }
+
+        PaymentAllocation::whereIn('id', $slices->pluck('id'))->delete();
+
+        Log::info('Mining Manager: payments taken off a reopened bill and held for the member', [
+            'tax_id' => (int) $tax->id,
+            'character_id' => (int) $tax->character_id,
+            'amount' => $moved,
+        ]);
+
+        return $moved;
+    }
+
+    /**
+     * Pay open bills with what holdPaymentsOfReopenedBill() took off, oldest
+     * bill first, for the wallet check to run. Other held credit is left for
+     * the next bill raised, as it always was.
+     *
+     * Credit no open bill can take stays held, and is tried again on the next
+     * check. The next bill raised draws it down as well.
+     *
+     * @return array{credits: int, applied: float, bills: int}
+     */
+    public function applyReopenedCredits(?int $actorId = null): array
+    {
+        $result = ['credits' => 0, 'applied' => 0.0, 'bills' => 0];
+
+        $acceptAlts = (bool) ($this->settings->getPaymentSettings()['accept_alt_characters'] ?? true);
+
+        $creditIds = PaymentCredit::where('source', PaymentCredit::SOURCE_REOPENED)
+            ->where('remaining', '>=', self::SETTLED_TOLERANCE)
+            ->orderBy('created_at')
+            ->orderBy('id')
+            ->pluck('id');
+
+        foreach ($creditIds as $creditId) {
+            DB::transaction(function () use ($creditId, $actorId, $acceptAlts, &$result) {
+                $credit = PaymentCredit::where('id', $creditId)->lockForUpdate()->first();
+
+                if (!$credit || round((float) $credit->remaining, 2) < self::SETTLED_TOLERANCE) {
+                    return;
+                }
+
+                $eligibleCharacterIds = $this->eligibleCharacterIds((int) $credit->character_id, $acceptAlts);
+                $used = false;
+
+                foreach ($this->buildTargetList(null, $eligibleCharacterIds, true) as $taxId) {
+                    $remaining = round((float) $credit->remaining, 2);
+
+                    if ($remaining < self::SETTLED_TOLERANCE) {
+                        break;
+                    }
+
+                    $tax = MiningTax::where('id', $taxId)->lockForUpdate()->first();
+
+                    if (!$tax || !in_array($tax->status, ['unpaid', 'overdue', 'partial'], true)) {
+                        continue;
+                    }
+
+                    $outstanding = round((float) $tax->amount_owed - (float) ($tax->amount_paid ?? 0), 2);
+
+                    if ($outstanding < self::SETTLED_TOLERANCE) {
+                        continue;
+                    }
+
+                    $slice = round(min($remaining, $outstanding), 2);
+
+                    $credit->update(['remaining' => round($remaining - $slice, 2)]);
+
+                    $this->creditTax($tax, $slice, $credit->transaction_id, Carbon::now());
+
+                    PaymentAllocation::create([
+                        'transaction_id' => $credit->transaction_id,
+                        'credit_id' => $credit->id,
+                        'mining_tax_id' => $tax->id,
+                        'character_id' => (int) $credit->character_id,
+                        'amount' => $slice,
+                        'source' => PaymentAllocation::SOURCE_CREDIT,
+                        'allocated_by' => $actorId,
+                        'notes' => 'Given back from payments taken off a reopened bill',
+                        'allocated_at' => Carbon::now(),
+                    ]);
+
+                    $note = Carbon::now()->format('Y-m-d H:i') . ' - ' . number_format($slice, 0)
+                        . ' ISK paid from payments taken off a reopened bill.';
+                    $tax->update(['notes' => $tax->notes ? $tax->notes . "\n\n" . $note : $note]);
+
+                    $result['applied'] = round($result['applied'] + $slice, 2);
+                    $result['bills']++;
+                    $used = true;
+                }
+
+                if ($used) {
+                    $result['credits']++;
+                }
+            });
+        }
+
+        if ($result['applied'] > 0) {
+            Log::info('Mining Manager: paid open bills with payments taken off reopened bills', $result);
+        }
+
+        return $result;
+    }
+
+    /**
      * Undo everything a payment did.
      *
      * Refuses when part of the surplus it generated has already been spent on
@@ -628,9 +774,11 @@ class PaymentAllocationService
         ];
 
         DB::transaction(function () use ($transactionId, $actorId, &$result) {
-            $credit = PaymentCredit::where('transaction_id', $transactionId)->lockForUpdate()->first();
+            // More than one when part of the payment was taken off a reopened
+            // bill: the surplus held when it arrived, and what came off.
+            $credits = PaymentCredit::where('transaction_id', $transactionId)->lockForUpdate()->get();
 
-            if ($credit && round((float) $credit->remaining, 2) < round((float) $credit->amount, 2)) {
+            if ($credits->contains(fn ($credit) => round((float) $credit->remaining, 2) < round((float) $credit->amount, 2))) {
                 $result['reason'] = 'credit_partially_spent';
 
                 return;
@@ -644,7 +792,7 @@ class PaymentAllocationService
             // a claim and nothing else. Releasing the claim would put it back
             // on the pending list with its money still on the bill, ready to
             // be credited a second time.
-            if ($allocations->isEmpty() && !$credit) {
+            if ($allocations->isEmpty() && $credits->isEmpty()) {
                 $result['reason'] = 'nothing_recorded';
 
                 return;
@@ -697,9 +845,7 @@ class PaymentAllocationService
                 ->whereNull('credit_id')
                 ->delete();
 
-            if ($credit) {
-                $credit->delete();
-            }
+            PaymentCredit::whereIn('id', $credits->pluck('id'))->delete();
 
             ProcessedTransaction::where('transaction_id', $transactionId)->delete();
 

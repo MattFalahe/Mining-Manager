@@ -51,6 +51,13 @@ class PaymentCredit extends Model
     public const SOURCE_MANUAL = 'manual';
 
     /**
+     * Wallet payments and held credit taken off a bill a director set back to
+     * Unpaid or Overdue. The next wallet check pays the member's open bills
+     * with it, oldest first.
+     */
+    public const SOURCE_REOPENED = 'reopened';
+
+    /**
      * @return \Illuminate\Database\Eloquent\Relations\HasMany
      */
     public function allocations()

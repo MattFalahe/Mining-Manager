@@ -172,7 +172,9 @@
                                     {{-- The split is the answer to "I sent 1.2b, where did it
                                          go?". Without it the row only shows the leftover and
                                          looks like the payment was smaller than it was. --}}
-                                    @if($credit->settled_on_arrival > 0)
+                                    @if($credit->source === \MiningManager\Models\PaymentCredit::SOURCE_REOPENED)
+                                    <div class="small text-muted">{{ trans('mining-manager::taxes.balance_from_reopened_bill') }}</div>
+                                    @elseif($credit->settled_on_arrival > 0)
                                     <div class="small text-muted">
                                         {{ trans('mining-manager::taxes.balance_settled_on_arrival', [
                                             'amount' => number_format($credit->settled_on_arrival, 2),

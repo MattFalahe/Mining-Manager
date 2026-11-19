@@ -148,6 +148,10 @@ class VerifyWalletPaymentsCommand extends Command
         if ($transactions->isEmpty()) {
             $this->warn('No unclaimed transactions found in configured wallet divisions');
 
+            if ($autoMatch) {
+                $this->giveBackReopened();
+            }
+
             $this->cleanupDismissed();
             // Still worth looking: refunds confirm against money going out, and
             // nothing coming in has no bearing on whether it went.
@@ -210,10 +214,35 @@ class VerifyWalletPaymentsCommand extends Command
             $this->info("\nRun with --auto-match to automatically apply these payments");
         }
 
+        // After the new payments, so a bill they settle is not paid twice.
+        if ($autoMatch) {
+            $this->giveBackReopened();
+        }
+
         $this->cleanupDismissed();
         $this->confirmRefunds($corporationId ? (int) $corporationId : null);
 
         return Command::SUCCESS;
+    }
+
+    /**
+     * Pay open bills with the wallet payments and held credit a director took
+     * off a bill by setting it back to Unpaid or Overdue. Only on a run that
+     * applies payments: a report-only run changes nothing.
+     */
+    protected function giveBackReopened(): void
+    {
+        try {
+            $result = $this->allocator->applyReopenedCredits();
+
+            if ($result['applied'] > 0) {
+                $this->info('Paid ' . $result['bills'] . ' open bill(s) with ' . number_format($result['applied'], 0)
+                    . ' ISK taken off reopened bills');
+            }
+        } catch (\Throwable $e) {
+            $this->error('Could not pay open bills with money taken off reopened bills: ' . $e->getMessage());
+            Log::error('Mining Manager: applying money taken off reopened bills failed', ['error' => $e->getMessage()]);
+        }
     }
 
     /**
