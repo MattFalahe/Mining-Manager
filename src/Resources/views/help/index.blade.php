@@ -1075,9 +1075,22 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                             come out the same or higher and Buy Orders the same or lower. The fallback price
                             provider is Fuzzwork unless you picked another, so this reaches it too.
                         </li>
+                        <li>
+                            <strong>Price type with Manager Core.</strong> With Manager Core as the price provider,
+                            Buy, Sell or Average is the one set on Manager Core's Pricing Preferences page, as the
+                            pricing tab always said. Mining Manager used its own hidden setting before, so if the
+                            two differed, expect values and the tax on them to move from this update on.
+                        </li>
                     </ul>
                     <h5>Notifications</h5>
                     <ul>
+                        <li>
+                            <strong>Moon and planner alerts try again.</strong> Moon Ready, Moon Chunk Unstable,
+                            Extraction Started, Next Extraction Planned, Schedule Mismatch and the planner's
+                            reminders had one attempt, so a Discord outage at that minute lost them. One Discord
+                            refuses is tried again while it still applies, and one whose webhook is switched off
+                            waits for you to switch it back on.
+                        </li>
                         <li>
                             <strong>Extraction Started with Manager Core.</strong> An alert fast-poll could not get
                             to Discord used to be lost. The plugin's own check now sends it, from 15 minutes after
@@ -1109,8 +1122,9 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                             <strong>Change Status to Unpaid or Overdue.</strong> This is how you undo Mark as Paid,
                             and it used to change the label only, leaving the bill showing everything as paid. It
                             now takes off what was recorded by hand and makes the payment code live again. Wallet
-                            payments and held credit stay on the bill, which becomes Partial for that amount, and
-                            the page tells you what came off and what stayed.
+                            payments and held credit move to the member's balance, and the next wallet check pays
+                            their oldest open bill with it, which can be the same bill. The page tells you what came
+                            off and what moved.
                         </li>
                         <li>
                             <strong>Undo assignment.</strong> Wallet Transactions on Wallet Verification has a Pending
@@ -1829,6 +1843,15 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                         nobody is billed for money you are already holding.
                     </p>
 
+                    <p>
+                        Setting a paid or part-paid bill back to Unpaid or Overdue with Change Status moves its
+                        wallet payments and held credit to the member's balance too. That balance doesn't wait
+                        for the next invoice: the next wallet check pays their oldest open bill with it, which
+                        can be the bill you just changed. With automatic matching switched off on Settings,
+                        Payments, the next invoice draws it down instead.
+                        <span class="mm-new-badge">{{ trans('mining-manager::help.new_badge') }}</span>
+                    </p>
+
                     <h4><i class="fas fa-hand-holding-usd"></i> Paying ahead</h4>
                     <p>
                         With <em>Let members pay ahead of being billed</em> switched on (Settings, Payments), a member can pay
@@ -2390,6 +2413,12 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                     <div class="alert alert-secondary mt-2">
                         <i class="fas fa-archive text-info"></i>
                         <strong>Past Extractions (Archived) table:</strong> The main Moon Extractions page shows a sortable/filterable DataTables view of all archived extraction cycles. Includes columns for Moon, Structure (station name), Chunk Arrival, Status, Value at Arrival, Actual Mined, Completion %, and Archived time. Scoped to the Moon Owner Corporation only — other corps' private moons on the same SeAT install are excluded. Use the Status filter dropdown to view only cancelled or expired/fractured cycles. Default sort: chunk arrival descending (newest first).
+                    </div>
+
+                    <div class="alert alert-secondary mt-2">
+                        <i class="fas fa-redo text-info"></i>
+                        <strong>When Discord refuses an alert:</strong> Moon Ready, Moon Chunk Unstable, Extraction Started, Next Extraction Planned, Schedule Mismatch, Moon Not Rescheduled, Moons Need Planning and the planner's start reminders are tried again after 5, 15 and 30 minutes, then hourly, for as long as they still apply. An alert whose webhook is switched off waits until you switch one bound to it back on. An alert type you switched off, or one no webhook is bound to, isn't kept back.
+                        <span class="mm-new-badge">{{ trans('mining-manager::help.new_badge') }}</span>
                     </div>
 
                     <h4><i class="fas fa-plug text-info"></i> {{ trans('mining-manager::help.webhook_setup_title') }}</h4>
@@ -3065,8 +3094,9 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                     <ul>
                         <li><code>mining.tax_created</code>: a bill was raised, with what held credit paid of it and what is left to pay.</li>
                         <li><code>mining.tax_paid</code>: a bill was paid in full, from the wallet, held credit or by a director, and whether it was late.</li>
-                        <li><code>mining.tax_overdue</code>: a bill nothing was paid on went past its due date.</li>
+                        <li><code>mining.tax_overdue</code>: a bill went past its due date with money still owed. <code>part_paid</code> says whether some of it was paid. <span class="mm-new-badge">{{ trans('mining-manager::help.new_badge') }}</span></li>
                         <li><code>mining.tax_written_off</code>: a director let a bill off, waived or exempted. Nothing is left to pay on it.</li>
+                        <li><code>mining.tax_reopened</code>: a bill that was paid or let off is open again, with the status it had. <span class="mm-new-badge">{{ trans('mining-manager::help.new_badge') }}</span></li>
                         <li><code>mining.invoice_sent</code>: an invoice for a bill went out.</li>
                         <li><code>mining.event_created</code>, <code>mining.event_started</code> and <code>mining.event_completed</code>: an event was announced, started or completed. One set up without notifications is not announced here either.</li>
                         <li><code>mining.report_generated</code>: a report was made.</li>
@@ -3074,7 +3104,7 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                         <li><code>mining.theft_detected</code>: a theft incident was opened.</li>
                         <li><code>mining.theft_resolved</code>: a theft incident closed: resolved, called a false alarm, or taken off the list once nothing was overdue.</li>
                     </ul>
-                    <p><code>mining.tax_written_off</code> and <code>mining.theft_resolved</code> need a Manager Core newer than 1.0.3. An older one does not know them, so they are not sent, and nothing is logged.</p>
+                    <p><code>mining.tax_written_off</code> and <code>mining.theft_resolved</code> need a Manager Core newer than 1.0.3. An older one does not know them, so they are not sent, and nothing is logged. <code>mining.tax_reopened</code> waits the same way for a Manager Core that knows it.</p>
                 </div>
 
                 {{-- Moon Classification --}}
@@ -4123,7 +4153,7 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                                 <tr>
                                     <td><code>mining-manager:check-extraction-arrivals</code></td>
                                     <td><span class="badge badge-danger">Every minute</span></td>
-                                    <td><strong>Notification system</strong> — fires <code>moon_arrival</code> Discord/Slack notifications based on the stored <code>chunk_arrival_time</code>. Pure time arithmetic — does not call ESI. Answers the question "has arrival time passed and we haven't notified yet?". Idempotent via the <code>notification_sent</code> flag — safe to re-run, handles missed cron ticks, handles extractions imported directly as 'ready'. The same run sends Moon Chunk Unstable before a chunk goes unstable, and Extraction Started for any start Manager Core's fast-poll did not announce, each once per extraction.<br>
+                                    <td><strong>Notification system</strong> — fires <code>moon_arrival</code> Discord/Slack notifications based on the stored <code>chunk_arrival_time</code>. Pure time arithmetic — does not call ESI. Answers the question "has arrival time passed and we haven't notified yet?". Idempotent via the <code>notification_sent</code> flag — safe to re-run, handles missed cron ticks, handles extractions imported directly as 'ready'. The same run sends Moon Chunk Unstable before a chunk goes unstable, and Extraction Started for any start Manager Core's fast-poll did not announce, each once per extraction. An alert Discord refuses is tried again on a later run while it still applies.<br>
                                         <small class="text-muted">Options: <code>--hours-back=72</code> only notify for arrivals within this window (safety on historical data), <code>--limit=50</code> max dispatches per run, <code>--unstable-warning-hours=2</code> how long before a chunk turns unstable to warn, <code>--dry-run</code> preview without firing</small>
                                     </td>
                                 </tr>
