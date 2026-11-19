@@ -10,6 +10,8 @@ use MiningManager\Models\MoonExtraction;
 use MiningManager\Services\Moon\MoonExtractionService;
 use MiningManager\Services\Moon\MoonDrillingRigs;
 use MiningManager\Services\Configuration\SettingsManagerService;
+use MiningManager\Services\Notification\AlertDelivery;
+use MiningManager\Services\Notification\NotificationService;
 use Carbon\Carbon;
 
 /**
@@ -44,6 +46,13 @@ class CheckExtractionArrivalsCommand extends Command
      * see a start that late, and the row can turn up in SeAT before then.
      */
     private const FAST_POLL_HEAD_START_MINUTES = 15;
+
+    /**
+     * From when an arrival that went out without its Next Extraction Planned
+     * is gone back to. Set on the first run that looks, so an update never
+     * sends one for a chunk that arrived before it.
+     */
+    public const NEXT_PLANNED_OWED_SINCE = 'notifications.next_planned_owed_since';
 
     protected MoonExtractionService $extractionService;
     protected SettingsManagerService $settingsService;
@@ -83,14 +92,25 @@ class CheckExtractionArrivalsCommand extends Command
             // Filters:
             //  - chunk_arrival_time has passed (<= now)
             //  - within the hours-back window (prevents notifying for ancient data)
-            //  - notification_sent = false (idempotent — already-notified rows skipped)
+            //  - notification_sent = false (idempotent — already-notified rows skipped),
+            //    or announced with the Next Extraction Planned that follows it
+            //    still owed: refused or held earlier, or the arrival went out
+            //    from the two-hourly import, which sends the arrival alone
             //  - corporation_id matches moon owner (safety: don't notify for other corps)
             $moonOwnerCorpId = $this->settingsService->getTaxProgramCorporationId();
+            $owedSince = $this->nextPlannedOwedSince(!$dryRun) ?? $now;
+            $delivery = app(AlertDelivery::class);
 
             $query = MoonExtraction::query()
                 ->where('chunk_arrival_time', '<=', $now)
                 ->where('chunk_arrival_time', '>=', $windowStart)
-                ->where('notification_sent', false)
+                ->where(function ($owed) use ($owedSince) {
+                    $owed->where('notification_sent', false)
+                        ->orWhere(function ($nextPlanned) use ($owedSince) {
+                            $nextPlanned->where('next_planned_sent', false)
+                                ->where('chunk_arrival_time', '>=', $owedSince);
+                        });
+                })
                 // Skip cancelled extractions — detectCancellations() (called from
                 // updateExtractionStatuses via the update-extractions cron) marks
                 // rows whose director cancelled them in-game. No point firing a
@@ -117,10 +137,31 @@ class CheckExtractionArrivalsCommand extends Command
 
             $dispatched = 0;
             $failed = 0;
+            $waiting = 0;
 
             foreach ($extractions as $extraction) {
                 $moonLabel = $extraction->moon_name ?? "Moon {$extraction->moon_id}";
-                $this->line("  #{$extraction->id} — {$moonLabel} — arrived {$extraction->chunk_arrival_time->diffForHumans()}");
+                $owesArrival = !$extraction->notification_sent;
+
+                // An arrival alert held past the chunk's expiry would only
+                // mislead, and so would the Next Extraction Planned behind it.
+                if ($owesArrival && $extraction->isExpired()) {
+                    continue;
+                }
+
+                // Waiting on a refusal or a switched-off webhook: nothing to
+                // read or price for it until it can go.
+                $wait = $delivery->waiting(AlertDelivery::key(
+                    $owesArrival ? NotificationService::TYPE_MOON_READY : NotificationService::TYPE_NEXT_EXTRACTION_PLANNED,
+                    $extraction->id
+                ));
+                if ($wait !== null) {
+                    $waiting++;
+                    continue;
+                }
+
+                $this->line("  #{$extraction->id} — {$moonLabel} — arrived {$extraction->chunk_arrival_time->diffForHumans()}"
+                    . ($owesArrival ? '' : ', Next Extraction Planned still owed'));
 
                 if ($dryRun) {
                     $dispatched++;
@@ -128,6 +169,12 @@ class CheckExtractionArrivalsCommand extends Command
                 }
 
                 try {
+                    if (!$owesArrival) {
+                        $outcome = $this->extractionService->sendNextExtractionPlannedNotification($extraction);
+                        $this->line("    Next Extraction Planned: {$outcome}");
+                        continue;
+                    }
+
                     // The chunk is here: read its ore again, from the Chunk
                     // Arrived notice once SeAT has it, and price it now, so the
                     // snapshot and the notification both carry today's figure.
@@ -154,23 +201,33 @@ class CheckExtractionArrivalsCommand extends Command
                     // duplicating the embed code.
                     //
                     // The service handles the notification_sent latch atomically
-                    // (compare-and-swap UPDATE WHERE flag=false). Two implications:
-                    //   1. We MUST NOT set the flag here. Setting it post-dispatch
-                    //      would override the service's rollback-on-failure path,
-                    //      leaving notifications silently lost on transient errors.
-                    //   2. If the service silently bails (race lost — another worker
-                    //      already claimed the latch), this counter increments
-                    //      without an actual ping firing. Minor counter imprecision
-                    //      vs the prior duplicate-ping bug it cures.
-                    $this->extractionService->sendMoonArrivalNotification($extraction);
+                    // (compare-and-swap UPDATE WHERE flag=false), and rolls it
+                    // back when every channel refuses the alert. We MUST NOT set
+                    // the flag here: setting it post-dispatch would override that
+                    // rollback, leaving notifications silently lost on transient
+                    // errors.
+                    $outcome = $this->extractionService->sendMoonArrivalNotification($extraction);
+
+                    if (in_array($outcome, [AlertDelivery::HELD, AlertDelivery::RETRYING], true)) {
+                        $waiting++;
+                        continue;
+                    }
+
+                    if ($outcome === AlertDelivery::REFUSED) {
+                        $failed++;
+                        $this->error('    Every channel refused it, trying again later.');
+                        continue;
+                    }
 
                     // Planner nudge: now that this chunk is ready, announce the
-                    // refinery's NEXT planned pull. Ordered AFTER the arrival
-                    // dispatch so it only ever follows the moon-ready ping, per
-                    // the planner contract. Has its own next_planned_sent latch
-                    // so it fires at most once per arrival; no-ops silently when
-                    // there's no plan/projection to point at.
-                    $this->extractionService->sendNextExtractionPlannedNotification($extraction);
+                    // refinery's NEXT planned pull. Only once the arrival is
+                    // announced, so it only ever follows the moon-ready ping,
+                    // per the planner contract. Has its own next_planned_sent
+                    // latch so it fires at most once per arrival; no-ops
+                    // silently when there's no plan/projection to point at.
+                    if (MoonExtraction::where('id', $extraction->id)->value('notification_sent')) {
+                        $this->extractionService->sendNextExtractionPlannedNotification($extraction);
+                    }
 
                     $dispatched++;
 
@@ -180,6 +237,7 @@ class CheckExtractionArrivalsCommand extends Command
                         'structure_id' => $extraction->structure_id,
                         'chunk_arrival_time' => $extraction->chunk_arrival_time->toIso8601String(),
                         'minutes_late' => (int) $extraction->chunk_arrival_time->diffInMinutes($now, true),
+                        'outcome' => $outcome,
                     ]);
                 } catch (\Exception $e) {
                     $failed++;
@@ -380,6 +438,12 @@ class CheckExtractionArrivalsCommand extends Command
                         if ($outcome === 'waiting') {
                             $startedWaiting++;
                             $this->line('    Waiting for the in-game notification that names who started it.');
+                        } elseif ($outcome === AlertDelivery::HELD) {
+                            $startedWaiting++;
+                            $this->line('    Held: the webhooks bound to it are switched off.');
+                        } elseif ($outcome === AlertDelivery::RETRYING) {
+                            $startedWaiting++;
+                            $this->line('    Refused last time, trying again shortly.');
                         } elseif ($outcome === 'failed') {
                             $startedFailed++;
                         } else {
@@ -397,14 +461,16 @@ class CheckExtractionArrivalsCommand extends Command
                 if (!$dryRun) {
                     $this->info("Extraction-started dispatched: {$startedDispatched}"
                         . ($startedFailed > 0 ? ", Failed: {$startedFailed}" : '')
-                        . ($startedWaiting > 0 ? ", Waiting for who started it: {$startedWaiting}" : ''));
+                        . ($startedWaiting > 0 ? ", Waiting: {$startedWaiting}" : ''));
                 }
             }
 
             if ($dryRun) {
                 $this->warn("DRY RUN — no notifications fired, no flags updated.");
             } else {
-                $this->info("Arrival dispatched: {$dispatched}" . ($failed > 0 ? ", Failed: {$failed}" : ''));
+                $this->info("Arrival dispatched: {$dispatched}"
+                    . ($failed > 0 ? ", Failed: {$failed}" : '')
+                    . ($waiting > 0 ? ", Waiting: {$waiting}" : ''));
             }
 
             return Command::SUCCESS;
@@ -413,4 +479,25 @@ class CheckExtractionArrivalsCommand extends Command
         }
     }
 
+    /**
+     * See NEXT_PLANNED_OWED_SINCE. Pass $start = false to read it without
+     * setting it.
+     */
+    private function nextPlannedOwedSince(bool $start): ?Carbon
+    {
+        $stored = $this->settingsService->getSettingForCorporation(self::NEXT_PLANNED_OWED_SINCE, null, null);
+
+        if (is_numeric($stored) && (int) $stored > 0) {
+            return Carbon::createFromTimestamp((int) $stored);
+        }
+
+        if (!$start) {
+            return null;
+        }
+
+        $now = Carbon::now();
+        $this->settingsService->updateGlobalSetting(self::NEXT_PLANNED_OWED_SINCE, $now->getTimestamp());
+
+        return $now;
+    }
 }

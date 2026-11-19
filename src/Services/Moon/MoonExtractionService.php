@@ -5,6 +5,8 @@ namespace MiningManager\Services\Moon;
 use MiningManager\Models\MoonExtraction;
 use MiningManager\Services\Configuration\SettingsManagerService;
 use MiningManager\Services\Moon\MoonOreHelper;
+use MiningManager\Services\Notification\AlertDelivery;
+use MiningManager\Services\Notification\NotificationService;
 use Seat\Eveapi\Models\Corporation\CorporationStructure;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
@@ -1181,7 +1183,7 @@ class MoonExtractionService
      * notification is check-extraction-arrivals' job every minute, so a ready
      * chunk that did not change state in updateExtractionStatuses() is normal.
      * One with no notification half an hour after it arrived is not: that
-     * command is not running, or its webhook keeps failing.
+     * command is not running, or its webhook keeps failing or is switched off.
      *
      * @return int how many were warned about
      */
@@ -1200,18 +1202,12 @@ class MoonExtractionService
         $missed = $unannounced->get();
 
         foreach ($missed as $extraction) {
-            Log::warning("Mining Manager: Extraction {$extraction->id} (moon: {$extraction->moon_name}) arrived at {$extraction->chunk_arrival_time} and its arrival notification has still not gone out. Check that mining-manager:check-extraction-arrivals is running and that its webhook works.");
+            Log::warning("Mining Manager: Extraction {$extraction->id} (moon: {$extraction->moon_name}) arrived at {$extraction->chunk_arrival_time} and its arrival notification has still not gone out. Check that mining-manager:check-extraction-arrivals is running and that its webhook works and is switched on.");
         }
 
         return $missed->count();
     }
 
-    /**
-     * Send moon arrival webhook notification
-     *
-     * @param MoonExtraction $extraction
-     * @return void
-     */
     /**
      * Send moon arrival webhook notification.
      *
@@ -1220,12 +1216,14 @@ class MoonExtractionService
      * `ReflectionClass::getMethod()->setAccessible(true)` (breaks IDE
      * refactor and bypasses PHP's accessibility model).
      *
-     * Atomic claim is handled internally — see comments inside.
+     * Atomic claim is handled internally — see comments inside. Not sent for
+     * a chunk that has expired: an alert held that long would only mislead.
      *
      * @param MoonExtraction $extraction
-     * @return void
+     * @return string an AlertDelivery outcome or wait, 'skipped' (claimed
+     *                already) or 'expired'
      */
-    public function sendMoonArrivalNotification(MoonExtraction $extraction)
+    public function sendMoonArrivalNotification(MoonExtraction $extraction): string
     {
         Log::info("Mining Manager: sendMoonArrivalNotification() called for extraction {$extraction->id}", [
             'moon_id' => $extraction->moon_id,
@@ -1234,6 +1232,18 @@ class MoonExtractionService
             'corporation_id' => $extraction->corporation_id,
             'chunk_arrival_time' => $extraction->chunk_arrival_time?->toIso8601String(),
         ]);
+
+        if ($extraction->isExpired()) {
+            Log::info("Mining Manager: Not sending the moon arrival for extraction {$extraction->id}, its chunk has expired");
+            return 'expired';
+        }
+
+        $delivery = app(AlertDelivery::class);
+        $deliveryKey = AlertDelivery::key(NotificationService::TYPE_MOON_READY, $extraction->id);
+        if ($wait = $delivery->wait(NotificationService::TYPE_MOON_READY, $deliveryKey)) {
+            Log::info("Mining Manager: Moon arrival for extraction {$extraction->id} waits ({$wait})");
+            return $wait;
+        }
 
         // ATOMIC CLAIM via compare-and-swap on notification_sent.
         //
@@ -1254,16 +1264,16 @@ class MoonExtractionService
         // claimed=1; everyone else gets 0 and bails. Same row-level pattern
         // as StructureAlertHandler's dedup latches.
         //
-        // On dispatch failure we roll the claim back so the next cron tick
-        // can retry. A permanently-broken webhook re-fires every tick
-        // until fixed — acceptable vs a stuck latch needing manual reset.
+        // When every channel refuses it, or the send throws, the claim is
+        // rolled back and the alert tried again later, waiting longer after
+        // each refusal so a broken webhook is not hit every minute.
         $claimed = MoonExtraction::where('id', $extraction->id)
             ->where('notification_sent', false)
             ->update(['notification_sent' => true]);
 
         if ($claimed === 0) {
             Log::info("Mining Manager: Skipping moon arrival notification — already claimed for extraction {$extraction->id}");
-            return;
+            return 'skipped';
         }
 
         // We won the claim — refresh local model so subsequent reads see
@@ -1311,23 +1321,33 @@ class MoonExtractionService
                 'extraction_url' => $baseUrl . '/mining-manager/moon/' . $extraction->id,
             ]);
 
+            $outcome = $delivery->outcome($results);
+            $delivery->record($deliveryKey, $outcome);
+
+            if ($outcome === AlertDelivery::REFUSED) {
+                MoonExtraction::where('id', $extraction->id)->update(['notification_sent' => false]);
+            }
+
             Log::info("Mining Manager: sendMoonArrival() returned for extraction {$extraction->id}", [
                 'moon_name' => $extraction->moon_name,
-                'result_type' => gettype($results),
-                'channels' => is_array($results) ? array_keys($results) : [],
-                'discord_sent_count' => is_array($results) ? count($results['discord']['sent'] ?? []) : 0,
-                'discord_failed_count' => is_array($results) ? count($results['discord']['failed'] ?? []) : 0,
-                'notification_sent_flag_set' => true,
+                'outcome' => $outcome,
+                'channels' => array_keys($results),
+                'discord_sent_count' => count($results['discord']['sent'] ?? []),
+                'discord_failed_count' => count($results['discord']['failed'] ?? []),
+                'notification_sent_flag_set' => $outcome !== AlertDelivery::REFUSED,
             ]);
 
+            return $outcome;
         } catch (\Exception $e) {
-            // Roll back the claim so a later cron tick can retry naturally.
             MoonExtraction::where('id', $extraction->id)->update(['notification_sent' => false]);
+            $delivery->record($deliveryKey, AlertDelivery::REFUSED);
             Log::error("Mining Manager: Failed to send moon arrival notification — claim rolled back", [
                 'extraction_id' => $extraction->id,
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
             ]);
+
+            return AlertDelivery::REFUSED;
         }
     }
 
@@ -1344,13 +1364,21 @@ class MoonExtractionService
      * Atomic claim on `extraction_started_sent` mirrors the moon-arrival
      * dedup pattern: UPDATE WHERE flag=false returns the claim count, so
      * only one worker dispatches even if two crons interleave. Rolls the
-     * claim back on dispatch failure so a later tick retries.
+     * claim back when every channel refuses it, and AlertDelivery says when
+     * to try again.
      *
      * @param MoonExtraction $extraction
-     * @return string sent, waiting, skipped (already claimed) or failed
+     * @return string sent, waiting (for who started it), held, retrying,
+     *                skipped (already claimed) or failed
      */
     public function sendExtractionStartedNotification(MoonExtraction $extraction): string
     {
+        $delivery = app(AlertDelivery::class);
+        $deliveryKey = AlertDelivery::key(NotificationService::TYPE_EXTRACTION_STARTED, $extraction->id);
+        if ($wait = $delivery->wait(NotificationService::TYPE_EXTRACTION_STARTED, $deliveryKey)) {
+            return $wait;
+        }
+
         $stillWaiting = $extraction->extraction_start_time
             && Carbon::parse($extraction->extraction_start_time)->gt(Carbon::now()->subHours(self::STARTED_BY_WAIT_HOURS));
 
@@ -1393,7 +1421,7 @@ class MoonExtractionService
             $baseUrl = rtrim(config('app.url', ''), '/');
 
             $notificationService = app(\MiningManager\Services\Notification\NotificationService::class);
-            $notificationService->sendExtractionStarted(array_filter([
+            $results = $notificationService->sendExtractionStarted(array_filter([
                 'moon_name' => $extraction->moon_name ?? 'Unknown Moon',
                 'structure_name' => $structureName,
                 'started_by' => $startedBy,
@@ -1404,11 +1432,22 @@ class MoonExtractionService
                 'extraction_url' => $baseUrl . '/mining-manager/moon/' . $extraction->id,
             ], fn ($v) => $v !== null));
 
-            Log::info("Mining Manager: fired extraction_started for extraction {$extraction->id}");
+            $outcome = $delivery->outcome($results);
+            $delivery->record($deliveryKey, $outcome);
+
+            if ($outcome === AlertDelivery::REFUSED) {
+                MoonExtraction::where('id', $extraction->id)->update(['extraction_started_sent' => false]);
+                Log::warning("Mining Manager: Every channel refused extraction_started for extraction {$extraction->id} — claim rolled back, trying again later");
+
+                return 'failed';
+            }
+
+            Log::info("Mining Manager: fired extraction_started for extraction {$extraction->id} ({$outcome})");
 
             return 'sent';
         } catch (\Exception $e) {
             MoonExtraction::where('id', $extraction->id)->update(['extraction_started_sent' => false]);
+            $delivery->record($deliveryKey, AlertDelivery::REFUSED);
             Log::error("Mining Manager: Failed to send extraction_started — claim rolled back", [
                 'extraction_id' => $extraction->id,
                 'error' => $e->getMessage(),
@@ -1428,19 +1467,27 @@ class MoonExtractionService
      * point at, it skips silently — we don't nag without something to point at.
      *
      * Latches on `next_planned_sent` of the ARRIVED extraction so each
-     * arrival triggers at most one nudge.
+     * arrival triggers at most one nudge. Rolled back when every channel
+     * refuses it, and AlertDelivery says when to try again.
      *
      * @param MoonExtraction $extraction The chunk that just became ready.
-     * @return void
+     * @return string an AlertDelivery outcome or wait, 'skipped' (claimed
+     *                already) or 'none' (nothing to point at)
      */
-    public function sendNextExtractionPlannedNotification(MoonExtraction $extraction): void
+    public function sendNextExtractionPlannedNotification(MoonExtraction $extraction): string
     {
+        $delivery = app(AlertDelivery::class);
+        $deliveryKey = AlertDelivery::key(NotificationService::TYPE_NEXT_EXTRACTION_PLANNED, $extraction->id);
+        if ($wait = $delivery->wait(NotificationService::TYPE_NEXT_EXTRACTION_PLANNED, $deliveryKey)) {
+            return $wait;
+        }
+
         $claimed = MoonExtraction::where('id', $extraction->id)
             ->where('next_planned_sent', false)
             ->update(['next_planned_sent' => true]);
 
         if ($claimed === 0) {
-            return;
+            return 'skipped';
         }
 
         try {
@@ -1452,35 +1499,43 @@ class MoonExtractionService
 
             $notificationService = app(\MiningManager\Services\Notification\NotificationService::class);
 
-            if ($message['kind'] === 'final') {
-                $notificationService->sendNextExtractionPlanned($message['payload']);
-
-                Log::info("Mining Manager: the final pull arrived on structure {$extraction->structure_id}; said so instead of a next pull");
-                return;
-            }
-
             if ($message['kind'] === 'none') {
-                // A pull started after the final one was reported when it started.
-                if ($message['reason'] === 'after_final') {
-                    return;
+                // A pull started after the final one was reported when it
+                // started. With nothing planned or projected there is nothing
+                // to point at, and the latch stays set: looking again every
+                // minute for a plan made later would announce a pull long
+                // after the chunk it follows.
+                if ($message['reason'] !== 'after_final') {
+                    Log::info("Mining Manager: next_extraction_planned skipped — no plan/projection for structure {$extraction->structure_id}");
                 }
 
-                // Nothing to announce — roll back the latch so a later tick can
-                // try again once a plan exists, and bail.
-                MoonExtraction::where('id', $extraction->id)->update(['next_planned_sent' => false]);
-                Log::info("Mining Manager: next_extraction_planned skipped — no plan/projection for structure {$extraction->structure_id}");
-                return;
+                return 'none';
             }
 
-            $notificationService->sendNextExtractionPlanned($message['payload']);
+            $outcome = $delivery->outcome($notificationService->sendNextExtractionPlanned($message['payload']));
+            $delivery->record($deliveryKey, $outcome);
 
-            Log::info("Mining Manager: fired next_extraction_planned after arrival of extraction {$extraction->id}");
+            if ($outcome === AlertDelivery::REFUSED) {
+                MoonExtraction::where('id', $extraction->id)->update(['next_planned_sent' => false]);
+                Log::warning("Mining Manager: Every channel refused next_extraction_planned for extraction {$extraction->id} — claim rolled back, trying again later");
+
+                return $outcome;
+            }
+
+            Log::info($message['kind'] === 'final'
+                ? "Mining Manager: the final pull arrived on structure {$extraction->structure_id}; said so instead of a next pull ({$outcome})"
+                : "Mining Manager: fired next_extraction_planned after arrival of extraction {$extraction->id} ({$outcome})");
+
+            return $outcome;
         } catch (\Exception $e) {
             MoonExtraction::where('id', $extraction->id)->update(['next_planned_sent' => false]);
+            $delivery->record($deliveryKey, AlertDelivery::REFUSED);
             Log::error("Mining Manager: Failed to send next_extraction_planned — claim rolled back", [
                 'extraction_id' => $extraction->id,
                 'error' => $e->getMessage(),
             ]);
+
+            return AlertDelivery::REFUSED;
         }
     }
 
@@ -1610,9 +1665,10 @@ class MoonExtractionService
      * right trigger here.
      *
      * Idempotent via the `unstable_warning_sent` flag on moon_extractions
-     * (set inside this method after a successful dispatch). The per-minute
-     * cron re-evaluates eligibility on every tick but skips rows where
-     * the flag is already true.
+     * (set inside this method once the warning reached somebody, or nobody
+     * is set up to hear it). The per-minute cron re-evaluates eligibility on
+     * every tick but skips rows where the flag is already true, so a refused
+     * or held warning is tried again until the chunk goes unstable.
      *
      * @param MoonExtraction $extraction
      * @return void
@@ -1621,6 +1677,13 @@ class MoonExtractionService
     {
         if ($extraction->unstable_warning_sent) {
             Log::info("Mining Manager: Skipping moon_chunk_unstable — already sent for extraction {$extraction->id}");
+            return;
+        }
+
+        $delivery = app(AlertDelivery::class);
+        $deliveryKey = AlertDelivery::key(NotificationService::TYPE_MOON_CHUNK_UNSTABLE, $extraction->id);
+        if ($wait = $delivery->wait(NotificationService::TYPE_MOON_CHUNK_UNSTABLE, $deliveryKey)) {
+            Log::info("Mining Manager: moon_chunk_unstable for extraction {$extraction->id} waits ({$wait})");
             return;
         }
 
@@ -1671,22 +1734,28 @@ class MoonExtractionService
                 'extraction_url' => $baseUrl . '/mining-manager/moon/' . $extraction->id,
             ]);
 
-            // Mark as sent so subsequent cron ticks don't re-fire. Set only
-            // after a successful dispatch (webhookService call returned
-            // without throwing).
-            $extraction->update(['unstable_warning_sent' => true]);
+            $outcome = $delivery->outcome($results);
+            $delivery->record($deliveryKey, $outcome);
+
+            // Marked as sent so later ticks don't re-fire, unless every
+            // channel refused it.
+            if ($outcome !== AlertDelivery::REFUSED) {
+                $extraction->update(['unstable_warning_sent' => true]);
+            }
 
             Log::info("Mining Manager: sendMoonChunkUnstable() returned for extraction {$extraction->id}", [
                 'moon_name' => $extraction->moon_name,
                 'time_until_unstable' => $timeUntilUnstable,
                 'unstable_start' => $unstableStart->toIso8601String(),
-                'channels' => is_array($results) ? array_keys($results) : [],
-                'discord_sent_count' => is_array($results) ? count($results['discord']['sent'] ?? []) : 0,
-                'discord_failed_count' => is_array($results) ? count($results['discord']['failed'] ?? []) : 0,
-                'unstable_warning_sent_flag_set' => true,
+                'outcome' => $outcome,
+                'channels' => array_keys($results),
+                'discord_sent_count' => count($results['discord']['sent'] ?? []),
+                'discord_failed_count' => count($results['discord']['failed'] ?? []),
+                'unstable_warning_sent_flag_set' => $outcome !== AlertDelivery::REFUSED,
             ]);
 
         } catch (\Exception $e) {
+            $delivery->record($deliveryKey, AlertDelivery::REFUSED);
             Log::error("Mining Manager: Failed to send moon chunk unstable notification", [
                 'extraction_id' => $extraction->id,
                 'error' => $e->getMessage(),

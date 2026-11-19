@@ -877,7 +877,9 @@ class MoonPlannerService
      * This is the "wrong scheduled moon" alert: someone fired the drill on a
      * different timer than the plan called for (or the plan went stale).
      * Latched on the plan's `mismatch_notified_at` so a standing mismatch
-     * pings once — clearing that column re-arms it.
+     * pings once — clearing that column re-arms it. Not latched while every
+     * channel refuses it or the webhooks bound to it are switched off, so a
+     * later run sends it.
      *
      * Safe to run repeatedly (called from the extraction-update cron, after
      * ESI data refreshes). Returns the number of notifications fired.
@@ -885,6 +887,7 @@ class MoonPlannerService
     public function detectAndNotifyMismatches(int $corporationId): int
     {
         $fired = 0;
+        $delivery = app(\MiningManager\Services\Notification\AlertDelivery::class);
 
         $plans = MoonExtractionPlan::forCorporation($corporationId)
             ->active()
@@ -905,9 +908,16 @@ class MoonPlannerService
 
             $nearestOffset = abs($plan->planned_arrival_time->diffInMinutes($nearest));
 
+            $type = \MiningManager\Services\Notification\NotificationService::TYPE_SCHEDULE_MISMATCH;
+            $key = \MiningManager\Services\Notification\AlertDelivery::key($type, $plan->id);
+            if ($wait = $delivery->wait($type, $key)) {
+                Log::info("Mining Manager: schedule_mismatch for plan {$plan->id} waits ({$wait})");
+                continue;
+            }
+
             try {
                 $baseUrl = rtrim(config('app.url', ''), '/');
-                app(\MiningManager\Services\Notification\NotificationService::class)->sendScheduleMismatch([
+                $result = app(\MiningManager\Services\Notification\NotificationService::class)->sendScheduleMismatch([
                     'moon_name' => $plan->moon_name ?? "Moon {$plan->moon_id}",
                     'structure_name' => $plan->structure_name ?? "Structure {$plan->structure_id}",
                     'planned_arrival_time' => $plan->planned_arrival_time->format('Y-m-d H:i') . ' EVE',
@@ -915,6 +925,14 @@ class MoonPlannerService
                     'offset_hours' => round($nearestOffset / 60, 1),
                     'planner_url' => $baseUrl . '/mining-manager/moon/planner',
                 ]);
+
+                $outcome = $delivery->outcome($result);
+                $delivery->record($key, $outcome);
+
+                if ($outcome === \MiningManager\Services\Notification\AlertDelivery::REFUSED) {
+                    Log::warning("Mining Manager: every channel refused schedule_mismatch for plan {$plan->id}; trying again on a later run");
+                    continue;
+                }
 
                 // Write through the query builder, not the model. This plan has
                 // been through loadDisplayNames(), which puts moon_name and
@@ -931,6 +949,7 @@ class MoonPlannerService
                     'offset_minutes' => (int) $nearestOffset,
                 ]);
             } catch (\Throwable $e) {
+                $delivery->record($key, \MiningManager\Services\Notification\AlertDelivery::REFUSED);
                 Log::error("Mining Manager: failed to fire schedule_mismatch for plan {$plan->id}: " . $e->getMessage());
             }
         }

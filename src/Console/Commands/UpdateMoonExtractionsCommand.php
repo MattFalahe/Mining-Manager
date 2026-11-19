@@ -5,6 +5,9 @@ namespace MiningManager\Console\Commands;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Cache;
 use MiningManager\Services\Moon\MoonExtractionService;
+use MiningManager\Services\Moon\PlannerReminders;
+use MiningManager\Services\Notification\AlertDelivery;
+use MiningManager\Services\Notification\NotificationService;
 use Seat\Eveapi\Models\Corporation\CorporationStructure;
 use Carbon\Carbon;
 
@@ -156,51 +159,62 @@ class UpdateMoonExtractionsCommand extends Command
                 $notifications = app(\MiningManager\Services\Notification\NotificationService::class);
                 $plannerUrl = rtrim(config('app.url', ''), '/') . '/mining-manager/moon/planner';
 
+                // Each of these is recorded as sent before it goes, and put
+                // back when it did not go out, so the next run sends it again.
+
                 // One message per idle refinery: each is its own job for somebody.
-                $idle = $reminders->notRescheduled($moonOwnerCorpId);
-                foreach ($idle as $refinery) {
-                    try {
-                        $notifications->sendMoonNotRescheduled($refinery + ['planner_url' => $plannerUrl]);
-                    } catch (\Throwable $e) {
-                        $this->error("Moon Not Rescheduled failed for structure {$refinery['structure_id']}: {$e->getMessage()}");
-                    }
+                $idle = 0;
+                foreach ($reminders->notRescheduled($moonOwnerCorpId) as $refinery) {
+                    $outcome = $this->deliverReminder($reminders, NotificationService::TYPE_MOON_NOT_RESCHEDULED, $refinery,
+                        fn (array $message) => $notifications->sendMoonNotRescheduled($message + ['planner_url' => $plannerUrl]));
+                    $idle += $outcome === AlertDelivery::DELIVERED ? 1 : 0;
                 }
                 if ($idle) {
-                    $this->warn('Sent ' . count($idle) . ' Moon Not Rescheduled reminder(s).');
+                    $this->warn("Sent {$idle} Moon Not Rescheduled reminder(s).");
                 }
 
                 // An extraction started on a refinery whose last pull was
                 // marked final: told to the planner's channel, once.
                 foreach ($reminders->restartedAfterFinal($moonOwnerCorpId) as $restart) {
-                    try {
-                        $notifications->sendNextExtractionPlanned($restart + ['planner_url' => $plannerUrl]);
-                    } catch (\Throwable $e) {
-                        $this->error("Restart warning failed for structure {$restart['structure_id']}: {$e->getMessage()}");
-                    }
+                    $this->deliverReminder($reminders, NotificationService::TYPE_NEXT_EXTRACTION_PLANNED, $restart,
+                        fn (array $message) => $notifications->sendNextExtractionPlanned($message + ['planner_url' => $plannerUrl]));
                 }
 
                 // A pull planned too far ahead to set up when the refinery's
                 // last chunk came in, now within reach: posted once, where the
                 // arrival message said it would be.
                 foreach ($reminders->nowStartable($moonOwnerCorpId) as $startable) {
-                    try {
-                        $notifications->sendNextExtractionPlanned($startable + ['planner_url' => $plannerUrl]);
-                    } catch (\Throwable $e) {
-                        $this->error("Start reminder failed for structure {$startable['structure_id']}: {$e->getMessage()}");
-                    }
+                    $this->deliverReminder($reminders, NotificationService::TYPE_NEXT_EXTRACTION_PLANNED, $startable,
+                        fn (array $message) => $notifications->sendNextExtractionPlanned($message + ['planner_url' => $plannerUrl]));
                 }
 
                 // One message for every refinery short of planned pulls. Only
-                // marked as sent when the send went through, so a failure is
-                // tried again on the next run rather than a day later.
+                // marked as sent once it reached somebody, or nobody is set up
+                // to hear it, so a refusal is tried again on the next run
+                // rather than a day later.
                 $planning = $reminders->needsPlanning($moonOwnerCorpId);
                 if ($planning) {
-                    try {
-                        $notifications->sendScheduleNeedsFilling($planning + ['planner_url' => $plannerUrl]);
-                        $reminders->markNeedsPlanningSent();
-                        $this->warn("Sent Moons Need Planning for {$planning['total']} refinery(ies).");
-                    } catch (\Throwable $e) {
-                        $this->error("Moons Need Planning failed: {$e->getMessage()}");
+                    $delivery = app(AlertDelivery::class);
+                    $key = AlertDelivery::key(NotificationService::TYPE_SCHEDULE_NEEDS_FILLING, $moonOwnerCorpId);
+
+                    if ($wait = $delivery->wait(NotificationService::TYPE_SCHEDULE_NEEDS_FILLING, $key)) {
+                        $this->line("Moons Need Planning waits ({$wait}).");
+                    } else {
+                        try {
+                            $outcome = $delivery->outcome($notifications->sendScheduleNeedsFilling($planning + ['planner_url' => $plannerUrl]));
+                        } catch (\Throwable $e) {
+                            $this->error("Moons Need Planning failed: {$e->getMessage()}");
+                            $outcome = AlertDelivery::REFUSED;
+                        }
+
+                        $delivery->record($key, $outcome);
+
+                        if ($outcome === AlertDelivery::REFUSED) {
+                            $this->error('Moons Need Planning was refused by every channel, trying again on the next run.');
+                        } else {
+                            $reminders->markNeedsPlanningSent();
+                            $this->warn("Sent Moons Need Planning for {$planning['total']} refinery(ies) ({$outcome}).");
+                        }
                     }
                 }
             }
@@ -282,5 +296,40 @@ class UpdateMoonExtractionsCommand extends Command
         return Command::SUCCESS;
     }
 
+    /**
+     * Send one planner reminder, putting its record back when it did not go
+     * out: held while the webhooks bound to it are switched off, or refused
+     * by every channel.
+     *
+     * @param callable $send given the message, returns the send() result
+     * @return string an AlertDelivery outcome or wait
+     */
+    private function deliverReminder(PlannerReminders $reminders, string $type, array $entry, callable $send): string
+    {
+        $delivery = app(AlertDelivery::class);
+        $key = AlertDelivery::key($type, ($entry['variant'] ?? 'reminder') . ':' . $entry['structure_id']);
 
+        if ($wait = $delivery->wait($type, $key)) {
+            $reminders->undo($entry);
+            $this->line("{$type} for structure {$entry['structure_id']} waits ({$wait}).");
+
+            return $wait;
+        }
+
+        try {
+            $outcome = $delivery->outcome($send(PlannerReminders::message($entry)));
+        } catch (\Throwable $e) {
+            $this->error("{$type} failed for structure {$entry['structure_id']}: {$e->getMessage()}");
+            $outcome = AlertDelivery::REFUSED;
+        }
+
+        $delivery->record($key, $outcome);
+
+        if ($outcome === AlertDelivery::REFUSED) {
+            $reminders->undo($entry);
+            $this->error("{$type} for structure {$entry['structure_id']} was refused by every channel, trying again on the next run.");
+        }
+
+        return $outcome;
+    }
 }

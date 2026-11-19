@@ -43,6 +43,12 @@ class PlannerReminders
 
     protected const RARITY_RANK = ['R64' => 5, 'R32' => 4, 'R16' => 3, 'R8' => 2, 'R4' => 1];
 
+    /**
+     * Where an entry keeps its record as it was before this pass, for undo().
+     * Taken off by message().
+     */
+    protected const WAS = '_was';
+
     protected MoonPlannerService $planner;
     protected SettingsManagerService $settings;
     protected RefineryService $refineries;
@@ -154,12 +160,14 @@ class PlannerReminders
                 continue;
             }
 
+            $was = $this->was($alert);
             $alert->started_at = $arrival;
             $alert->last_at = $now;
             $alert->count = $alert->count + 1;
             $alert->save();
 
             $reminders[] = $this->refineries->names($structureId) + array_filter([
+                self::WAS => $was + ['id' => $alert->id],
                 'structure_id' => $structureId,
                 'arrived_at' => $arrival->format('Y-m-d H:i'),
                 'hours_since' => (int) floor($idleFor),
@@ -239,12 +247,14 @@ class PlannerReminders
                 continue;
             }
 
+            $was = $this->was($alert);
             $alert->started_at = $plan->planned_arrival_time;
             $alert->last_at = $now;
             $alert->count = (int) $alert->count + 1;
             $alert->save();
 
             $messages[] = $this->refineries->names($structureId) + array_filter([
+                self::WAS => $was + ['id' => $alert->id],
                 'variant' => 'startable',
                 'structure_id' => $structureId,
                 'planned_arrival_time' => $plan->planned_arrival_time->format('Y-m-d H:i'),
@@ -373,12 +383,14 @@ class PlannerReminders
                 continue;
             }
 
+            $was = $this->was($alert);
             $alert->started_at = $final['restarted'];
             $alert->last_at = $now;
             $alert->count = (int) $alert->count + 1;
             $alert->save();
 
             $messages[] = $this->refineries->names($structureId) + [
+                self::WAS => $was + ['id' => $alert->id],
                 'variant' => 'restarted',
                 'structure_id' => $structureId,
                 'chunk_arrival_time' => $final['restarted']->format('Y-m-d H:i'),
@@ -387,6 +399,55 @@ class PlannerReminders
         }
 
         return $messages;
+    }
+
+    /**
+     * An entry from notRescheduled(), nowStartable() or restartedAfterFinal()
+     * as it is sent, without what undo() needs.
+     */
+    public static function message(array $entry): array
+    {
+        unset($entry[self::WAS]);
+
+        return $entry;
+    }
+
+    /**
+     * Put an entry's record back as it was before this pass, for one that did
+     * not go out: every channel refused it, or the webhooks bound to it are
+     * switched off. The next pass finds it due again.
+     */
+    public function undo(array $entry): void
+    {
+        $was = $entry[self::WAS] ?? null;
+        if (!is_array($was) || empty($was['id'])) {
+            return;
+        }
+
+        if (!$was['existed']) {
+            RefineryAlert::where('id', $was['id'])->delete();
+
+            return;
+        }
+
+        RefineryAlert::where('id', $was['id'])->update([
+            'started_at' => $was['started_at'],
+            'last_at' => $was['last_at'],
+            'count' => $was['count'],
+        ]);
+    }
+
+    /**
+     * A record's stored values, before this pass changes them.
+     */
+    protected function was(RefineryAlert $alert): array
+    {
+        return [
+            'existed' => $alert->exists,
+            'started_at' => $alert->getRawOriginal('started_at'),
+            'last_at' => $alert->getRawOriginal('last_at'),
+            'count' => $alert->getRawOriginal('count'),
+        ];
     }
 
     /**

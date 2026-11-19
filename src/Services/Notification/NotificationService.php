@@ -1862,8 +1862,7 @@ class NotificationService
      * For a check that runs every few hours and only counts something as said
      * once it was: asking first keeps it from writing a skipped send to the
      * notification log on every run while nobody has bound the alert. Only for
-     * corporation-scoped broadcasts whose webhook switch carries the type's
-     * own name.
+     * corporation-scoped broadcasts.
      */
     public function reachesAnyone(string $type): bool
     {
@@ -1885,7 +1884,52 @@ class NotificationService
         }
 
         return $this->hasAnyEnabledWebhook()
-            && $this->getMoonOwnerScopedWebhooks($type)->isNotEmpty();
+            && $this->getMoonOwnerScopedWebhooks($this->webhookSwitch($type))->isNotEmpty();
+    }
+
+    /**
+     * Whether an alert should wait rather than count as said: nothing would
+     * hear it now, and a webhook bound to it in the Moon Owner Corporation's
+     * scope is switched off. A type switched off, or one no webhook was ever
+     * bound to, has nobody to wait for.
+     *
+     * For corporation-scoped broadcasts, like reachesAnyone().
+     */
+    public function heldFor(string $type): bool
+    {
+        if (!$this->isTypeGloballyEnabled($type) || $this->reachesAnyone($type)) {
+            return false;
+        }
+
+        $moonOwnerCorpId = $this->settings->getTaxProgramCorporationId();
+
+        try {
+            return \MiningManager\Models\WebhookConfiguration::where('is_enabled', false)
+                ->forEvent($this->webhookSwitch($type))
+                ->where(function ($query) use ($moonOwnerCorpId) {
+                    $query->whereNull('corporation_id');
+                    if ($moonOwnerCorpId !== null) {
+                        $query->orWhere('corporation_id', $moonOwnerCorpId);
+                    }
+                })
+                ->exists();
+        } catch (\Throwable $e) {
+            Log::warning('Notifications: could not look for switched-off webhooks, so nothing is held', [
+                'notification_type' => $type,
+                'error' => $e->getMessage(),
+            ]);
+
+            return false;
+        }
+    }
+
+    /**
+     * The webhook switch a type is bound by. Moon Ready kept the switch's
+     * original name, moon_arrival; every other broadcast's carries its own.
+     */
+    protected function webhookSwitch(string $type): string
+    {
+        return $type === self::TYPE_MOON_READY ? 'moon_arrival' : $type;
     }
 
     /**
