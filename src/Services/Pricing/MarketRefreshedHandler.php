@@ -33,7 +33,7 @@ class MarketRefreshedHandler
 
         // A worker lives for hours and this may be the first it hears of a
         // market change.
-        $settings->forgetMcMarket();
+        $settings->forgetMcPreference();
         $pricing = $settings->getPricingSettings();
 
         if (($pricing['price_provider'] ?? null) !== PriceProviderService::PROVIDER_MANAGER_CORE) {

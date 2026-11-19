@@ -3586,7 +3586,7 @@ class DiagnosticController extends Controller
                 // Source of truth for MM's market is MC's per-plugin pricing
                 // preference. SettingsManagerService::getPricingSettings()
                 // already resolves this via the bridge — see
-                // SettingsManagerService::resolveMcMarket.
+                // SettingsManagerService::resolveMcPreference.
                 $mcMarket = $pricingSettings['manager_core_market'];
                 $result['manager_core'] = [
                     'market' => $mcMarket,

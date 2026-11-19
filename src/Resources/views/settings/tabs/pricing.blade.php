@@ -267,7 +267,7 @@
                         </button>
                     @endif
                     <div class="text-muted small mt-2">
-                        Open <strong>Manager Core → Pricing Preferences</strong> to change market or price type for Mining Manager. A market saved there reaches Mining Manager's prices once Manager Core has fetched it, at the latest at the next scheduled price refresh.
+                        Open <strong>Manager Core → Pricing Preferences</strong> to change market or price type for Mining Manager. A price type saved there applies straight away. A market saved there reaches Mining Manager's prices once Manager Core has fetched it, at the latest at the next scheduled price refresh.
                     </div>
                 </div>
 
@@ -286,13 +286,13 @@
                 <select class="form-control @error('price_type') is-invalid @enderror"
                         id="price_type"
                         name="price_type">
-                    <option value="sell" {{ (isset($settings['pricing']['price_type']) && $settings['pricing']['price_type'] == 'sell') || !isset($settings['pricing']['price_type']) ? 'selected' : '' }}>
+                    <option value="sell" {{ (isset($settings['pricing']['local_price_type']) && $settings['pricing']['local_price_type'] == 'sell') || !isset($settings['pricing']['local_price_type']) ? 'selected' : '' }}>
                         Sell Orders (Lowest sell price)
                     </option>
-                    <option value="buy" {{ (isset($settings['pricing']['price_type']) && $settings['pricing']['price_type'] == 'buy') ? 'selected' : '' }}>
+                    <option value="buy" {{ (isset($settings['pricing']['local_price_type']) && $settings['pricing']['local_price_type'] == 'buy') ? 'selected' : '' }}>
                         Buy Orders (Highest buy price)
                     </option>
-                    <option value="average" {{ (isset($settings['pricing']['price_type']) && $settings['pricing']['price_type'] == 'average') ? 'selected' : '' }}>
+                    <option value="average" {{ (isset($settings['pricing']['local_price_type']) && $settings['pricing']['local_price_type'] == 'average') ? 'selected' : '' }}>
                         Average (Mean of buy and sell)
                     </option>
                 </select>

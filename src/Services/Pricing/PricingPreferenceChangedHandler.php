@@ -21,8 +21,10 @@ use MiningManager\Services\Configuration\SettingsManagerService;
  * market is refreshed (MarketRefreshedHandler), or at the next scheduled
  * `mining-manager:cache-prices` on a Manager Core that does not say so.
  *
- * The price type on that page is not read: Buy, Sell or Average is Mining
- * Manager's own setting.
+ * Buy, Sell or Average on that page is the price type Mining Manager values
+ * at while Manager Core is the provider. Every side is already in
+ * mining_price_cache, so a change there needs no fetch, only the cached
+ * valuations dropped.
  *
  * Failure handling: nothing here may break the operator's save, so every
  * failure is logged and left to the scheduled refresh.
@@ -48,15 +50,22 @@ class PricingPreferenceChangedHandler
 
         $settings = app(SettingsManagerService::class);
 
-        // The market was read once already while this request booted, before
-        // the save. Anything pricing from here on has to ask again.
-        $settings->forgetMcMarket();
+        // The preference was read once already while this request booted,
+        // before the save. Anything pricing from here on has to ask again.
+        $settings->forgetMcPreference();
 
         $provider = $settings->getPricingSettings()['price_provider'] ?? null;
         if ($provider !== PriceProviderService::PROVIDER_MANAGER_CORE) {
             Log::info('[MM] pricing.preference_changed received, but prices do not come from Manager Core. Nothing to do.');
 
             return;
+        }
+
+        $oldType = SettingsManagerService::priceTypeFromManagerCore($payload['old_price_type'] ?? null);
+        $newType = SettingsManagerService::priceTypeFromManagerCore($payload['new_price_type'] ?? null);
+        if ($newType !== null && $newType !== $oldType) {
+            $this->forgetValuations();
+            Log::info("[MM] Price type changed in Manager Core, now {$newType}. Values from here on use it.");
         }
 
         $oldMarket = (string) ($payload['old_market'] ?? '');
@@ -91,6 +100,19 @@ class PricingPreferenceChangedHandler
             } catch (\Throwable $e) {
                 Log::debug('[MM] Could not drop the old Manager Core market subscriptions: ' . $e->getMessage());
             }
+        }
+    }
+
+    /**
+     * The same caches a save of the pricing settings drops.
+     */
+    private function forgetValuations(): void
+    {
+        try {
+            cache()->tags(['mining-manager', 'prices'])->flush();
+            cache()->tags(['mining-manager', 'moon-values'])->flush();
+        } catch (\Throwable $e) {
+            // A cache driver without tags has nothing tagged to drop.
         }
     }
 }

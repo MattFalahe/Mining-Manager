@@ -1063,10 +1063,23 @@ class SettingsManagerService
      */
     public function getPricingSettings(): array
     {
+        $provider = $this->getSetting('price_provider', config('mining-manager.general.price_provider', 'seat'));
+        $localPriceType = $this->getSetting('pricing.price_type', 'sell');
+        $mcPreference = $this->resolveMcPreference();
+
         return [
             // Price provider (checks settings first, falls back to ENV)
-            'price_provider' => $this->getSetting('price_provider', config('mining-manager.general.price_provider', 'seat')),
-            'price_type' => $this->getSetting('pricing.price_type', 'sell'),
+            'price_provider' => $provider,
+
+            // With Manager Core as the provider, Buy, Sell or Average is set
+            // on Manager Core's Pricing Preferences page and the field here is
+            // hidden, so the hidden value must not decide it.
+            'price_type' => ($provider === 'manager-core' ? $mcPreference['price_type'] : null) ?? $localPriceType,
+
+            // What the settings form shows and what Mining Manager hands
+            // Manager Core as its default.
+            'local_price_type' => $localPriceType,
+
             'cache_duration' => $this->getSetting('pricing.cache_duration', 240),
             'fallback_to_jita' => $this->getSetting('pricing.fallback_to_jita', true),
 
@@ -1100,7 +1113,7 @@ class SettingsManagerService
             // installs that hadn't run the migration yet, the row is
             // unused — this method is the only reader and it now consults
             // MC's pref first.
-            'manager_core_market' => $this->resolveMcMarket(),
+            'manager_core_market' => $mcPreference['market'],
 
             // Refining settings
             'refining_efficiency' => $this->getSetting('pricing.refining_efficiency', 87.5),
@@ -1108,13 +1121,8 @@ class SettingsManagerService
     }
 
     /**
-     * Resolve the market MM should read prices at, when the price provider
-     * is set to Manager Core.
-     *
-     * Single point of bridge integration so every consumer of
-     * getPricingSettings()['manager_core_market'] transparently sees the
-     * operator-configured market without each one calling the bridge
-     * independently.
+     * Mining Manager's preference in Manager Core: the market prices are read
+     * at and, when set to one Mining Manager knows, the price type.
      *
      * Remembered for a minute, since getPricingSettings() can be invoked many
      * times during a single page render (Dashboard / Diagnostic / Moon views
@@ -1122,49 +1130,67 @@ class SettingsManagerService
      * and would otherwise price at the market it started with long after the
      * operator changed it in Manager Core.
      *
-     * @return string Market key (e.g. 'jita', 'c-j6mt'). Falls back to
-     *                'jita' if MC's bridge call fails for any reason
-     *                (older MC version without the capability, bridge
-     *                boot failure, no preference row registered yet).
+     * @return array{market: string, price_type: ?string} market falls back to
+     *         'jita' and price_type to null when Manager Core has no answer
+     *         (not installed, a version without the capability, or no
+     *         preference registered yet).
      */
-    protected function resolveMcMarket(): string
+    protected function resolveMcPreference(): array
     {
-        if (self::$mcMarket !== null && time() - self::$mcMarketReadAt < 60) {
-            return self::$mcMarket;
+        if (self::$mcPreference !== null && time() - self::$mcPreferenceReadAt < 60) {
+            return self::$mcPreference;
         }
 
-        $market = 'jita';
+        $preference = ['market' => 'jita', 'price_type' => null];
 
         try {
             if (class_exists('ManagerCore\\Services\\PluginBridge')) {
                 $bridge = app(\ManagerCore\Services\PluginBridge::class);
                 $pref = $bridge->call('ManagerCore', 'pricing.getPreferenceForPlugin', 'mining-manager');
-                if (is_array($pref) && !empty($pref['market'])) {
-                    $market = (string) $pref['market'];
+                if (is_array($pref)) {
+                    if (!empty($pref['market'])) {
+                        $preference['market'] = (string) $pref['market'];
+                    }
+                    $preference['price_type'] = self::priceTypeFromManagerCore($pref['price_type'] ?? null);
                 }
             }
         } catch (\Throwable $e) {
-            // Bridge call failed — keep the 'jita' literal. No log spam;
-            // this is expected on older MC versions without the capability.
+            // Bridge call failed, keep the defaults. No log spam; this is
+            // expected on older MC versions without the capability.
         }
 
-        self::$mcMarket = $market;
-        self::$mcMarketReadAt = time();
+        self::$mcPreference = $preference;
+        self::$mcPreferenceReadAt = time();
 
-        return $market;
+        return $preference;
     }
 
     /**
-     * Ask Manager Core for the market again on the next read, for a caller
-     * that has just been told it changed.
+     * Manager Core calls the midpoint 'avg' (older versions stored whatever a
+     * plugin registered, so 'average' and 'split' turn up too). Anything else
+     * gives null, and the local setting is used.
      */
-    public function forgetMcMarket(): void
+    public static function priceTypeFromManagerCore($priceType): ?string
     {
-        self::$mcMarket = null;
+        return match (strtolower(trim((string) $priceType))) {
+            'sell' => 'sell',
+            'buy' => 'buy',
+            'avg', 'average', 'split' => 'average',
+            default => null,
+        };
     }
 
-    private static ?string $mcMarket = null;
-    private static int $mcMarketReadAt = 0;
+    /**
+     * Ask Manager Core for the preference again on the next read, for a
+     * caller that has just been told it changed.
+     */
+    public function forgetMcPreference(): void
+    {
+        self::$mcPreference = null;
+    }
+
+    private static ?array $mcPreference = null;
+    private static int $mcPreferenceReadAt = 0;
 
     /**
      * Update pricing settings

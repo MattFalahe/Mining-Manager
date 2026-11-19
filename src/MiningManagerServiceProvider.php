@@ -717,7 +717,7 @@ class MiningManagerServiceProvider extends AbstractSeatPlugin
             // silently switch to 'sell'.
             try {
                 if (class_exists(\ManagerCore\Services\PluginBridge::class)) {
-                    $priceType = $pricingSettings['price_type'] ?? 'sell';
+                    $priceType = $pricingSettings['local_price_type'] ?? 'sell';
                     $bridge = $this->app->make(\ManagerCore\Services\PluginBridge::class);
                     $bridge->call(
                         'ManagerCore',

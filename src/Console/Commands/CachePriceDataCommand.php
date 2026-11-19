@@ -175,7 +175,7 @@ class CachePriceDataCommand extends Command
         // The market comes from SettingsManagerService now — which
         // resolves manager_core_market by calling MC's
         // pricing.getPreferenceForPlugin bridge capability under the hood
-        // (see SettingsManagerService::resolveMcMarket). So the operator's
+        // (see SettingsManagerService::resolveMcPreference). So the operator's
         // change in MC's Pricing Preferences UI propagates here
         // automatically without any direct bridge call in this command.
         //
