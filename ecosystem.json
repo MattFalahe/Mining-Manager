@@ -10,19 +10,24 @@
     ],
     "subscribes": [
         { "topic": "pricing.market_refreshed", "handler": "pricing.market_refreshed_handler" },
-        { "topic": "pricing.preference_changed", "handler": "pricing.preference_changed_handler" },
-        { "topic": "structure.alert.*", "handler": "structure.notify_alert" }
+        { "topic": "pricing.preference_changed", "handler": "pricing.preference_changed_handler" }
     ],
     "capabilities": {
         "provides": [
-            "mining.getCharacterRecentMining", "mining.getCharacterTaxStatus", "mining.metenox.cargoSnapshot",
-            "pricing.market_refreshed_handler", "pricing.preference_changed_handler", "structure.notify_alert"
+            "mining.getCharacterRecentMining", "mining.getCharacterTaxStatus",
+            "pricing.market_refreshed_handler", "pricing.preference_changed_handler"
         ],
         "calls": [
             "ManagerCore:pricing.getPreferenceForPlugin", "ManagerCore:pricing.getPrices", "ManagerCore:pricing.preferencesUrl",
             "ManagerCore:pricing.registerPreference", "ManagerCore:pricing.subscribeTypes", "ManagerCore:pricing.unsubscribeTypes",
             "structure-manager:fuel.estimate"
         ]
+    },
+    "when_installed": {
+        "structure-manager": {
+            "provides": ["mining.metenox.cargoSnapshot", "structure.notify_alert"],
+            "subscribes": [{ "topic": "structure.alert.*", "handler": "structure.notify_alert" }]
+        }
     },
     "routes": { "serves": [], "uses": [] }
 }
