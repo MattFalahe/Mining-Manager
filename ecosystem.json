@@ -1,0 +1,28 @@
+{
+    "plugin": "mining-manager",
+    "manager_core": { "relation": "optional", "minimum": "1.1.0" },
+    "migration_identifier": "mining_manager",
+    "publishes": [
+        "mining.tax_created", "mining.tax_paid", "mining.tax_overdue", "mining.tax_written_off", "mining.tax_reopened",
+        "mining.invoice_sent", "mining.theft_detected", "mining.theft_resolved", "mining.jackpot_detected",
+        "mining.event_created", "mining.event_started", "mining.event_completed", "mining.report_generated",
+        "mining.extraction_ready", "mining.extraction_unstable", "mining.extraction_expired"
+    ],
+    "subscribes": [
+        { "topic": "pricing.market_refreshed", "handler": "pricing.market_refreshed_handler" },
+        { "topic": "pricing.preference_changed", "handler": "pricing.preference_changed_handler" },
+        { "topic": "structure.alert.*", "handler": "structure.notify_alert" }
+    ],
+    "capabilities": {
+        "provides": [
+            "mining.getCharacterRecentMining", "mining.getCharacterTaxStatus", "mining.metenox.cargoSnapshot",
+            "pricing.market_refreshed_handler", "pricing.preference_changed_handler", "structure.notify_alert"
+        ],
+        "calls": [
+            "ManagerCore:pricing.getPreferenceForPlugin", "ManagerCore:pricing.getPrices", "ManagerCore:pricing.preferencesUrl",
+            "ManagerCore:pricing.registerPreference", "ManagerCore:pricing.subscribeTypes", "ManagerCore:pricing.unsubscribeTypes",
+            "structure-manager:fuel.estimate"
+        ]
+    },
+    "routes": { "serves": [], "uses": [] }
+}

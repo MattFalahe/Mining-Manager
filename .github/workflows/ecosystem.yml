@@ -1,0 +1,12 @@
+name: Ecosystem
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  ecosystem:
+    uses: MattFalahe/manager-core/.github/workflows/ecosystem.yml@dev
