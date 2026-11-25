@@ -375,4 +375,14 @@ return [
     'tax_reason_after_bill_help' => 'Reported after this period was invoiced. The invoice had already gone out, so this mining is recorded but not taxed.',
     'tax_part_after_bill' => 'Part arrived after invoicing',
     'tax_part_after_bill_help' => 'Some of this was reported after this period was invoiced. Only the part on the invoice is taxed, so the tax is less than the rate gives on the whole value. The rest is listed under Not taxed.',
+
+    // My Performance
+    'my_performance_intro' => 'The charts from Analytics, for your own characters only.',
+    'my_corporations_all' => 'All my corporations',
+    'my_characters_all' => 'All my characters',
+    'character_activity' => 'Character Activity',
+    'note_character_activity' => 'Each of your characters, by ISK value mined in this range.',
+    'note_my_weekly_activity' => 'Average ISK value mined on each day of the week. By Character splits the totals between your characters.',
+    'by_character' => 'By Character',
+    'my_performance_empty' => 'Your characters mined nothing that matches these filters in this range.',
 ];

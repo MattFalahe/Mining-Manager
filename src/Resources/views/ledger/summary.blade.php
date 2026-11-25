@@ -102,6 +102,11 @@
                 </a>
             </li>
             <li class="nav-item">
+                <a class="nav-link" href="{{ route('mining-manager.ledger.my-performance') }}">
+                    <i class="fas fa-chart-line"></i> {{ trans('mining-manager::menu.my_performance') }}
+                </a>
+            </li>
+            <li class="nav-item">
                 <a class="nav-link {{ Request::is('*/ledger/reprocessing') ? 'active' : '' }}" href="{{ route('mining-manager.ledger.reprocessing') }}">
                     <i class="fas fa-recycle"></i> {{ trans('mining-manager::ledger.reprocessing_calculator') }}
                 </a>

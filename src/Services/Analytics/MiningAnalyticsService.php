@@ -232,16 +232,19 @@ class MiningAnalyticsService
      * @param Carbon $endDate
      * @param int $limit
      * @param int|null $corporationId Filter by miner's corporation
+     * @param ChartFilter|null $filter Limits the miners to its characters when it names any
      * @return \Illuminate\Support\Collection
      */
-    public function getTopMiners(Carbon $startDate, Carbon $endDate, int $limit = 10, ?int $corporationId = null)
+    public function getTopMiners(Carbon $startDate, Carbon $endDate, int $limit = 10, ?int $corporationId = null, ?ChartFilter $filter = null)
     {
-        $cacheKey = "mining-analytics:top-miners:{$startDate->format('Ymd')}:{$endDate->format('Ymd')}:{$limit}" . $this->corpCacheKey($corporationId);
+        $filter = $filter ?? ChartFilter::none();
+        $cacheKey = "mining-analytics:top-miners:{$startDate->format('Ymd')}:{$endDate->format('Ymd')}:{$limit}" . $this->corpCacheKey($corporationId) . $filter->cacheKey();
         $cacheDuration = config('mining-manager.performance.query_cache_duration', 15);
 
-        return app(CharacterNames::class)->remember($cacheKey, now()->addMinutes($cacheDuration), function () use ($startDate, $endDate, $limit, $corporationId) {
+        return app(CharacterNames::class)->remember($cacheKey, now()->addMinutes($cacheDuration), function () use ($startDate, $endDate, $limit, $corporationId, $filter) {
             $query = MiningLedger::whereBetween('mining_ledger.date', [$startDate, $endDate]);
             $this->applyCorporationFilter($query, $corporationId);
+            $filter->applyTo($query);
             $miners = $query->select(
                     'mining_ledger.character_id',
                     DB::raw('SUM(mining_ledger.quantity) as total_quantity'),
@@ -893,10 +896,22 @@ class MiningAnalyticsService
                 return array_sum($b['data']) - array_sum($a['data']);
             });
 
+            // The same per character, for a page that shows one player's own
+            // characters, where an account grouping would be a single bar.
+            $charDatasets = [];
+            foreach ($characterTotals as $charId => $dowValues) {
+                $charDatasets[] = [
+                    'label' => $charNames[$charId] ?? "Character {$charId}",
+                    'data' => $dowValues,
+                ];
+            }
+            usort($charDatasets, fn ($a, $b) => array_sum($b['data']) <=> array_sum($a['data']));
+
             return [
                 'summary' => $result,
                 'day_labels' => $dayNames,
                 'by_account' => $acctDatasets,
+                'by_character' => $charDatasets,
             ];
         });
     }

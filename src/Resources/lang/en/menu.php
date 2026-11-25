@@ -11,6 +11,7 @@ return [
     'mining_ledger' => 'Mining Ledger',
     'view_ledger' => 'View Ledger',
     'my_mining' => 'My Mining',
+    'my_performance' => 'My Performance',
     'process_ledger' => 'Process Ledger',
     
     // Tax Management

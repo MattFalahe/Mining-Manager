@@ -97,6 +97,12 @@ Route::group([
             'middleware' => 'can:mining-manager.member',
         ]);
 
+        Route::get('/my-performance', [
+            'as' => 'mining-manager.ledger.my-performance',
+            'uses' => 'MyPerformanceController@index',
+            'middleware' => 'can:mining-manager.member',
+        ]);
+
         Route::get('/reprocessing', [
             'as' => 'mining-manager.ledger.reprocessing',
             'uses' => 'LedgerController@reprocessingCalculator',
