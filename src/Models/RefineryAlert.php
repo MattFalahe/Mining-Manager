@@ -36,6 +36,13 @@ class RefineryAlert extends Model
      */
     public const KIND_START_WINDOW = 'start_window';
 
+    /**
+     * A planned pull nobody started in time. started_at is the latest planned
+     * arrival announced, so each missed pull is announced once and an older
+     * one never again.
+     */
+    public const KIND_START_MISSED = 'start_missed';
+
     protected $table = 'mining_manager_refinery_alerts';
 
     protected $fillable = [

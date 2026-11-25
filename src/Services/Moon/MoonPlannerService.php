@@ -29,6 +29,7 @@ use Carbon\Carbon;
  *     request, greedily spread them so none violate the gap.
  *   - reconcile(): pair planned slots with real ESI extractions once they
  *     appear, recording variance.
+ *   - markMissed(): planned slots nobody started in game in time.
  *
  * Which structures count as refineries, and everything else about them, is
  * RefineryService's job; the planner only asks it.
@@ -65,6 +66,14 @@ class MoonPlannerService
      */
     public const MAX_EXTRACTION_DAYS = 56;
     public const MIN_EXTRACTION_DAYS = 6;
+
+    /**
+     * How long after its latest start a planned pull with nothing seen in game
+     * is called missed. An extraction set just before the deadline can take a
+     * few hours to reach SeAT: ESI caches it for half an hour and SeAT
+     * refreshes each corporation in turn.
+     */
+    public const MISSED_AFTER_HOURS = 4;
 
     protected SettingsManagerService $settings;
     protected RefineryService $refineries;
@@ -782,8 +791,10 @@ class MoonPlannerService
         $gap = $this->getMinGapHours();
         $now = Carbon::now();
 
+        // A missed pull is matched too: one set in game just in time can reach
+        // SeAT later than markMissed() waits for, and then it was not missed.
         $plans = MoonExtractionPlan::forCorporation($corporationId)
-            ->where('status', MoonExtractionPlan::STATUS_PLANNED)
+            ->whereIn('status', [MoonExtractionPlan::STATUS_PLANNED, MoonExtractionPlan::STATUS_MISSED])
             ->orderBy('planned_arrival_time')
             ->get();
 
@@ -819,11 +830,24 @@ class MoonPlannerService
                 continue;
             }
 
+            // Somebody set a missed pull late, for about the same time. That
+            // is a pull gone ahead off-plan, so it goes back to planned and the
+            // schedule mismatch alert and its Realign / Ignore take it from
+            // here.
+            if ($plan->status === MoonExtractionPlan::STATUS_MISSED && $this->offPlanArrival($plan) !== null) {
+                MoonExtractionPlan::where('id', $plan->id)
+                    ->where('status', MoonExtractionPlan::STATUS_MISSED)
+                    ->update(['status' => MoonExtractionPlan::STATUS_PLANNED]);
+                continue;
+            }
+
             // Only supersede a plan that's well in the past AND has no real
             // pull anywhere near its cycle — i.e. genuinely abandoned. A past
             // plan WITH a nearby (but off-tolerance) actual is a scheduling
             // mismatch we deliberately keep active so the planner can flag it.
-            if ($plan->planned_arrival_time->lt($now->copy()->subHours($cycleWindow))) {
+            // A missed pull stays missed: that is the record of what happened.
+            if ($plan->status === MoonExtractionPlan::STATUS_PLANNED
+                && $plan->planned_arrival_time->lt($now->copy()->subHours($cycleWindow))) {
                 $nearbyActual = $this->coveredWithin(
                     $this->existingActualTimes($plan->structure_id),
                     $plan->planned_arrival_time,
@@ -837,6 +861,89 @@ class MoonPlannerService
         }
 
         return $summary;
+    }
+
+    /**
+     * Mark the planned pulls nobody started in game in time as missed.
+     *
+     * A pull is missed once its latest start (the shortest extraction before
+     * its arrival) is MISSED_AFTER_HOURS gone with no extraction seen on its
+     * refinery anywhere in its cycle. One with a real pull near it is either
+     * that pull, which reconcile() confirms, or a pull set on another timer,
+     * which the schedule mismatch alert is for.
+     *
+     * Only a pull whose arrival is still ahead is marked. Run every two hours,
+     * that catches each one days before it was due; a pull already past its
+     * arrival when this first runs is left as it was.
+     *
+     * Each one is written to the planner history with nobody named. Returns
+     * how many were marked.
+     */
+    public function markMissed(int $corporationId, ?Carbon $now = null): int
+    {
+        $now = $now ?? Carbon::now();
+        $cycleWindow = self::CYCLE_MATCH_WINDOW_HOURS * 60;
+
+        $plans = MoonExtractionPlan::forCorporation($corporationId)
+            ->where('status', MoonExtractionPlan::STATUS_PLANNED)
+            ->where('planned_arrival_time', '>', $now)
+            ->where('planned_arrival_time', '<=', $now->copy()->addDays(self::MIN_EXTRACTION_DAYS)->subHours(self::MISSED_AFTER_HOURS))
+            ->orderBy('planned_arrival_time')
+            ->get();
+
+        $marked = 0;
+
+        foreach ($plans as $plan) {
+            if ($this->coveredWithin($this->existingActualTimes((int) $plan->structure_id), $plan->planned_arrival_time, $cycleWindow)) {
+                continue;
+            }
+
+            // Guarded on the status, so a page load and the scheduled run at
+            // the same moment record it once.
+            $changed = MoonExtractionPlan::where('id', $plan->id)
+                ->where('status', MoonExtractionPlan::STATUS_PLANNED)
+                ->update(['status' => MoonExtractionPlan::STATUS_MISSED]);
+
+            if ($changed === 0) {
+                continue;
+            }
+
+            [, $latestStart] = self::startWindow($plan->planned_arrival_time);
+            $names = $this->refineries->names((int) $plan->structure_id);
+
+            \MiningManager\Models\MoonExtractionPlanAudit::record([
+                'corporation_id' => $corporationId,
+                'plan_id' => $plan->id,
+                'structure_id' => $plan->structure_id,
+                'moon_id' => $plan->moon_id,
+                'action' => \MiningManager\Models\MoonExtractionPlanAudit::ACTION_MISSED,
+                'old_arrival' => $plan->planned_arrival_time,
+                'detail' => ($names['moon_name'] ?? 'Unknown Moon') . ' (' . $names['structure_name'] . '), not started in game by '
+                    . $latestStart->format('Y-m-d H:i') . ' EVE',
+            ]);
+
+            $marked++;
+        }
+
+        if ($marked > 0) {
+            Log::info("Mining Manager: marked {$marked} planned pull(s) missed", ['corporation_id' => $corporationId]);
+        }
+
+        return $marked;
+    }
+
+    /**
+     * The next pull on a refinery that can still happen: running in game, or
+     * far enough ahead to start one in time. What every reminder and the
+     * arrival message call its next pull, so none of them points at a time
+     * nobody can make any more.
+     */
+    public function nextPlan(int $structureId, ?Carbon $now = null): ?MoonExtractionPlan
+    {
+        return MoonExtractionPlan::where('structure_id', $structureId)
+            ->stillPossible($now ?? Carbon::now())
+            ->orderBy('planned_arrival_time')
+            ->first();
     }
 
     /**
@@ -961,13 +1068,12 @@ class MoonPlannerService
      * Number of still-upcoming planned pulls for a refinery across the whole
      * horizon (not just one month). Powers the sidebar "planned N×" / "not
      * planned" indicator so operators can spot a skipped moon when planning a
-     * year out.
+     * year out. A pull too close to start any more is not one of them.
      */
     public function futurePlanCount(int $structureId): int
     {
         return MoonExtractionPlan::where('structure_id', $structureId)
-            ->active()
-            ->where('planned_arrival_time', '>', Carbon::now())
+            ->stillPossible(Carbon::now())
             ->count();
     }
 

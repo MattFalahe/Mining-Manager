@@ -20,6 +20,10 @@
     /* A refinery's last planned pull, set in game or not. */
     .fc-event.mm-plan-final { background-color:#6e3b0b !important; border-color:#e67e22 !important; border-width:2px !important; color:#fff !important; }
     .moon-planner-page .mm-final-badge { background:#6e3b0b; color:#fff; border:1px solid #e67e22; }
+    /* Not started in game in time. Still shown, so the gap it left is visible,
+       but struck through so nobody reads it as a pull that is coming. */
+    .fc-event.mm-plan-missed { background-color:#3b2626 !important; border-color:#e74c3c !important; color:#f5b7b1 !important; }
+    .fc-event.mm-plan-missed .mm-cal-title { text-decoration:line-through; }
 
     /* ---- calendar polish ---- */
     .mm-planner-month { margin-bottom: 1rem; border:1px solid rgba(255,255,255,0.06); border-radius:8px; overflow:hidden; }
@@ -64,6 +68,10 @@
     .mm-note-warn h6 { color:#ffd75e; }
     .mm-note-warn .mm-note-icon { color:#ffc107; }
     .mm-note-warn ul { margin-bottom:0; padding-left:1.1rem; }
+    .mm-note-missed { background:rgba(231,76,60,0.12); border-color:rgba(231,76,60,0.45); border-left-color:#e74c3c; }
+    .mm-note-missed h6 { color:#f5b7b1; }
+    .mm-note-missed .mm-note-icon { color:#e74c3c; }
+    .mm-note-missed ul { margin-bottom:0; padding-left:1.1rem; }
     .mm-offset-badge { background:#ffc107; color:#1a1d24; font-weight:700; }
     /* High-contrast mismatch buttons: outline-secondary washes out on a tint. */
     .btn-mismatch-action { background:transparent; border:1px solid #ffc107; color:#ffd75e; }
@@ -195,6 +203,31 @@
         </div>
     @endif
 
+    {{-- Planned pulls nobody started in game in time, while their arrival
+         is still ahead. The calendar keeps every one, marked. --}}
+    @if(!empty($missedPulls))
+        <div class="mm-note mm-note-missed">
+            <h6><i class="fas fa-times-circle mm-note-icon"></i> Missed pulls ({{ count($missedPulls) }})</h6>
+            <div class="mm-note-sub mb-2">Nobody started these in game in time. An extraction takes at least {{ \MiningManager\Services\Moon\MoonPlannerService::MIN_EXTRACTION_DAYS }} days, so they can no longer arrive as planned. They stay on the calendar, marked as missed. Set each moon for its next planned pull instead.</div>
+            <ul style="font-size: 0.88em;">
+                @foreach($missedPulls as $m)
+                    <li class="mb-1">
+                        <strong>{{ $m['moon_name'] }}</strong> ({{ $m['structure_name'] }}):
+                        planned <strong>{{ $m['planned'] }}</strong>{{ $m['was_final'] ? ' (final pull)' : '' }},
+                        had to be started by {{ $m['deadline'] }}.
+                        @if($m['next_running'])
+                            Next: <strong>{{ $m['next'] }}</strong>, already running in game.
+                        @elseif($m['next'])
+                            Next: <strong>{{ $m['next'] }}</strong>{{ $m['next_is_final'] ? ' (final pull)' : '' }}, start it by {{ $m['next_start_by'] }}.
+                        @else
+                            Nothing else is planned: plan its next pull.
+                        @endif
+                    </li>
+                @endforeach
+            </ul>
+        </div>
+    @endif
+
     {{-- Pulls on one refinery closer together than an extraction allows,
          however they got onto the calendar. --}}
     @if(!empty($tightPairs))
@@ -227,6 +260,7 @@
                         <div class="mm-status-legend-item"><div class="mm-status-legend-color" style="background:#16a085"></div> Planned (manual)</div>
                         <div class="mm-status-legend-item"><div class="mm-status-legend-color" style="background:#5d6670"></div> <i class="fas fa-lock" style="font-size:0.75em;"></i> Actual / extracting (locked)</div>
                         <div class="mm-status-legend-item"><div class="mm-status-legend-color" style="background:#d9534f"></div> <i class="fas fa-exclamation-triangle" style="font-size:0.75em;"></i> Scheduled off-plan</div>
+                        <div class="mm-status-legend-item"><div class="mm-status-legend-color" style="background:#3b2626; border:1px solid #e74c3c;"></div> <i class="fas fa-times-circle" style="font-size:0.75em;"></i> Missed (not started in time)</div>
                     </div>
 
                     {{-- 3-month window nav (EVE/UTC) --}}
@@ -715,17 +749,19 @@ document.addEventListener('DOMContentLoaded', function () {
         entries.forEach(e => {
             if (e.kind === 'plan') {
                 // A plan reconciled to a live extraction is locked — it's a
-                // record of reality now, not an editable intent.
-                const locked = e.status === 'confirmed';
+                // record of reality now, not an editable intent. So is a
+                // missed one: the record that it did not happen.
+                const locked = e.status === 'confirmed' || e.missed;
                 let cls = e.source === 'auto' ? 'mm-plan-auto' : 'mm-plan-manual';
+                if (e.missed) cls = 'mm-plan-missed';
                 if (locked) cls += ' mm-plan-locked';
                 if (e.final) cls += ' mm-plan-final';
                 events.push({
                     id: 'plan-' + e.id,
-                    title: (e.final ? '🏁 ' : '') + (locked ? '🔒 ' : '') + (e.structure_name || 'Refinery'),
+                    title: (e.final ? '🏁 ' : '') + (e.missed ? '❌ ' : (locked ? '🔒 ' : '')) + (e.structure_name || 'Refinery'),
                     start: e.iso,
                     className: cls,
-                    extendedProps: { type: 'plan', raw: e, locked: locked },
+                    extendedProps: { type: 'plan', raw: e, locked: locked, missed: !!e.missed },
                 });
             } else {
                 // Actual extraction — set in-game, can't be changed here.
@@ -794,7 +830,7 @@ document.addEventListener('DOMContentLoaded', function () {
         // Locked entries (live/completed extractions + reconciled plans) are
         // set in-game — explain why they can't be edited instead of doing nothing.
         if (p.type === 'actual' || p.locked) {
-            showLockedInfo(p.raw, p.mismatch ? 'mismatch' : (p.type === 'actual' ? 'actual' : 'confirmed'));
+            showLockedInfo(p.raw, p.mismatch ? 'mismatch' : (p.missed ? 'missed' : (p.type === 'actual' ? 'actual' : 'confirmed')));
             return;
         }
         openEditModal(p.raw);
@@ -916,8 +952,9 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // Explain why a locked entry can't be edited from the planner.
     function showLockedInfo(raw, kind) {
-        const moon = raw.moon_name || ('Moon ' + (raw.moon_id || ''));
-        const structure = raw.structure_name || 'Refinery';
+        // Structure names are player-set, so they go in as text.
+        const moon = $('<div>').text(raw.moon_name || ('Moon ' + (raw.moon_id || ''))).html();
+        const structure = $('<div>').text(raw.structure_name || 'Refinery').html();
         const when = raw.iso ? new Date(raw.iso) : null;
         const eveStr = when
             ? when.getUTCFullYear() + '-' + String(when.getUTCMonth() + 1).padStart(2, '0') + '-' +
@@ -930,6 +967,9 @@ document.addEventListener('DOMContentLoaded', function () {
             lead = '⚠️ This extraction is scheduled in-game at a <strong>different time than planned</strong>. Check whether the drill was fired on the wrong timer — the in-game time below is what EVE will actually run. Realign or ignore it from the banner at the top of the page.';
         } else if (kind === 'actual') {
             lead = 'This is a <strong>live / completed extraction</strong> — it was set in-game and reflects what EVE actually scheduled.';
+        } else if (kind === 'missed') {
+            lead = '❌ This pull was <strong>not started in game in time</strong>. It had to be started by ' + $('<div>').text(raw.start_deadline || '').html() +
+                ', since an extraction takes at least {{ \MiningManager\Services\Moon\MoonPlannerService::MIN_EXTRACTION_DAYS }} days. It stays on the calendar as a record of the missed pull. Set the moon for the refinery\'s next planned pull instead, or plan a new one.';
         } else {
             lead = 'This planned pull has been <strong>confirmed against a real extraction</strong>, so it now records what actually happened.';
         }
@@ -941,9 +981,12 @@ document.addEventListener('DOMContentLoaded', function () {
             (localStr ? '<br><small class="text-muted"><i class="fas fa-user-clock"></i> ' + localStr + ' your time</small>' : '') +
             '</div>'
         );
-        const target = kind === 'confirmed'
-            ? { plan_id: raw.id }
-            : (raw.archived ? null : { extraction_id: raw.id });
+        // A missed pull cannot be anyone's last.
+        const target = kind === 'missed'
+            ? null
+            : (kind === 'confirmed'
+                ? { plan_id: raw.id }
+                : (raw.archived ? null : { extraction_id: raw.id }));
         if (target) {
             Object.assign(target, { structure_id: raw.structure_id, structure_name: structure });
         }
@@ -980,6 +1023,7 @@ document.addEventListener('DOMContentLoaded', function () {
         offset_ignored: { icon: 'fa-check text-warning',     label: 'ignored offset' },
         marked_final: { icon: 'fa-flag-checkered text-warning', label: 'marked final' },
         resumed:    { icon: 'fa-play text-success',          label: 'resumed normal operations' },
+        missed:     { icon: 'fa-times-circle text-danger',   label: 'missed' },
     };
 
     function fmtLocal(iso) {

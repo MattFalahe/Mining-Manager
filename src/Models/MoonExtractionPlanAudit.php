@@ -13,7 +13,7 @@ use Carbon\Carbon;
  * @property int|null $plan_id
  * @property int|null $structure_id
  * @property int|null $moon_id
- * @property string $action           created|moved|deleted|autofilled|rotation|realigned|offset_ignored|marked_final|resumed
+ * @property string $action           created|moved|deleted|autofilled|rotation|realigned|offset_ignored|marked_final|resumed|missed
  * @property int|null $character_id
  * @property string|null $character_name
  * @property \Carbon\Carbon|null $old_arrival
@@ -46,6 +46,9 @@ class MoonExtractionPlanAudit extends Model
     // after all.
     public const ACTION_MARKED_FINAL = 'marked_final';
     public const ACTION_RESUMED = 'resumed';
+    // Recorded by the planner itself, with nobody named, when a pull was not
+    // started in game in time.
+    public const ACTION_MISSED = 'missed';
 
     protected $fillable = [
         'corporation_id',

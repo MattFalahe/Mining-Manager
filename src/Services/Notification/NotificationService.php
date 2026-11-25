@@ -929,9 +929,13 @@ class NotificationService
      * question for the same people: variant "final" when the chunk that
      * arrived was the refinery's last planned pull (arrived_at), variant
      * "restarted" when somebody started an extraction after it
-     * (chunk_arrival_time, final_pull), and variant "startable" when a pull
+     * (chunk_arrival_time, final_pull), variant "startable" when a pull
      * that was too far ahead can now be set up (planned_arrival_time,
-     * startable_from, next_is_final).
+     * startable_from, next_is_final), and variant "missed" when nobody
+     * started a planned pull in time (missed_pull, start_deadline,
+     * missed_was_final, then the next pull that can still happen:
+     * planned_arrival_time, next_is_final, startable_from, start_by; or
+     * running_arrival, or earliest_arrival when nothing is planned).
      *
      * @param array $data
      * @return array Result map from send()
@@ -939,8 +943,18 @@ class NotificationService
     public function sendNextExtractionPlanned(array $data): array
     {
         $maxDays = \MiningManager\Services\Moon\MoonPlannerService::MAX_EXTRACTION_DAYS;
+        $minDays = \MiningManager\Services\Moon\MoonPlannerService::MIN_EXTRACTION_DAYS;
 
         $data['description'] = $data['description'] ?? match ($data['variant'] ?? null) {
+            'missed' => "❌ The pull planned for this refinery was not started in game in time. An extraction runs at least {$minDays} days, so it can no longer arrive on plan. It stays on the Moon Planner, marked missed."
+                . (!empty($data['running_arrival'])
+                    ? ' An extraction is already running on this refinery on another timer, so check the planner.'
+                    : (!empty($data['planned_arrival_time'])
+                        ? ' Set the moon for the next planned pull below instead.'
+                        : ' Nothing else is planned for this refinery: plan its next pull on the Moon Planner.'))
+                . (!empty($data['missed_was_final'])
+                    ? " It was marked as the refinery's final pull, so the planner's reminders for this refinery start again. Mark another pull final if it is still winding down."
+                    : ''),
             'final' => "🏁 This was the last extraction planned for this refinery, and nothing is planned after it. Ask leadership, or whoever handles this station, about next steps if needed.",
             'restarted' => "⚠️ An extraction was started on this refinery, but its last pull is marked final on the planner. If it is carrying on, resume normal operations on its planner card. If not, check with whoever handles this station.",
             'startable' => "⏰ The pull planned for this refinery can now be set up in game. It was more than {$maxDays} days ahead, longer than an extraction can run, so this waited until it could be started. Starting it now gives the longest extraction that still arrives on plan, and so the biggest chunk.",
@@ -2576,6 +2590,7 @@ class NotificationService
                 'subject' => sprintf(match ($data['variant']) {
                     'final' => 'Final Extraction: %s',
                     'startable' => 'Next Pull Can Be Started: %s',
+                    'missed' => 'Planned Pull Missed: %s',
                     default => 'Extraction Started After the Final Pull: %s',
                 }, $data['structure_name'] ?? 'Refinery'),
                 'body' => sprintf(
@@ -2588,6 +2603,14 @@ class NotificationService
                         'startable' => 'Next Pull Planned: ' . ($data['planned_arrival_time'] ?? 'Unknown')
                             . (!empty($data['next_is_final']) ? ' (final pull)' : '')
                             . "\nCan Be Started From: " . ($data['startable_from'] ?? 'Unknown'),
+                        'missed' => 'Missed Pull: ' . ($data['missed_pull'] ?? 'Unknown')
+                            . "\nHad To Start By: " . ($data['start_deadline'] ?? 'Unknown')
+                            . "\nNext Pull Planned: " . ($data['planned_arrival_time'] ?? 'Nothing planned')
+                            . (!empty($data['next_is_final']) ? ' (final pull)' : '')
+                            . (!empty($data['startable_from']) ? "\nCan Be Started From: " . $data['startable_from'] : '')
+                            . (!empty($data['start_by']) ? "\nStart By: " . $data['start_by'] : '')
+                            . (!empty($data['running_arrival']) ? "\nIn Game Now: chunk due " . $data['running_arrival'] : '')
+                            . (!empty($data['earliest_arrival']) ? "\nEarliest Chunk If Started Now: " . $data['earliest_arrival'] : ''),
                         default => 'Chunk Due: ' . ($data['chunk_arrival_time'] ?? 'Unknown') . "\nFinal Pull: " . ($data['final_pull'] ?? 'Unknown'),
                     },
                     $this->getCorpName()
@@ -2840,6 +2863,10 @@ class NotificationService
                 'restarted' => "⚠️ Extraction started on " . ($data['structure_name'] ?? 'a refinery') . " after its final pull",
                 'startable' => "⏰ The pull planned for " . ($data['structure_name'] ?? 'a refinery') . " at " . ($data['planned_arrival_time'] ?? '?')
                     . (!empty($data['next_is_final']) ? ' (its final pull)' : '') . " can now be set up in game",
+                'missed' => "❌ The pull planned for " . ($data['structure_name'] ?? 'a refinery') . " at " . ($data['missed_pull'] ?? '?')
+                    . " was not started in time" . (!empty($data['planned_arrival_time'])
+                        ? ': next pull ' . $data['planned_arrival_time'] . (!empty($data['next_is_final']) ? ' (its final pull)' : '')
+                        : ': nothing else is planned'),
                 default => "🗓️ Next pull planned for " . ($data['structure_name'] ?? 'this refinery') . " — " . ($data['planned_arrival_time'] ?? 'see planner')
                     . (!empty($data['next_is_final']) ? ' (its final pull)' : '')
                     . (!empty($data['startable_from']) ? ', too far ahead to set up yet: it can be started from ' . $data['startable_from'] : ''),
@@ -3184,6 +3211,7 @@ class NotificationService
             self::TYPE_NEXT_EXTRACTION_PLANNED => match ($data['variant'] ?? null) {
                 'final' => 0xE67E22, // Orange: the planner's colour for a final pull
                 'restarted' => 0xF39C12, // Amber: somebody should look
+                'missed' => 0xE74C3C, // Red: a planned pull will not happen
                 default => 0x9B59B6, // Purple — planner nudge
             },
             self::TYPE_SCHEDULE_MISMATCH => 0xC0392B, // Red — scheduled off-plan
@@ -3225,6 +3253,7 @@ class NotificationService
                 'final' => '🏁 Final Extraction',
                 'restarted' => '⚠️ Extraction Started After the Final Pull',
                 'startable' => '⏰ Next Pull Can Be Started',
+                'missed' => '❌ Planned Pull Missed',
                 default => '🗓️ Next Extraction Planned',
             },
             self::TYPE_SCHEDULE_MISMATCH => '⚠️ Moon Scheduled Off-Plan',
@@ -3384,8 +3413,14 @@ class NotificationService
                 isset($data['arrived_at']) ? ['title' => 'Chunk Arrived', 'value' => $data['arrived_at'], 'short' => true] : null,
                 isset($data['chunk_arrival_time']) ? ['title' => 'Chunk Due', 'value' => $data['chunk_arrival_time'], 'short' => true] : null,
                 isset($data['final_pull']) ? ['title' => 'Final Pull', 'value' => $data['final_pull'], 'short' => true] : null,
+                isset($data['missed_pull']) ? ['title' => 'Missed Pull', 'value' => $data['missed_pull'] . (!empty($data['missed_was_final']) ? ' (final pull)' : ''), 'short' => true] : null,
+                isset($data['start_deadline']) ? ['title' => 'Had To Start By', 'value' => $data['start_deadline'], 'short' => true] : null,
                 isset($data['planned_arrival_time']) ? ['title' => 'Next Pull Planned', 'value' => $data['planned_arrival_time'] . (!empty($data['next_is_final']) ? ' (final pull)' : ''), 'short' => true] : null,
+                ($data['variant'] ?? null) === 'missed' && !isset($data['planned_arrival_time']) ? ['title' => 'Next Pull Planned', 'value' => 'Nothing planned', 'short' => true] : null,
                 !empty($data['startable_from']) ? ['title' => 'Can Be Started From', 'value' => $data['startable_from'], 'short' => true] : null,
+                !empty($data['start_by']) ? ['title' => 'Start By', 'value' => $data['start_by'], 'short' => true] : null,
+                !empty($data['running_arrival']) ? ['title' => 'In Game Now', 'value' => 'Chunk due ' . $data['running_arrival'], 'short' => true] : null,
+                !empty($data['earliest_arrival']) ? ['title' => 'Earliest Chunk If Started Now', 'value' => $data['earliest_arrival'], 'short' => true] : null,
                 !empty($data['cadence_label']) ? ['title' => 'Cadence', 'value' => $data['cadence_label'], 'short' => true] : null,
                 !empty($data['source']) ? ['title' => 'Source', 'value' => ucfirst($data['source']), 'short' => true] : null,
                 !empty($data['planner_url']) ? ['title' => 'Planner', 'value' => '<' . $data['planner_url'] . '|Open Moon Planner>', 'short' => false] : null,
@@ -3715,8 +3750,14 @@ class NotificationService
                 isset($data['arrived_at']) ? ['name' => '📥 Chunk Arrived', 'value' => $this->withEveSuffix($data['arrived_at']), 'inline' => true] : null,
                 isset($data['chunk_arrival_time']) ? ['name' => '⏳ Chunk Due', 'value' => $this->withEveSuffix($data['chunk_arrival_time']), 'inline' => true] : null,
                 isset($data['final_pull']) ? ['name' => '🏁 Final Pull', 'value' => $this->withEveSuffix($data['final_pull']), 'inline' => true] : null,
+                isset($data['missed_pull']) ? ['name' => '❌ Missed Pull', 'value' => $this->withEveSuffix($data['missed_pull']) . (!empty($data['missed_was_final']) ? ' (final pull)' : ''), 'inline' => true] : null,
+                isset($data['start_deadline']) ? ['name' => '⌛ Had To Start By', 'value' => $this->withEveSuffix($data['start_deadline']), 'inline' => true] : null,
                 isset($data['planned_arrival_time']) ? ['name' => '🗓️ Next Pull Planned', 'value' => $this->withEveSuffix($data['planned_arrival_time']) . (!empty($data['next_is_final']) ? ' (final pull)' : ''), 'inline' => true] : null,
+                ($data['variant'] ?? null) === 'missed' && !isset($data['planned_arrival_time']) ? ['name' => '🗓️ Next Pull Planned', 'value' => 'Nothing planned', 'inline' => true] : null,
                 !empty($data['startable_from']) ? ['name' => '⏰ Can Be Started From', 'value' => $this->withEveSuffix($data['startable_from']), 'inline' => true] : null,
+                !empty($data['start_by']) ? ['name' => '⏱️ Start By', 'value' => $this->withEveSuffix($data['start_by']), 'inline' => true] : null,
+                !empty($data['running_arrival']) ? ['name' => '⛏️ In Game Now', 'value' => 'Chunk due ' . $this->withEveSuffix($data['running_arrival']), 'inline' => true] : null,
+                !empty($data['earliest_arrival']) ? ['name' => '📅 Earliest Chunk If Started Now', 'value' => $this->withEveSuffix($data['earliest_arrival']), 'inline' => true] : null,
                 !empty($data['cadence_label']) ? ['name' => '🔁 Cadence', 'value' => $data['cadence_label'], 'inline' => true] : null,
                 !empty($data['source']) ? [
                     'name' => '📋 Source',

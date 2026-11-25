@@ -106,6 +106,7 @@ class MoonPlannerController extends Controller
 
         $calendar = [];
         $warnings = [];
+        $missedPulls = [];
         $refinerySummaries = [];
         $blueprintList = [];
         $refineryFlags = [];
@@ -116,12 +117,15 @@ class MoonPlannerController extends Controller
 
         if ($corporationId) {
             // Reconcile planned ↔ actual before display so confirmed/superseded
-            // states are fresh.
+            // states are fresh, and missed ones show without waiting for the
+            // scheduled run. Its message still goes from there.
             $this->planner->reconcile($corporationId);
+            $this->planner->markMissed($corporationId);
 
             $built = $this->buildCalendar($corporationId, $rangeStart, $rangeEnd);
             $calendar = $built['calendar'];
             $warnings = $built['warnings'];
+            $missedPulls = $this->missedPulls($corporationId);
             $refinerySummaries = $this->buildRefinerySummaries($corporationId);
             $blueprintList = $this->rotations->listForCorporation($corporationId);
 
@@ -151,6 +155,7 @@ class MoonPlannerController extends Controller
             'months' => $months,
             'calendar' => $calendar,
             'warnings' => $warnings,
+            'missedPulls' => $missedPulls,
             'refinerySummaries' => $refinerySummaries,
             'blueprintList' => $blueprintList,
             'refineryFlags' => $refineryFlags,
@@ -474,6 +479,12 @@ class MoonPlannerController extends Controller
             return response()->json(['error' => 'This pull is already confirmed against a real extraction and cannot be moved.'], 422);
         }
 
+        // A missed pull is the record that it was missed. Moving it would
+        // rewrite that, so a new time is a new pull.
+        if ($plan->status === MoonExtractionPlan::STATUS_MISSED) {
+            return response()->json(['error' => 'This pull was missed and stays on the calendar as a record. Plan a new pull instead.'], 422);
+        }
+
         $validated = $request->validate([
             'planned_arrival_time' => 'required|date',
             'notes' => 'nullable|string|max:500',
@@ -719,8 +730,10 @@ class MoonPlannerController extends Controller
         $tolerance = \MiningManager\Services\Moon\MoonPlannerService::MATCH_TOLERANCE_MINUTES;
         $cycleWindow = \MiningManager\Services\Moon\MoonPlannerService::CYCLE_MATCH_WINDOW_HOURS * 60;
 
+        // Missed pulls stay on the calendar, marked, so the gap they left is
+        // still visible.
         $plans = MoonExtractionPlan::forCorporation($corporationId)
-            ->active()
+            ->whereIn('status', array_merge(MoonExtractionPlan::ACTIVE_STATUSES, [MoonExtractionPlan::STATUS_MISSED]))
             ->whereBetween('planned_arrival_time', [$rangeStart, $rangeEnd])
             ->orderBy('planned_arrival_time')
             ->get();
@@ -830,9 +843,14 @@ class MoonPlannerController extends Controller
                 continue;
             }
 
+            $missed = $plan->status === MoonExtractionPlan::STATUS_MISSED;
             $day = $plan->planned_arrival_time->format('Y-m-d');
             $calendar[$day][] = [
                 'kind' => 'plan',
+                'missed' => $missed,
+                'start_deadline' => $missed
+                    ? \MiningManager\Services\Moon\MoonPlannerService::startWindow($plan->planned_arrival_time)[1]->format('Y-m-d H:i') . ' EVE'
+                    : null,
                 'id' => $plan->id,
                 'structure_id' => $plan->structure_id,
                 'moon_id' => $plan->moon_id,
@@ -850,10 +868,11 @@ class MoonPlannerController extends Controller
                 // refinery whose final pull is planned, whose pulls move one
                 // at a time.
                 'rotation_id' => $plan->rotation_id,
-                'later_in_series' => $plan->rotation_id && !isset($finals[(int) $plan->structure_id])
+                'later_in_series' => !$missed && $plan->rotation_id && !isset($finals[(int) $plan->structure_id])
                     ? $this->rotations->laterInSeries($plan)->count()
                     : 0,
-                'final' => (bool) $plan->is_final,
+                // A missed final pull no longer ends anything.
+                'final' => (bool) $plan->is_final && !$missed,
             ];
         }
 
@@ -888,6 +907,45 @@ class MoonPlannerController extends Controller
         ksort($calendar);
 
         return ['calendar' => $calendar, 'warnings' => $warnings];
+    }
+
+    /**
+     * Missed pulls whose arrival is still ahead, for the note above the
+     * calendar: what was missed, when it had to be started by, and the
+     * refinery's next pull that can still happen. The calendar keeps every
+     * missed pull, this only the ones still worth acting on.
+     *
+     * @return array<int, array>
+     */
+    protected function missedPulls(int $corporationId): array
+    {
+        $now = Carbon::now();
+
+        $plans = MoonExtractionPlan::forCorporation($corporationId)
+            ->where('status', MoonExtractionPlan::STATUS_MISSED)
+            ->where('planned_arrival_time', '>', $now)
+            ->orderBy('planned_arrival_time')
+            ->get();
+        MoonExtractionPlan::loadDisplayNames($plans);
+
+        return $plans->map(function (MoonExtractionPlan $plan) use ($now) {
+            $next = $this->planner->nextPlan((int) $plan->structure_id, $now);
+            $nextBy = $next && $next->status === MoonExtractionPlan::STATUS_PLANNED
+                ? \MiningManager\Services\Moon\MoonPlannerService::startWindow($next->planned_arrival_time)[1]
+                : null;
+
+            return [
+                'moon_name' => $plan->moon_name ?? "Moon {$plan->moon_id}",
+                'structure_name' => $plan->structure_name ?? "Structure {$plan->structure_id}",
+                'planned' => $plan->planned_arrival_time->format('D d M Y H:i') . ' EVE',
+                'deadline' => \MiningManager\Services\Moon\MoonPlannerService::startWindow($plan->planned_arrival_time)[1]->format('D d M Y H:i') . ' EVE',
+                'was_final' => (bool) $plan->is_final,
+                'next' => $next ? $next->planned_arrival_time->format('D d M Y H:i') . ' EVE' : null,
+                'next_is_final' => $next && $next->is_final,
+                'next_running' => $next && $next->status === MoonExtractionPlan::STATUS_CONFIRMED,
+                'next_start_by' => $nextBy ? $nextBy->format('D d M Y H:i') . ' EVE' : null,
+            ];
+        })->all();
     }
 
     /**

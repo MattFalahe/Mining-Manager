@@ -201,7 +201,7 @@
                     'next_extraction_planned' => [
                         'label' => 'Next Extraction Planned',
                         'icon' => 'fas fa-calendar-check text-primary',
-                        'desc' => 'The Moon Extraction Planner nudge — fired AFTER a chunk becomes ready, announcing the refinery\'s next planned pull so a director re-fires the drill on schedule. A pull planned more than 56 days ahead, longer than an extraction can run, cannot be set up yet: the message says from when it can, and posts again at that time. Points at the Moon Planner. Standalone.',
+                        'desc' => 'The Moon Extraction Planner nudge — fired AFTER a chunk becomes ready, announcing the refinery\'s next planned pull so a director re-fires the drill on schedule. A pull planned more than 56 days ahead, longer than an extraction can run, cannot be set up yet: the message says from when it can, and posts again at that time. A planned pull nobody started in game in time is posted here once as Planned Pull Missed, with the refinery\'s next planned pull. Points at the Moon Planner. Standalone.',
                         'scope' => 'general',
                         'has_role_ping' => true,
                         'has_user_ping' => false,

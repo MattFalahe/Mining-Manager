@@ -1239,6 +1239,13 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                             one on the same refinery is marked cancelled even when nobody's notifications show
                             the cancellation.
                         </li>
+                        <li>
+                            <strong>Missed pulls on the planner.</strong> <span class="mm-new-badge">{{ trans('mining-manager::help.new_badge') }}</span>
+                            A planned pull nobody started in game in time stayed on the planner as if it were
+                            still coming, and the reminders kept pointing at it. It is marked missed now, red and
+                            struck through on the calendar, and Next Extraction Planned says so once with the
+                            refinery's next planned pull. See the Moon Planner in this Help.
+                        </li>
                     </ul>
                     <h5>Prices</h5>
                     <ul>
@@ -3694,6 +3701,45 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                         refinery, and the in-game extraction isn't touched.
                     </p>
 
+                    <h4>
+                        <i class="fas fa-times-circle"></i> Missed pulls
+                        <span class="mm-new-badge">{{ trans('mining-manager::help.new_badge') }}</span>
+                    </h4>
+                    <p>
+                        An extraction runs at least 6 days, so a planned pull has to be started in game at least 6 days
+                        before it is due. Once that moment has passed with nothing started, the pull can no longer
+                        arrive on plan. From then on Moon Not Rescheduled, Next Extraction Planned and Resend Next-Pull
+                        Notices skip it and name the refinery's next pull that can still happen, and the
+                        <code>Not planned</code> badge stops counting it.
+                    </p>
+                    <p>
+                        Four hours after that moment, the time an extraction set just before it can take to reach
+                        SeAT, the pull is marked <strong>missed</strong>:
+                    </p>
+                    <ul>
+                        <li>
+                            It stays on the calendar, red and struck through, so the gap it leaves is still visible.
+                            Clicking it says when it had to be started by. It can't be moved: plan a new pull instead.
+                        </li>
+                        <li>
+                            While its arrival is still ahead, a <em>Missed pulls</em> note at the top of the planner
+                            lists it with the refinery's next planned pull and when to start that one by, or says
+                            nothing else is planned.
+                        </li>
+                        <li>
+                            <strong>Next Extraction Planned</strong> says so once, to the same webhooks, as
+                            <strong>Planned Pull Missed</strong>: the pull missed, when it had to be started by, and the
+                            next planned pull with the time to start it by. With nothing else planned it gives the
+                            earliest a chunk could arrive if one were started now.
+                        </li>
+                        <li>The planner history records it, with nobody named.</li>
+                    </ul>
+                    <p>
+                        If the pull turns up in game after all, it is matched as usual. One set late for about the same
+                        time went ahead off-plan, and the banner above takes it with Realign and Ignore. Pulls already
+                        past their arrival when you update are left as they were.
+                    </p>
+
                     <h4><i class="fas fa-bell"></i> Planner reminders</h4>
                     <p>Three notifications cover what nobody has done yet. Each is off until you tick it on a webhook.</p>
                     <ul>
@@ -3816,6 +3862,11 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                         <li>
                             If somebody starts an extraction there anyway, the same webhooks are told, and the card is
                             marked until the refinery is resumed.
+                        </li>
+                        <li>
+                            A final pull nobody starts in time is marked missed like any other, and then no longer ends
+                            the refinery's plan: its reminders start again. Mark another pull final if the refinery is
+                            still winding down.
                         </li>
                         <li>Arrival, fracture, jackpot, unstable and the other chunk alerts go out as usual.</li>
                     </ul>
@@ -4355,7 +4406,7 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                                 <tr>
                                     <td><code>mining-manager:update-extractions</code></td>
                                     <td><span class="badge badge-info">{{ trans('mining-manager::help.schedule_2hours') }}</span></td>
-                                    <td><strong>State system</strong> — refreshes moon extraction data from corporation structure ESI endpoints. Detects manual and auto-fracture notifications (<code>MoonminingLaserFired</code>, <code>MoonminingAutomaticFracture</code>) and director cancellations (<code>MoonminingExtractionCancelled</code>) — cancelled extractions are flagged so the notification watchdog skips them, and so is a pull a newer one on the same refinery has replaced. Answers the question "what does EVE say is happening?". Does <em>not</em> fire moon arrival notifications — that's the notification system below. The same run sends Moon Extraction Cancelled, the Moon Not Rescheduled and Moons Need Planning reminders, Next Pull Can Be Started and Moon Scan Missing, and takes planned pulls off refineries confirmed gone (Refinery Gone).<br>
+                                    <td><strong>State system</strong> — refreshes moon extraction data from corporation structure ESI endpoints. Detects manual and auto-fracture notifications (<code>MoonminingLaserFired</code>, <code>MoonminingAutomaticFracture</code>) and director cancellations (<code>MoonminingExtractionCancelled</code>) — cancelled extractions are flagged so the notification watchdog skips them, and so is a pull a newer one on the same refinery has replaced. Answers the question "what does EVE say is happening?". Does <em>not</em> fire moon arrival notifications — that's the notification system below. The same run sends Moon Extraction Cancelled, the Moon Not Rescheduled and Moons Need Planning reminders, Next Pull Can Be Started and Moon Scan Missing, marks planned pulls nobody started in time as missed and sends Planned Pull Missed, and takes planned pulls off refineries confirmed gone (Refinery Gone).<br>
                                         <small class="text-muted">Options: <code>--structure_id=</code> specific structure, <code>--corporation_id=</code> specific corp, <code>--active-only</code> only active extractions</small>
                                     </td>
                                 </tr>

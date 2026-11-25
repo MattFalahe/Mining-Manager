@@ -1573,8 +1573,8 @@ class MoonExtractionService
      * message sent on arrival and the one the planner sends again on request
      * read the same.
      *
-     * Looks up the soonest future active plan for the structure on the Moon
-     * Extraction Planner. If none exists, falls back to an on-the-fly cadence
+     * Looks up the structure's next pull on the Moon Extraction Planner that
+     * can still happen. If none exists, falls back to an on-the-fly cadence
      * projection (not persisted).
      *
      * @return array kind 'next' or 'final' with the payload to send ('next'
@@ -1610,12 +1610,10 @@ class MoonExtractionService
             return ['kind' => 'none', 'reason' => 'after_final'];
         }
 
-        // Prefer an explicit active plan for this refinery in the future.
-        $plan = \MiningManager\Models\MoonExtractionPlan::where('structure_id', $structureId)
-            ->active()
-            ->where('planned_arrival_time', '>', Carbon::now())
-            ->orderBy('planned_arrival_time')
-            ->first();
+        // Prefer an explicit plan for this refinery that can still happen. One
+        // closer than the shortest extraction cannot be set up any more, and
+        // the missed-pull message covers it.
+        $plan = $planner->nextPlan($structureId);
 
         $plannedAt = $plan?->planned_arrival_time;
         $source = $plan ? $plan->source : null;

@@ -402,8 +402,103 @@ class PlannerReminders
     }
 
     /**
-     * An entry from notRescheduled(), nowStartable() or restartedAfterFinal()
-     * as it is sent, without what undo() needs.
+     * Planned pulls nobody started in game in time, which
+     * MoonPlannerService::markMissed() has marked. One message per refinery,
+     * sent as Next Extraction Planned, where the pull was announced: which
+     * pull was missed, when it had to be started by, and the refinery's next
+     * pull that can still happen, or that nothing is planned.
+     *
+     * Each missed pull is announced once, while its arrival is still ahead.
+     * A refinery the game has reported destroyed gets nothing; one that has
+     * left the corporation's list is not asked about at all.
+     *
+     * @return array<int, array> one entry per message to send on this pass
+     */
+    public function missedPulls(int $corporationId, ?Carbon $now = null): array
+    {
+        $now = $now ?? Carbon::now();
+
+        $owned = $this->refineries->refineriesForCorporation($corporationId)
+            ->pluck('structure_id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        if (!$owned) {
+            return [];
+        }
+
+        $missed = MoonExtractionPlan::forCorporation($corporationId)
+            ->whereIn('structure_id', $owned)
+            ->where('status', MoonExtractionPlan::STATUS_MISSED)
+            ->where('planned_arrival_time', '>', $now)
+            ->orderBy('planned_arrival_time')
+            ->get()
+            ->groupBy('structure_id');
+
+        if ($missed->isEmpty()) {
+            return [];
+        }
+
+        $destroyed = $this->refineries->reportedDestroyed($missed->keys()->map(fn ($id) => (int) $id)->all());
+        $messages = [];
+
+        foreach ($missed as $structureId => $plans) {
+            $structureId = (int) $structureId;
+            if (in_array($structureId, $destroyed, true)) {
+                continue;
+            }
+
+            $alert = RefineryAlert::firstOrNew([
+                'corporation_id' => $corporationId,
+                'structure_id' => $structureId,
+                'kind' => RefineryAlert::KIND_START_MISSED,
+            ]);
+
+            $since = $alert->exists ? $alert->started_at : null;
+            $fresh = $plans->filter(fn ($plan) => !$since || $plan->planned_arrival_time->gt($since))->values();
+            if ($fresh->isEmpty()) {
+                continue;
+            }
+
+            $was = $this->was($alert);
+            $alert->started_at = $fresh->last()->planned_arrival_time;
+            $alert->last_at = $now;
+            $alert->count = (int) $alert->count + 1;
+            $alert->save();
+
+            $next = $this->nextPlan($structureId, $now);
+            [$nextFrom, $nextBy] = $next ? MoonPlannerService::startWindow($next->planned_arrival_time) : [null, null];
+            $confirmed = $next && $next->status === MoonExtractionPlan::STATUS_CONFIRMED;
+
+            // Somebody may have set the drill on a timer of their own. Then
+            // nothing else can be started until that chunk is in.
+            $running = MoonExtraction::where('structure_id', $structureId)
+                ->where('status', 'extracting')
+                ->where('chunk_arrival_time', '>', $now)
+                ->min('chunk_arrival_time');
+
+            $messages[] = $this->refineries->names($structureId) + array_filter([
+                self::WAS => $was + ['id' => $alert->id],
+                'variant' => 'missed',
+                'structure_id' => $structureId,
+                'missed_pull' => $fresh->map(fn ($plan) => $plan->planned_arrival_time->format('Y-m-d H:i'))->implode(', '),
+                'start_deadline' => $fresh->map(fn ($plan) => MoonPlannerService::startWindow($plan->planned_arrival_time)[1]->format('Y-m-d H:i'))->implode(', '),
+                'missed_was_final' => $fresh->contains(fn ($plan) => (bool) $plan->is_final) ? true : null,
+                'planned_arrival_time' => $next ? $next->planned_arrival_time->format('Y-m-d H:i') : null,
+                'next_is_final' => $next && $next->is_final ? true : null,
+                'startable_from' => $next && !$confirmed && $nextFrom->gt($now) ? $nextFrom->format('Y-m-d H:i') : null,
+                'start_by' => $next && !$confirmed ? $nextBy->format('Y-m-d H:i') : null,
+                'running_arrival' => $running ? Carbon::parse($running)->format('Y-m-d H:i') : null,
+                'earliest_arrival' => $next || $running ? null : $now->copy()->addDays(MoonPlannerService::MIN_EXTRACTION_DAYS)->format('Y-m-d H:i'),
+            ], fn ($value) => $value !== null);
+        }
+
+        return $messages;
+    }
+
+    /**
+     * An entry from notRescheduled(), nowStartable(), restartedAfterFinal()
+     * or missedPulls() as it is sent, without what undo() needs.
      */
     public static function message(array $entry): array
     {
@@ -497,15 +592,12 @@ class PlannerReminders
     }
 
     /**
-     * The next pull planned on a refinery, if there is one.
+     * The next pull planned on a refinery that can still happen, if there is
+     * one.
      */
     protected function nextPlan(int $structureId, Carbon $now): ?MoonExtractionPlan
     {
-        return MoonExtractionPlan::where('structure_id', $structureId)
-            ->active()
-            ->where('planned_arrival_time', '>', $now)
-            ->orderBy('planned_arrival_time')
-            ->first();
+        return $this->planner->nextPlan($structureId, $now);
     }
 
     /**

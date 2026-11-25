@@ -26,7 +26,7 @@ use Carbon\Carbon;
  * @property \Carbon\Carbon $planned_arrival_time
  * @property int|null $cadence_days
  * @property string $source              manual|auto
- * @property string $status              planned|confirmed|superseded|done|cancelled
+ * @property string $status              planned|confirmed|missed|superseded|done|cancelled
  * @property int|null $linked_extraction_id
  * @property int|null $variance_hours
  * @property int|null $created_by
@@ -52,6 +52,9 @@ class MoonExtractionPlan extends Model
     // keeps the time that was intended, alongside the variance.
     public const STATUS_DONE = 'done';
     public const STATUS_CANCELLED = 'cancelled';
+    // Nobody started it in game before the last moment an extraction could
+    // still arrive at its time. Kept on the calendar as a record, never moved.
+    public const STATUS_MISSED = 'missed';
 
     protected $fillable = [
         'corporation_id',
@@ -147,6 +150,25 @@ class MoonExtractionPlan extends Model
     public function scopeActive($query)
     {
         return $query->whereIn('status', self::ACTIVE_STATUSES);
+    }
+
+    /**
+     * Pulls still to come that can still happen: running in game, or far
+     * enough ahead that an extraction started now arrives in time. A planned
+     * pull closer than the shortest extraction cannot be set up any more,
+     * whether or not it has been marked missed yet.
+     */
+    public function scopeStillPossible($query, Carbon $now)
+    {
+        return $query->where(function ($query) use ($now) {
+            $query->where(function ($query) use ($now) {
+                $query->where('status', self::STATUS_CONFIRMED)
+                    ->where('planned_arrival_time', '>', $now);
+            })->orWhere(function ($query) use ($now) {
+                $query->where('status', self::STATUS_PLANNED)
+                    ->where('planned_arrival_time', '>', $now->copy()->addDays(\MiningManager\Services\Moon\MoonPlannerService::MIN_EXTRACTION_DAYS));
+            });
+        });
     }
 
     /**

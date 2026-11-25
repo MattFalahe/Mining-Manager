@@ -150,6 +150,7 @@ class UpdateMoonExtractionsCommand extends Command
             if ($moonOwnerCorpId !== null) {
                 $planner = app(\MiningManager\Services\Moon\MoonPlannerService::class);
                 $planner->reconcile($moonOwnerCorpId);
+                $planner->markMissed($moonOwnerCorpId);
                 $mismatches = $planner->detectAndNotifyMismatches($moonOwnerCorpId);
                 if ($mismatches > 0) {
                     $this->warn("Fired {$mismatches} schedule-mismatch notification(s).");
@@ -185,6 +186,13 @@ class UpdateMoonExtractionsCommand extends Command
                 // arrival message said it would be.
                 foreach ($reminders->nowStartable($moonOwnerCorpId) as $startable) {
                     $this->deliverReminder($reminders, NotificationService::TYPE_NEXT_EXTRACTION_PLANNED, $startable,
+                        fn (array $message) => $notifications->sendNextExtractionPlanned($message + ['planner_url' => $plannerUrl]));
+                }
+
+                // A planned pull nobody started in time: said once, where
+                // the pull was announced, with what to set instead.
+                foreach ($reminders->missedPulls($moonOwnerCorpId) as $missed) {
+                    $this->deliverReminder($reminders, NotificationService::TYPE_NEXT_EXTRACTION_PLANNED, $missed,
                         fn (array $message) => $notifications->sendNextExtractionPlanned($message + ['planner_url' => $plannerUrl]));
                 }
 
