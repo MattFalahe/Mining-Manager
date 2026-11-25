@@ -2,6 +2,7 @@
 
 namespace MiningManager\Http\Controllers;
 
+use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\Request;
 use Seat\Web\Http\Controllers\Controller;
 use Illuminate\Support\Facades\DB;
@@ -20,8 +21,11 @@ use MiningManager\Services\Notification\NotificationService;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Http;
 use MiningManager\Services\OreClassifier;
+use MiningManager\Services\Character\CharacterNames;
 use MiningManager\Services\Diagnostic\TaxTraceDays;
+use MiningManager\Services\Diagnostic\TaxTraceTargets;
 use MiningManager\Services\Diagnostic\TestDataLeftovers;
+use MiningManager\Services\Tax\TaxPeriodHelper;
 
 class DiagnosticController extends Controller
 {
@@ -1838,9 +1842,10 @@ class DiagnosticController extends Controller
     }
 
     /**
-     * Tax Calculation Trace
-     * Tax Trace — comprehensive diagnostic showing stored daily summaries,
-     * live recalculation, account/bill info, and mismatch detection.
+     * Tax Trace: how one account's tax was worked out over one bill's period,
+     * one of the periods the account is billed on, or a calendar month. The
+     * stored daily summaries, the same days built again now, the bills, and
+     * whatever does not add up.
      *
      * @param Request $request
      * @return \Illuminate\Http\JsonResponse
@@ -1848,297 +1853,591 @@ class DiagnosticController extends Controller
     public function taxDiagnostic(Request $request)
     {
         try {
-            $characterId = (int) $request->input('character_id');
-            $month = $request->input('month', Carbon::now()->subMonth()->format('Y-m'));
-
-            if (!$characterId) {
-                return response()->json([
-                    'success' => false,
-                    'error' => 'character_id is required'
-                ], 400);
-            }
-
-            // Parse month
-            $monthStart = Carbon::createFromFormat('Y-m', $month)->startOfMonth();
-            $monthEnd = $monthStart->copy()->endOfMonth();
-
-            // ================================================================
-            // SECTION 1: Character & Account Info
-            // ================================================================
-            $character = DB::table('character_infos')
-                ->where('character_id', $characterId)
-                ->first();
-
-            if (!$character) {
-                $hasMiningData = DB::table('mining_ledger')
-                    ->where('character_id', $characterId)
-                    ->exists();
-
-                if (!$hasMiningData) {
-                    return response()->json([
-                        'success' => false,
-                        'error' => "Character {$characterId} not found in SeAT and has no mining data"
-                    ], 404);
-                }
-            }
-
-            $characterName = $character->name ?? "Character {$characterId} (not in SeAT)";
-
-            // Corporation
-            $affiliation = DB::table('character_affiliations')
-                ->where('character_id', $characterId)
-                ->first();
-            $corporationId = $affiliation->corporation_id ?? null;
-            $corporationName = $corporationId
-                ? DB::table('corporation_infos')->where('corporation_id', $corporationId)->value('name')
-                : null;
-
-            // Main account mapping: character -> refresh_tokens -> users -> main_character_id
-            $accountInfo = $this->resolveAccountInfo($characterId);
-
-            // Every bill for the month, two on a twice-monthly period. Bills go
-            // to the account's main character.
-            $billCharacterId = $accountInfo['main_character_id'] ?? $characterId;
-            $taxBillData = MiningTax::where('character_id', $billCharacterId)
-                ->whereYear('month', $monthStart->year)
-                ->whereMonth('month', $monthStart->month)
-                ->orderByRaw('COALESCE(period_start, month)')
-                ->get()
-                ->map(function (MiningTax $bill) {
-                    $taxCode = $bill->taxCodes()->latest()->first();
-                    $start = Carbon::parse($bill->period_start ?? $bill->month);
-                    $end = $bill->period_end ? Carbon::parse($bill->period_end) : $start->copy()->endOfMonth();
-
-                    return [
-                        'id' => $bill->id,
-                        'character_id' => $bill->character_id,
-                        'amount_owed' => (float) $bill->amount_owed,
-                        'amount_paid' => (float) $bill->amount_paid,
-                        'status' => $bill->status,
-                        'due_date' => $bill->due_date ? $bill->due_date->format('Y-m-d') : null,
-                        'paid_at' => $bill->paid_at ? $bill->paid_at->format('Y-m-d H:i') : null,
-                        'tax_code' => $taxCode ? $taxCode->code : null,
-                        'period_type' => $bill->period_type ?? 'monthly',
-                        'period_start' => $start->toDateString(),
-                        'period_end' => $end->toDateString(),
-                    ];
-                })
-                ->values()
-                ->all();
-
-            // ================================================================
-            // SECTION 2: Daily Summaries (Stored Data)
-            // Include all alts in the group so accumulated tax traces show the full picture
-            // ================================================================
-            $allCharIds = $accountInfo['all_character_ids'] ?? [$characterId];
-
-            $dailySummaries = MiningLedgerDailySummary::whereIn('character_id', $allCharIds)
-                ->whereBetween('date', [$monthStart->format('Y-m-d'), $monthEnd->format('Y-m-d')])
-                ->orderBy('date')
-                ->get();
-
-            $storedDays = [];
-            $storedTotalValue = 0;
-            $storedTotalTax = 0;
-            $storedTotalQuantity = 0;
-            $storedWarnings = [];
-            $traceDays = app(TaxTraceDays::class);
-
-            foreach ($dailySummaries as $summary) {
-                $oreEntries = $summary->ore_types ?? [];
-                $dayWarnings = [];
-                $taxedBy = $traceDays->taxedBy((int) $summary->character_id, $summary->date);
-
-                // Check for issues in ore entries
-                foreach ($oreEntries as &$ore) {
-                    $warnings = [];
-                    if (($ore['unit_price'] ?? 0) == 0 && ($ore['quantity'] ?? 0) > 0) {
-                        $warnings[] = 'Zero price — pricing may have failed';
-                    }
-                    // A zero rate is usually the tax selector doing its job. An
-                    // install that only taxes corp moon ore rates everything else
-                    // at nothing, moon ore from somebody else's moon is rated at
-                    // nothing under that same rule, and mining that arrives after
-                    // its period was invoiced is left untaxed on purpose. Warning
-                    // on all of those buried the one case worth reading.
-                    if ($this->taxedCategoryCameOutAtZero($ore, $taxedBy['selector'])) {
-                        $warnings[] = 'This category is taxed and has a rate, but this ore came out at 0%. Expected on moon ore from another corporation\'s moon, or on mining that reached the ledger after its period was invoiced.';
-                    }
-                    $ore['warnings'] = $warnings;
-                    if (!empty($warnings)) {
-                        $dayWarnings = array_merge($dayWarnings, $warnings);
-                    }
-                }
-                unset($ore);
-
-                $dayValue = (float) $summary->total_value;
-                $dayTax = (float) $summary->total_tax;
-
-                $storedTotalValue += $dayValue;
-                $storedTotalTax += $dayTax;
-                $storedTotalQuantity += (float) $summary->total_quantity;
-
-                $storedDays[] = [
-                    'date' => $summary->date->format('Y-m-d'),
-                    'character_id' => (int) $summary->character_id,
-                    'taxed_by' => $taxedBy['label'],
-                    'total_quantity' => (float) $summary->total_quantity,
-                    'total_value' => $dayValue,
-                    'total_tax' => $dayTax,
-                    'moon_ore_value' => (float) $summary->moon_ore_value,
-                    'regular_ore_value' => (float) $summary->regular_ore_value,
-                    'ice_value' => (float) $summary->ice_value,
-                    'gas_value' => (float) $summary->gas_value,
-                    'is_finalized' => $summary->is_finalized,
-                    'ore_count' => count($oreEntries),
-                    'ores' => $oreEntries,
-                    'warnings' => $dayWarnings,
-                ];
-
-                if (!empty($dayWarnings)) {
-                    $storedWarnings[] = [
-                        'date' => $summary->date->format('Y-m-d'),
-                        'issues' => $dayWarnings,
-                    ];
-                }
-            }
-
-            // ================================================================
-            // SECTION 3: The same days built again now, by the code that builds
-            // them for billing, without saving
-            // ================================================================
-            $rebuilt = $traceDays->rebuild($allCharIds, $monthStart, $monthEnd, $dailySummaries);
-
-            // ================================================================
-            // SECTION 4: Mismatch Detection
-            // ================================================================
-            $mismatches = [];
-
-            $changed = array_values(array_filter($rebuilt['days'], fn (array $day) => $day['stored'] && abs($day['difference']) > 1));
-            if ($changed) {
-                $changedBy = array_sum(array_column($changed, 'difference'));
-                $raised = count(array_filter($changed, fn (array $day) => $day['difference'] > 0));
-                $verb = $raised === count($changed) ? 'raise' : ($raised === 0 ? 'lower' : 'change');
-                $dates = array_values(array_unique(array_column($changed, 'date')));
-                $mismatches[] = [
-                    'type' => 'stored_vs_rebuilt',
-                    'severity' => abs($changedBy) > 1000000 ? 'high' : 'medium',
-                    'message' => sprintf(
-                        'Building the daily summaries again now would %s the tax on %d %s by %s ISK in total (%s). Something they are built from has changed since: settings, mining that arrived late, or the prices on the ledger.',
-                        $verb,
-                        count($changed),
-                        count($changed) === 1 ? 'day' : 'days',
-                        number_format($verb === 'change' ? $changedBy : abs($changedBy), 2),
-                        implode(', ', array_slice($dates, 0, 5)) . (count($dates) > 5 ? ' and ' . (count($dates) - 5) . ' more' : '')
-                    ),
-                ];
-            }
-
-            // Each bill against the summaries of its own period, for every
-            // character of the account.
-            foreach ($taxBillData as $bill) {
-                $accountStoredTax = (float) MiningLedgerDailySummary::whereIn('character_id', $allCharIds)
-                    ->whereBetween('date', [$bill['period_start'], $bill['period_end']])
-                    ->sum('total_tax');
-
-                $billDiff = abs($accountStoredTax - $bill['amount_owed']);
-                if ($billDiff > 1) {
-                    $mismatches[] = [
-                        'type' => 'summary_vs_bill',
-                        'severity' => $billDiff > 1000000 ? 'high' : 'medium',
-                        'message' => sprintf(
-                            'The daily summaries for %s to %s add up to %s ISK across %d %s, and the bill for that period is %s ISK, %s ISK apart. The exemption threshold or the minimum bill can account for it.',
-                            $bill['period_start'],
-                            $bill['period_end'],
-                            number_format($accountStoredTax, 2),
-                            count($allCharIds),
-                            count($allCharIds) === 1 ? 'character' : 'characters',
-                            number_format($bill['amount_owed'], 2),
-                            number_format($billDiff, 2)
-                        ),
-                    ];
-                }
-            }
-
-            $missingSummaryDates = array_values(array_unique(array_column(array_filter($rebuilt['days'], fn (array $day) => !$day['stored']), 'date')));
-            if (!empty($missingSummaryDates)) {
-                $mismatches[] = [
-                    'type' => 'missing_summaries',
-                    'severity' => 'high',
-                    'message' => sprintf(
-                        'The ledger has mining on %d %s with no daily summary: %s. mining-manager:update-daily-summaries --month=%s builds them.',
-                        count($missingSummaryDates),
-                        count($missingSummaryDates) === 1 ? 'day' : 'days',
-                        implode(', ', array_slice($missingSummaryDates, 0, 5)) . (count($missingSummaryDates) > 5 ? ' and ' . (count($missingSummaryDates) - 5) . ' more' : ''),
-                        $month
-                    ),
-                ];
-            }
-
-            // Check for zero-priced ores
-            $zeroPricedCount = 0;
-            foreach ($storedDays as $day) {
-                foreach ($day['ores'] as $ore) {
-                    if (($ore['unit_price'] ?? 0) == 0 && ($ore['quantity'] ?? 0) > 0) {
-                        $zeroPricedCount++;
-                    }
-                }
-            }
-            if ($zeroPricedCount > 0) {
-                $mismatches[] = [
-                    'type' => 'zero_prices',
-                    'severity' => 'medium',
-                    'message' => sprintf(
-                        '%d ore entries in daily summaries have zero unit price — pricing provider may have failed for these items',
-                        $zeroPricedCount
-                    ),
-                ];
-            }
-
-            return response()->json([
-                'success' => true,
-
-                // Section 1: Character & Account
-                'character' => [
-                    'id' => $characterId,
-                    'name' => $characterName,
-                    'corporation_id' => $corporationId,
-                    'corporation_name' => $corporationName ?? 'Not known yet',
-                ],
-                'account' => $accountInfo,
-                'tax_bills' => $taxBillData,
-
-                // Section 2: Stored Daily Summaries
-                'period' => [
-                    'month' => $month,
-                    'start' => $monthStart->format('Y-m-d'),
-                    'end' => $monthEnd->format('Y-m-d'),
-                ],
-                'stored_summaries' => [
-                    'days' => $storedDays,
-                    'totals' => [
-                        'total_quantity' => round($storedTotalQuantity, 2),
-                        'total_value' => round($storedTotalValue, 2),
-                        'total_tax' => round($storedTotalTax, 2),
-                        'effective_rate' => $storedTotalValue > 0 ? round(($storedTotalTax / $storedTotalValue) * 100, 2) : 0,
-                        'days_with_data' => count($storedDays),
-                    ],
-                    'warnings' => $storedWarnings,
-                ],
-
-                // Section 3: The same days built again now
-                'rebuilt' => $rebuilt,
-
-                // Section 4: Mismatches
-                'mismatches' => $mismatches,
-            ]);
-
+            return response()->json(['success' => true] + $this->taxTrace($request));
+        } catch (HttpResponseException $e) {
+            return $e->getResponse();
         } catch (\Exception $e) {
             Log::error('Tax diagnostic failed', ['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
             return response()->json([
                 'success' => false,
                 'error' => $e->getMessage()
             ], 500);
+        }
+    }
+
+    /**
+     * The same trace as a CSV file, to keep or to send on.
+     */
+    public function taxDiagnosticExport(Request $request)
+    {
+        try {
+            $trace = $this->taxTrace($request);
+        } catch (HttpResponseException $e) {
+            return $e->getResponse();
+        } catch (\Exception $e) {
+            Log::error('Tax trace download failed', ['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
+            return response()->json([
+                'success' => false,
+                'error' => $e->getMessage()
+            ], 500);
+        }
+
+        $filename = sprintf(
+            'tax-trace-%s-%s-to-%s.csv',
+            $trace['scope']['by'] === 'bill' ? 'bill-' . $trace['scope']['bill_id'] : $trace['character']['id'],
+            $trace['period']['start'],
+            $trace['period']['end']
+        );
+
+        return response()->streamDownload(function () use ($trace) {
+            $out = fopen('php://output', 'w');
+            foreach ($this->taxTraceRows($trace) as $row) {
+                // No escape character: plain RFC 4180 quoting, and PHP 8.4
+                // deprecates leaving it to the default.
+                fputcsv($out, $row, ',', '"', '');
+            }
+            fclose($out);
+        }, $filename, [
+            'Content-Type' => 'text/csv',
+        ]);
+    }
+
+    /**
+     * Characters to trace whose name holds the text, or the character with
+     * that id.
+     */
+    public function taxDiagnosticCharacters(Request $request)
+    {
+        try {
+            return response()->json([
+                'success' => true,
+                'characters' => app(TaxTraceTargets::class)->findCharacters((string) $request->input('q', '')),
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Tax trace character search failed', ['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
+            return response()->json([
+                'success' => false,
+                'error' => $e->getMessage(),
+                'characters' => [],
+            ], 500);
+        }
+    }
+
+    /**
+     * A character's account's bills and the periods it is billed on, to
+     * trace one of.
+     */
+    public function taxDiagnosticPeriods(Request $request)
+    {
+        try {
+            $characterId = (int) $request->input('character_id');
+            if ($characterId <= 0) {
+                return response()->json(['success' => false, 'error' => 'Pick a character first.'], 400);
+            }
+
+            $targets = app(TaxTraceTargets::class);
+            $account = $this->resolveAccountInfo($characterId);
+            $bills = $targets->bills($account['all_character_ids']);
+
+            return response()->json([
+                'success' => true,
+                'character_id' => $characterId,
+                'bills' => array_map(fn (array $bill) => array_diff_key($bill, ['notes' => true]), $bills),
+                'periods' => $targets->periods($characterId, $bills),
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Tax trace periods failed', ['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
+            return response()->json([
+                'success' => false,
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Stop a trace that cannot run, with why. When a name matched several
+     * characters, they come back to pick from.
+     */
+    private function refuseTrace(string $error, int $status = 400, array $matches = []): never
+    {
+        throw new HttpResponseException(response()->json([
+            'success' => false,
+            'error' => $error,
+            'matches' => $matches,
+        ], $status));
+    }
+
+    /**
+     * A day as YYYY-MM-DD, or null when it is not one.
+     */
+    private function traceDay($value): ?Carbon
+    {
+        if (!is_string($value) || !preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $value, $parts)
+            || !checkdate((int) $parts[2], (int) $parts[3], (int) $parts[1])) {
+            return null;
+        }
+
+        return Carbon::parse($value)->startOfDay();
+    }
+
+    /**
+     * Everything a Tax Trace shows, for the page and for the download.
+     *
+     * Traced by bill, the bill decides the account and the days: exactly the
+     * period it was billed for. Otherwise a character, by id or by name, and
+     * a period it is billed on, or a calendar month.
+     */
+    private function taxTrace(Request $request): array
+    {
+        $targets = app(TaxTraceTargets::class);
+        $names = app(CharacterNames::class);
+        $bill = null;
+
+        $billAsked = trim((string) $request->input('bill', ''));
+        if ($billAsked !== '') {
+            $bill = $targets->findBill($billAsked);
+            if (!$bill) {
+                $this->refuseTrace("No bill has the id or payment code {$billAsked}.", 404);
+            }
+            $characterId = (int) $bill->character_id;
+        } else {
+            $resolved = $targets->resolveCharacter($request->input('character_id'), $request->input('character'));
+            if ($resolved['character_id'] === null) {
+                $status = $resolved['matches'] ? 422 : (trim((string) $request->input('character', '')) === '' ? 400 : 404);
+                $this->refuseTrace($resolved['error'], $status, $resolved['matches']);
+            }
+            $characterId = $resolved['character_id'];
+        }
+
+        if ($bill) {
+            $by = 'bill';
+            $from = Carbon::parse($bill->period_start ?? $bill->month)->startOfDay();
+            $to = $bill->period_end ? Carbon::parse($bill->period_end)->startOfDay() : $from->copy()->endOfMonth()->startOfDay();
+        } elseif ($request->filled('period_start') || $request->filled('period_end')) {
+            $by = 'period';
+            $from = $this->traceDay($request->input('period_start'));
+            $to = $this->traceDay($request->input('period_end'));
+
+            // No bill period is longer than a month. A legacy week can run
+            // across two months, so the month is not checked.
+            if (!$from || !$to || $to->lt($from) || $from->diffInDays($to) > 30) {
+                $this->refuseTrace('A tax period is its first and last day as YYYY-MM-DD, a month apart at most.');
+            }
+        } else {
+            $by = 'month';
+            $month = (string) $request->input('month', Carbon::now()->subMonthNoOverflow()->format('Y-m'));
+            if (!preg_match('/^\d{4}-(0[1-9]|1[0-2])$/', $month)) {
+                $this->refuseTrace('The month is YYYY-MM.');
+            }
+
+            // From the 1st: a year and month alone take today's day, and on
+            // the 31st that runs a 30 day month into the next.
+            $from = Carbon::parse($month . '-01')->startOfDay();
+            $to = $from->copy()->endOfMonth()->startOfDay();
+        }
+
+        // ================================================================
+        // SECTION 1: Character & Account Info
+        // ================================================================
+        $character = DB::table('character_infos')
+            ->where('character_id', $characterId)
+            ->first();
+
+        if (!$character && !$bill) {
+            $hasMiningData = DB::table('mining_ledger')
+                ->where('character_id', $characterId)
+                ->exists();
+
+            if (!$hasMiningData) {
+                $this->refuseTrace("Character {$characterId} not found in SeAT and has no mining data", 404);
+            }
+        }
+
+        $characterName = $character->name ?? $names->nameOrId($characterId);
+
+        // Corporation
+        $affiliation = DB::table('character_affiliations')
+            ->where('character_id', $characterId)
+            ->first();
+        $corporationId = $affiliation->corporation_id ?? null;
+        $corporationName = $corporationId
+            ? DB::table('corporation_infos')->where('corporation_id', $corporationId)->value('name')
+            : null;
+
+        // Main account mapping: character -> refresh_tokens -> users -> main_character_id
+        $accountInfo = $this->resolveAccountInfo($characterId);
+        $allCharIds = $accountInfo['all_character_ids'] ?? [$characterId];
+
+        // The bill traced, or every bill of the account over these days: two
+        // in a month billed twice. Deleted bills are shown as deleted.
+        if ($bill) {
+            $taxBillData = $targets->describeBills([$bill]);
+        } else {
+            $taxBillData = array_reverse(array_values(array_filter(
+                $targets->bills($allCharIds),
+                fn (array $accountBill) => $accountBill['period_start'] <= $to->toDateString() && $accountBill['period_end'] >= $from->toDateString()
+            )));
+        }
+
+        // ================================================================
+        // SECTION 2: Daily Summaries (Stored Data)
+        // Include all alts in the group so accumulated tax traces show the full picture
+        // ================================================================
+        $dailySummaries = MiningLedgerDailySummary::whereIn('character_id', $allCharIds)
+            ->whereBetween('date', [$from->format('Y-m-d'), $to->format('Y-m-d')])
+            ->orderBy('date')
+            ->get();
+
+        $storedDays = [];
+        $storedTotalValue = 0;
+        $storedTotalTax = 0;
+        $storedTotalQuantity = 0;
+        $storedWarnings = [];
+        $traceDays = app(TaxTraceDays::class);
+
+        foreach ($dailySummaries as $summary) {
+            $oreEntries = $summary->ore_types ?? [];
+            $dayWarnings = [];
+            $taxedBy = $traceDays->taxedBy((int) $summary->character_id, $summary->date);
+
+            // Check for issues in ore entries
+            foreach ($oreEntries as &$ore) {
+                $warnings = [];
+                if (($ore['unit_price'] ?? 0) == 0 && ($ore['quantity'] ?? 0) > 0) {
+                    $warnings[] = 'Zero price — pricing may have failed';
+                }
+                // A zero rate is usually the tax selector doing its job. An
+                // install that only taxes corp moon ore rates everything else
+                // at nothing, moon ore from somebody else's moon is rated at
+                // nothing under that same rule, and mining that arrives after
+                // its period was invoiced is left untaxed on purpose. Warning
+                // on all of those buried the one case worth reading.
+                if ($this->taxedCategoryCameOutAtZero($ore, $taxedBy['selector'])) {
+                    $warnings[] = 'This category is taxed and has a rate, but this ore came out at 0%. Expected on moon ore from another corporation\'s moon, or on mining that reached the ledger after its period was invoiced.';
+                }
+                $ore['warnings'] = $warnings;
+                if (!empty($warnings)) {
+                    $dayWarnings = array_merge($dayWarnings, $warnings);
+                }
+            }
+            unset($ore);
+
+            $dayValue = (float) $summary->total_value;
+            $dayTax = (float) $summary->total_tax;
+
+            $storedTotalValue += $dayValue;
+            $storedTotalTax += $dayTax;
+            $storedTotalQuantity += (float) $summary->total_quantity;
+
+            $storedDays[] = [
+                'date' => $summary->date->format('Y-m-d'),
+                'character_id' => (int) $summary->character_id,
+                'taxed_by' => $taxedBy['label'],
+                'total_quantity' => (float) $summary->total_quantity,
+                'total_value' => $dayValue,
+                'total_tax' => $dayTax,
+                'moon_ore_value' => (float) $summary->moon_ore_value,
+                'regular_ore_value' => (float) $summary->regular_ore_value,
+                'ice_value' => (float) $summary->ice_value,
+                'gas_value' => (float) $summary->gas_value,
+                'is_finalized' => $summary->is_finalized,
+                'ore_count' => count($oreEntries),
+                'ores' => $oreEntries,
+                'warnings' => $dayWarnings,
+            ];
+
+            if (!empty($dayWarnings)) {
+                $storedWarnings[] = [
+                    'date' => $summary->date->format('Y-m-d'),
+                    'issues' => $dayWarnings,
+                ];
+            }
+        }
+
+        // ================================================================
+        // SECTION 3: The same days built again now, by the code that builds
+        // them for billing, without saving
+        // ================================================================
+        $rebuilt = $traceDays->rebuild($allCharIds, $from, $to, $dailySummaries);
+
+        // ================================================================
+        // SECTION 4: Mismatch Detection
+        // ================================================================
+        $mismatches = [];
+
+        $changed = array_values(array_filter($rebuilt['days'], fn (array $day) => $day['stored'] && abs($day['difference']) > 1));
+        if ($changed) {
+            $changedBy = array_sum(array_column($changed, 'difference'));
+            $raised = count(array_filter($changed, fn (array $day) => $day['difference'] > 0));
+            $verb = $raised === count($changed) ? 'raise' : ($raised === 0 ? 'lower' : 'change');
+            $dates = array_values(array_unique(array_column($changed, 'date')));
+            $mismatches[] = [
+                'type' => 'stored_vs_rebuilt',
+                'severity' => abs($changedBy) > 1000000 ? 'high' : 'medium',
+                'message' => sprintf(
+                    'Building the daily summaries again now would %s the tax on %d %s by %s ISK in total (%s). Something they are built from has changed since: settings, mining that arrived late, or the prices on the ledger.',
+                    $verb,
+                    count($changed),
+                    count($changed) === 1 ? 'day' : 'days',
+                    number_format($verb === 'change' ? $changedBy : abs($changedBy), 2),
+                    implode(', ', array_slice($dates, 0, 5)) . (count($dates) > 5 ? ' and ' . (count($dates) - 5) . ' more' : '')
+                ),
+            ];
+        }
+
+        // Each bill against the summaries of its own period, for every
+        // character of the account. A deleted bill bills nobody.
+        foreach ($taxBillData as $shownBill) {
+            if ($shownBill['deleted']) {
+                continue;
+            }
+
+            $accountStoredTax = (float) MiningLedgerDailySummary::whereIn('character_id', $allCharIds)
+                ->whereBetween('date', [$shownBill['period_start'], $shownBill['period_end']])
+                ->sum('total_tax');
+
+            $billDiff = abs($accountStoredTax - $shownBill['amount_owed']);
+            if ($billDiff > 1) {
+                $mismatches[] = [
+                    'type' => 'summary_vs_bill',
+                    'severity' => $billDiff > 1000000 ? 'high' : 'medium',
+                    'message' => sprintf(
+                        'The daily summaries for %s to %s add up to %s ISK across %d %s, and the bill for that period is %s ISK, %s ISK apart. The exemption threshold or the minimum bill can account for it.',
+                        $shownBill['period_start'],
+                        $shownBill['period_end'],
+                        number_format($accountStoredTax, 2),
+                        count($allCharIds),
+                        count($allCharIds) === 1 ? 'character' : 'characters',
+                        number_format($shownBill['amount_owed'], 2),
+                        number_format($billDiff, 2)
+                    ),
+                ];
+            }
+        }
+
+        $missingSummaryDates = array_values(array_unique(array_column(array_filter($rebuilt['days'], fn (array $day) => !$day['stored']), 'date')));
+        if (!empty($missingSummaryDates)) {
+            $missingMonths = array_values(array_unique(array_map(fn (string $date) => substr($date, 0, 7), $missingSummaryDates)));
+            $mismatches[] = [
+                'type' => 'missing_summaries',
+                'severity' => 'high',
+                'message' => sprintf(
+                    'The ledger has mining on %d %s with no daily summary: %s. %s %s them.',
+                    count($missingSummaryDates),
+                    count($missingSummaryDates) === 1 ? 'day' : 'days',
+                    implode(', ', array_slice($missingSummaryDates, 0, 5)) . (count($missingSummaryDates) > 5 ? ' and ' . (count($missingSummaryDates) - 5) . ' more' : ''),
+                    implode(' and ', array_map(fn (string $month) => "mining-manager:update-daily-summaries --month={$month}", $missingMonths)),
+                    count($missingMonths) === 1 ? 'builds' : 'build'
+                ),
+            ];
+        }
+
+        // Check for zero-priced ores
+        $zeroPricedCount = 0;
+        foreach ($storedDays as $day) {
+            foreach ($day['ores'] as $ore) {
+                if (($ore['unit_price'] ?? 0) == 0 && ($ore['quantity'] ?? 0) > 0) {
+                    $zeroPricedCount++;
+                }
+            }
+        }
+        if ($zeroPricedCount > 0) {
+            $mismatches[] = [
+                'type' => 'zero_prices',
+                'severity' => 'medium',
+                'message' => sprintf(
+                    '%d ore entries in daily summaries have zero unit price — pricing provider may have failed for these items',
+                    $zeroPricedCount
+                ),
+            ];
+        }
+
+        // Each character's share of these days, stored and built again: what
+        // a bill adds up before the exemption threshold and the minimum.
+        $byCharacter = [];
+        foreach ($rebuilt['days'] as $day) {
+            $id = $day['character_id'];
+            $byCharacter[$id] ??= ['character_id' => $id, 'days' => 0, 'stored_value' => 0.0, 'stored_tax' => 0.0, 'rebuilt_value' => 0.0, 'rebuilt_tax' => 0.0];
+            $byCharacter[$id]['days']++;
+            $byCharacter[$id]['stored_value'] += (float) $day['stored_value'];
+            $byCharacter[$id]['stored_tax'] += (float) $day['stored_tax'];
+            $byCharacter[$id]['rebuilt_value'] += (float) $day['rebuilt_value'];
+            $byCharacter[$id]['rebuilt_tax'] += (float) $day['rebuilt_tax'];
+        }
+        usort($byCharacter, fn (array $a, array $b) => $b['stored_tax'] <=> $a['stored_tax'] ?: $a['character_id'] <=> $b['character_id']);
+        $byCharacter = array_map(fn (array $row) => array_map(fn ($value) => is_float($value) ? round($value, 2) : $value, $row), $byCharacter);
+
+        $nameIds = array_merge($allCharIds, array_column($byCharacter, 'character_id'), array_column($taxBillData, 'character_id'));
+        $traceNames = array_map(fn (array $info) => $names->nameOrId($info['character_id']), $names->many($nameIds));
+        $traceNames[$characterId] = $characterName;
+
+        if ($by === 'bill') {
+            $query = ['bill' => (string) $bill->id];
+        } elseif ($by === 'period') {
+            $query = ['character_id' => (string) $characterId, 'period_start' => $from->toDateString(), 'period_end' => $to->toDateString()];
+        } else {
+            $query = ['character_id' => (string) $characterId, 'month' => $from->format('Y-m')];
+        }
+
+        $wholeMonth = $from->day === 1 && $to->isSameDay($from->copy()->endOfMonth());
+
+        return [
+            // How the trace was asked for, and the query that asks for it
+            // again, for the download.
+            'scope' => [
+                'by' => $by,
+                'bill_id' => $bill ? $bill->id : null,
+                'query' => $query,
+            ],
+
+            // Section 1: Character & Account
+            'character' => [
+                'id' => $characterId,
+                'name' => $characterName,
+                'corporation_id' => $corporationId,
+                'corporation_name' => $corporationName ?? 'Not known yet',
+            ],
+            'account' => $accountInfo,
+            'names' => $traceNames,
+            'tax_bills' => $taxBillData,
+            'by_character' => $byCharacter,
+
+            // Section 2: Stored Daily Summaries
+            'period' => [
+                'month' => $from->format('Y-m'),
+                'start' => $from->format('Y-m-d'),
+                'end' => $to->format('Y-m-d'),
+                'label' => app(TaxPeriodHelper::class)->formatPeriod($from, $to, $wholeMonth ? 'monthly' : 'weekly'),
+            ],
+            'stored_summaries' => [
+                'days' => $storedDays,
+                'totals' => [
+                    'total_quantity' => round($storedTotalQuantity, 2),
+                    'total_value' => round($storedTotalValue, 2),
+                    'total_tax' => round($storedTotalTax, 2),
+                    'effective_rate' => $storedTotalValue > 0 ? round(($storedTotalTax / $storedTotalValue) * 100, 2) : 0,
+                    'days_with_data' => count($storedDays),
+                ],
+                'warnings' => $storedWarnings,
+            ],
+
+            // Section 3: The same days built again now
+            'rebuilt' => $rebuilt,
+
+            // Section 4: Mismatches
+            'mismatches' => $mismatches,
+        ];
+    }
+
+    /**
+     * A trace as the rows of its CSV file: what was traced and its bills,
+     * then each character's share, the days, the ores, and the issues found.
+     * Amounts are plain numbers so a spreadsheet can add them up.
+     *
+     * @return \Generator<int, array>
+     */
+    private function taxTraceRows(array $trace): \Generator
+    {
+        // A cell a spreadsheet would read as a formula is kept as text.
+        $row = fn (array $cells) => array_map(
+            fn ($cell) => is_string($cell) && $cell !== '' && !is_numeric($cell) && strpos('=+-@', $cell[0]) !== false ? "'" . $cell : $cell,
+            $cells
+        );
+        $name = fn ($id) => $trace['names'][$id] ?? 'Character ' . $id;
+        $yes = fn ($value) => $value ? 'yes' : 'no';
+        $by = ['bill' => 'Bill', 'period' => 'Tax period', 'month' => 'Calendar month'][$trace['scope']['by']];
+        $account = $trace['account'];
+
+        yield $row(['Mining Manager tax trace']);
+        yield $row(['Traced at (UTC)', Carbon::now('UTC')->format('Y-m-d H:i')]);
+        yield $row(['Traced by', $by]);
+        yield $row(['Period', $trace['period']['label'], $trace['period']['start'], $trace['period']['end']]);
+        yield $row(['Character', $trace['character']['name'], $trace['character']['id']]);
+        yield $row(['Corporation', $trace['character']['corporation_name']]);
+        if (!empty($account['main_character_id'])) {
+            yield $row(['Main character', $name($account['main_character_id']), $account['main_character_id']]);
+        }
+        yield $row(['Characters on the account', count($account['all_character_ids'] ?? [])]);
+        yield [];
+
+        yield $row(['Bills']);
+        yield $row(['Bill', 'Payment code', 'Billed to', 'Billed to ID', 'Period', 'Period type', 'From', 'To', 'Billed by', 'Amount owed', 'Amount paid', 'Status', 'Deleted', 'Due', 'Paid at', 'Calculated at', 'Triggered by', 'Notes']);
+        foreach ($trace['tax_bills'] as $bill) {
+            yield $row([
+                $bill['id'], $bill['tax_code'], $name($bill['character_id']), $bill['character_id'], $bill['period_label'], $bill['period_type'],
+                $bill['period_start'], $bill['period_end'], $bill['billed_by'], $bill['amount_owed'], $bill['amount_paid'], $bill['status'],
+                $yes($bill['deleted']), $bill['due_date'], $bill['paid_at'], $bill['calculated_at'], $bill['triggered_by'], trim((string) $bill['notes']),
+            ]);
+        }
+        if (!$trace['tax_bills']) {
+            yield $row(['No bill covers these days.']);
+        }
+        yield [];
+
+        yield $row(['By character, before the exemption threshold and the minimum']);
+        yield $row(['Character ID', 'Character', 'Days', 'Stored value', 'Stored tax', 'Rebuilt value', 'Rebuilt tax']);
+        $totals = ['days' => 0, 'stored_value' => 0.0, 'stored_tax' => 0.0, 'rebuilt_value' => 0.0, 'rebuilt_tax' => 0.0];
+        foreach ($trace['by_character'] as $share) {
+            yield $row([$share['character_id'], $name($share['character_id']), $share['days'], $share['stored_value'], $share['stored_tax'], $share['rebuilt_value'], $share['rebuilt_tax']]);
+            foreach ($totals as $key => $total) {
+                $totals[$key] = $total + $share[$key];
+            }
+        }
+        yield $row(['', 'Total', $totals['days'], round($totals['stored_value'], 2), round($totals['stored_tax'], 2), round($totals['rebuilt_value'], 2), round($totals['rebuilt_tax'], 2)]);
+        yield [];
+
+        $finalized = [];
+        foreach ($trace['stored_summaries']['days'] as $day) {
+            $finalized[$day['character_id'] . '|' . $day['date']] = $day['is_finalized'];
+        }
+
+        yield $row(['Days']);
+        yield $row(['Date', 'Character ID', 'Character', 'Taxed by', 'Stored', 'Finalized', 'Stored value', 'Stored tax', 'Rebuilt value', 'Rebuilt tax', 'Difference']);
+        foreach ($trace['rebuilt']['days'] as $day) {
+            yield $row([
+                $day['date'], $day['character_id'], $name($day['character_id']), $day['taxed_by'], $yes($day['stored']),
+                $day['stored'] ? $yes($finalized[$day['character_id'] . '|' . $day['date']] ?? false) : '',
+                $day['stored_value'], $day['stored_tax'], $day['rebuilt_value'], $day['rebuilt_tax'], $day['difference'],
+            ]);
+        }
+        yield [];
+
+        $oreHeader = ['Date', 'Character ID', 'Character', 'Type ID', 'Ore', 'Category', 'Moon rarity', 'Mined at', 'Quantity', 'Unit price', 'Value', 'Tax rate %', 'Event modifier %', 'Effective rate %', 'Tax', 'Taxable'];
+        $oreRow = fn (array $day, array $ore) => [
+            $day['date'], $day['character_id'], $name($day['character_id']), $ore['type_id'] ?? null, $ore['ore_name'] ?? null,
+            $ore['category'] ?? null, $ore['moon_rarity'] ?? null, $ore['source'] ?? null, $ore['quantity'] ?? null, $ore['unit_price'] ?? null,
+            $ore['total_value'] ?? null, $ore['tax_rate'] ?? null, $ore['event_modifier'] ?? null, $ore['effective_rate'] ?? null,
+            $ore['estimated_tax'] ?? null, $yes($ore['is_taxable'] ?? false),
+        ];
+
+        yield $row(['Ores, as stored']);
+        yield $row(array_merge($oreHeader, ['Warnings']));
+        foreach ($trace['stored_summaries']['days'] as $day) {
+            foreach ($day['ores'] as $ore) {
+                yield $row(array_merge($oreRow($day, $ore), [implode(' ', $ore['warnings'] ?? [])]));
+            }
+        }
+
+        $changed = array_filter($trace['rebuilt']['days'], fn (array $day) => abs($day['difference']) > 1);
+        if ($changed) {
+            yield [];
+            yield $row(['Ores, built again now, on the days that differ']);
+            yield $row($oreHeader);
+            foreach ($changed as $day) {
+                foreach ($day['ores'] as $ore) {
+                    yield $row($oreRow($day, $ore));
+                }
+            }
+        }
+        yield [];
+
+        yield $row(['Issues']);
+        yield $row(['Severity', 'Message']);
+        foreach ($trace['mismatches'] as $issue) {
+            yield $row([$issue['severity'], $issue['message']]);
+        }
+        if (!$trace['mismatches']) {
+            yield $row(['none', 'Nothing found that does not add up.']);
         }
     }
 

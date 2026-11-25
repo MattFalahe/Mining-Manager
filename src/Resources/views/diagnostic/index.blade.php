@@ -1170,16 +1170,17 @@
         <div class="tab-pane" id="tax-trace">
             <div class="diag-tab-intro">
                 <p>
-                    <strong>What this tab does:</strong> Takes one character and a month and shows
-                    how that account's tax was worked out: every stored daily summary with the tax
-                    profile that taxed the day, its ores, rates and event discounts, the same days
-                    built again now by the code billing uses, the month's bills, and anything that
-                    does not add up.
+                    <strong>What this tab does:</strong> Takes one bill, or a character and one of the
+                    periods their account is billed on, and shows how that account's tax was worked out:
+                    every stored daily summary with the tax profile that taxed the day, its ores, rates
+                    and event discounts, each character's share, the same days built again now by the
+                    code billing uses, the bills, and anything that does not add up.
                 </p>
                 <p>
                     <strong>When to use:</strong> When a specific miner says "my tax is wrong",
                     or when reconciling a discrepancy between dashboard totals and an invoice.
-                    Picks one row and explains every cent.
+                    Trace by bill to see exactly the days that bill covers. Download the trace as a CSV
+                    to keep it or send it on.
                 </p>
                 <p>
                     <strong>Heads up:</strong> Read-only. Days are built again without saving, with
@@ -1197,20 +1198,65 @@
                             </h3>
                         </div>
                         <div class="card-body">
-                            <p>Stored daily summaries and who taxed each day, the same days built again now, the month's bills, and anything that does not add up.</p>
+                            <p>Stored daily summaries and who taxed each day, the same days built again now, the bills, and anything that does not add up.</p>
 
                             <div class="row">
                                 <div class="col-md-6">
                                     <div class="form-group">
-                                        <label>Character ID</label>
-                                        <input type="number" id="taxTraceCharId" class="form-control" placeholder="e.g. 90000001">
-                                        <small class="form-text text-muted">Enter the character_id to trace (can be main or alt)</small>
+                                        <label for="taxTraceCharacter">Character</label>
+                                        <div class="input-group">
+                                            <input type="text" id="taxTraceCharacter" class="form-control" placeholder="Name or character ID" autocomplete="off">
+                                            <div class="input-group-append">
+                                                <button type="button" class="btn btn-mm-primary" onclick="findTaxTraceCharacter()">
+                                                    <i class="fas fa-user-check"></i> Find
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <select id="taxTraceCharacterMatches" class="form-control mt-2" style="display: none;" onchange="pickTaxTraceCharacter(this.value)"></select>
+                                        <small id="taxTraceCharacterNote" class="form-text text-muted">A main or an alt. Part of a name finds every character whose name holds it.</small>
                                     </div>
                                 </div>
                                 <div class="col-md-6">
                                     <div class="form-group">
-                                        <label>Month (YYYY-MM)</label>
-                                        <input type="month" id="taxTraceMonth" class="form-control" value="{{ \Carbon\Carbon::now()->subMonth()->format('Y-m') }}">
+                                        <label for="taxTraceBy">Trace</label>
+                                        <select id="taxTraceBy" class="form-control" onchange="showTaxTraceBy()">
+                                            <option value="bill">One bill</option>
+                                            <option value="period">One tax period</option>
+                                            <option value="month">A calendar month</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="row">
+                                <div class="col-md-6 tax-trace-by" data-by="bill">
+                                    <div class="form-group">
+                                        <label for="taxTraceBill">Bill</label>
+                                        <select id="taxTraceBill" class="form-control">
+                                            <option value="">Find a character first</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="col-md-6 tax-trace-by" data-by="bill">
+                                    <div class="form-group">
+                                        <label for="taxTraceBillCode">Or a bill ID or payment code</label>
+                                        <input type="text" id="taxTraceBillCode" class="form-control" placeholder="e.g. 331 or TAX-ABCD2345" autocomplete="off">
+                                        <small class="form-text text-muted">Traces that bill whoever it is for. Leave empty to trace the bill picked beside it.</small>
+                                    </div>
+                                </div>
+                                <div class="col-md-6 tax-trace-by" data-by="period" style="display: none;">
+                                    <div class="form-group">
+                                        <label for="taxTracePeriod">Tax period</label>
+                                        <select id="taxTracePeriod" class="form-control">
+                                            <option value="">Find a character first</option>
+                                        </select>
+                                        <small class="form-text text-muted">The periods the account was billed on, and the ones its tax profile bills on for the days no bill covers.</small>
+                                    </div>
+                                </div>
+                                <div class="col-md-6 tax-trace-by" data-by="month" style="display: none;">
+                                    <div class="form-group">
+                                        <label for="taxTraceMonth">Month (YYYY-MM)</label>
+                                        <input type="month" id="taxTraceMonth" class="form-control" value="{{ \Carbon\Carbon::now()->subMonthNoOverflow()->format('Y-m') }}">
                                     </div>
                                 </div>
                             </div>
@@ -1219,6 +1265,9 @@
                                 <i class="fas fa-search"></i> <span id="taxTraceBtnText">Trace Tax Calculation</span>
                                 <span id="taxTraceSpinner" class="spinner-border spinner-border-sm ml-2" style="display: none;"></span>
                             </button>
+                            <a id="taxTraceDownload" class="btn btn-secondary ml-2 disabled" href="#" aria-disabled="true" title="Run a trace first">
+                                <i class="fas fa-file-csv"></i> Download CSV
+                            </a>
 
                             <div id="taxTraceResults" style="margin-top: 20px;"></div>
                         </div>
@@ -2924,26 +2973,205 @@ function renderSettingsHealthRecords(records, reportUrl) {
 // TAX TRACE
 // ============================================================================
 
+// Same origin as the page, whatever scheme the route was generated with.
+function taxTraceUrl(url, params) {
+    const query = new URLSearchParams(params || {}).toString();
+    return new URL(url, window.location.origin).pathname + (query ? '?' + query : '');
+}
+
+const taxTracePeriodTypes = { monthly: 'monthly', biweekly: 'twice a month', weekly: 'weekly' };
+let taxTraceCharacterId = null;
+
+function showTaxTraceBy() {
+    const by = document.getElementById('taxTraceBy').value;
+    document.querySelectorAll('#tax-trace .tax-trace-by').forEach(el => {
+        el.style.display = el.dataset.by === by ? '' : 'none';
+    });
+}
+
+function setTaxTraceDownload(query) {
+    const link = document.getElementById('taxTraceDownload');
+    if (query) {
+        link.href = taxTraceUrl('{{ route("mining-manager.diagnostic.tax-diagnostic.export") }}', query);
+        link.classList.remove('disabled');
+        link.setAttribute('aria-disabled', 'false');
+        link.title = 'Download this trace as a CSV file';
+    } else {
+        link.href = '#';
+        link.classList.add('disabled');
+        link.setAttribute('aria-disabled', 'true');
+        link.title = 'Run a trace first';
+    }
+}
+
+function fillTaxTraceMatches(matches) {
+    const select = document.getElementById('taxTraceCharacterMatches');
+    select.innerHTML = `<option value="">Pick one of ${matches.length} characters</option>` + matches.map(c =>
+        `<option value="${c.character_id}">${diagEscape(c.name)} (${c.character_id})${c.main_name ? ', alt of ' + diagEscape(c.main_name) : ''}${c.registered ? '' : ', not in SeAT'}</option>`
+    ).join('');
+    select.style.display = '';
+}
+
+function findTaxTraceCharacter() {
+    const search = document.getElementById('taxTraceCharacter').value.trim();
+    const note = document.getElementById('taxTraceCharacterNote');
+    const select = document.getElementById('taxTraceCharacterMatches');
+    select.style.display = 'none';
+    taxTraceCharacterId = null;
+
+    if (!search) {
+        note.textContent = 'Type a name, part of one, or a character ID.';
+        return;
+    }
+
+    note.textContent = 'Looking...';
+    fetch(taxTraceUrl('{{ route("mining-manager.diagnostic.tax-diagnostic.characters") }}', { q: search }), {
+        headers: { 'Accept': 'application/json' }
+    })
+    .then(response => response.json())
+    .then(data => {
+        const matches = data.characters || [];
+        if (matches.length === 0) {
+            note.textContent = 'No character has that name or ID.';
+            return;
+        }
+
+        const exact = matches.filter(c => c.name.toLowerCase() === search.toLowerCase() || String(c.character_id) === search);
+        if (matches.length === 1 || exact.length === 1) {
+            pickTaxTraceCharacter((exact[0] || matches[0]).character_id, exact[0] || matches[0]);
+            return;
+        }
+
+        fillTaxTraceMatches(matches);
+        note.textContent = matches.length >= 20 ? 'The first 20 names that hold it. Type more of the name to narrow it down.' : 'Pick one.';
+    })
+    .catch(error => { note.textContent = 'Lookup failed: ' + error.message; });
+}
+
+function pickTaxTraceCharacter(characterId, match) {
+    const note = document.getElementById('taxTraceCharacterNote');
+    const billSelect = document.getElementById('taxTraceBill');
+    const periodSelect = document.getElementById('taxTracePeriod');
+
+    if (!characterId) {
+        return;
+    }
+
+    taxTraceCharacterId = String(characterId);
+    if (match) {
+        document.getElementById('taxTraceCharacter').value = match.name;
+    } else {
+        const option = document.querySelector(`#taxTraceCharacterMatches option[value="${taxTraceCharacterId}"]`);
+        if (option) {
+            document.getElementById('taxTraceCharacter').value = option.textContent.replace(/ \(\d+\).*$/, '');
+        }
+    }
+
+    note.textContent = 'Loading bills and periods...';
+    billSelect.innerHTML = '<option value="">Loading...</option>';
+    periodSelect.innerHTML = '<option value="">Loading...</option>';
+
+    fetch(taxTraceUrl('{{ route("mining-manager.diagnostic.tax-diagnostic.periods") }}', { character_id: taxTraceCharacterId }), {
+        headers: { 'Accept': 'application/json' }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (!data.success) {
+            note.textContent = data.error || 'Could not load the bills.';
+            return;
+        }
+
+        const fmtISK = (v) => Number(v || 0).toLocaleString('en-US', {minimumFractionDigits: 2});
+        const bills = data.bills || [];
+        const periods = data.periods || [];
+
+        billSelect.innerHTML = bills.length
+            ? bills.map(b => `<option value="${b.id}">${diagEscape(b.period_label)}: ${fmtISK(b.amount_owed)} ISK, ${diagEscape(b.status)}${b.deleted ? ', deleted' : ''} (#${b.id}${b.tax_code ? ', ' + diagEscape(b.tax_code) : ''})</option>`).join('')
+            : '<option value="">This account has no bills</option>';
+
+        periodSelect.innerHTML = periods.length
+            ? periods.map(p => `<option value="${p.start}|${p.end}">${diagEscape(p.label)}, ${taxTracePeriodTypes[p.type] || diagEscape(p.type)}${p.open ? ', still running' : ''}${p.bills.length ? ', billed' : ', not billed'}</option>`).join('')
+            : '<option value="">No periods to trace</option>';
+
+        const by = document.getElementById('taxTraceBy');
+        if (!bills.length && by.value === 'bill') {
+            by.value = 'period';
+            showTaxTraceBy();
+        }
+
+        note.textContent = `${bills.length} ${bills.length === 1 ? 'bill' : 'bills'} on this account.`;
+    })
+    .catch(error => { note.textContent = 'Could not load the bills: ' + error.message; });
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+    const input = document.getElementById('taxTraceCharacter');
+    if (!input) {
+        return;
+    }
+    input.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            findTaxTraceCharacter();
+        }
+    });
+    // A changed name no longer points at the character picked for it.
+    input.addEventListener('input', function () {
+        taxTraceCharacterId = null;
+    });
+});
+
 function runTaxTrace() {
-    const charId = document.getElementById('taxTraceCharId').value;
-    const month = document.getElementById('taxTraceMonth').value;
+    const by = document.getElementById('taxTraceBy').value;
+    const typed = document.getElementById('taxTraceCharacter').value.trim();
     const resultsDiv = document.getElementById('taxTraceResults');
     const btnText = document.getElementById('taxTraceBtnText');
     const spinner = document.getElementById('taxTraceSpinner');
+    const fail = (message) => {
+        resultsDiv.innerHTML = `<div class="provider-test-result error"><h5><i class="fas fa-times-circle text-danger"></i> Error</h5><p>${diagEscape(message)}</p></div>`;
+    };
 
-    if (!charId) {
-        resultsDiv.innerHTML = `<div class="provider-test-result error"><h5><i class="fas fa-times-circle text-danger"></i> Error</h5><p>Please enter a Character ID</p></div>`;
-        return;
+    const params = {};
+    const billCode = document.getElementById('taxTraceBillCode').value.trim();
+
+    if (by === 'bill' && billCode) {
+        params.bill = billCode;
+    } else {
+        if (taxTraceCharacterId) {
+            params.character_id = taxTraceCharacterId;
+        } else if (typed) {
+            params.character = typed;
+        } else {
+            fail('Pick a character, by name or ID, or give a bill ID or payment code.');
+            return;
+        }
+
+        if (by === 'bill') {
+            const billId = document.getElementById('taxTraceBill').value;
+            if (!billId || !taxTraceCharacterId) {
+                fail('Press Find to load the character\'s bills, then pick one.');
+                return;
+            }
+            params.bill = billId;
+            delete params.character_id;
+        } else if (by === 'period') {
+            const period = document.getElementById('taxTracePeriod').value;
+            if (!period || !taxTraceCharacterId) {
+                fail('Press Find to load the character\'s tax periods, then pick one.');
+                return;
+            }
+            [params.period_start, params.period_end] = period.split('|');
+        } else {
+            params.month = document.getElementById('taxTraceMonth').value;
+        }
     }
 
     btnText.textContent = 'Tracing...';
     spinner.style.display = 'inline-block';
     resultsDiv.innerHTML = '';
+    setTaxTraceDownload(null);
 
-    const url = '{{ route("mining-manager.diagnostic.tax-diagnostic") }}';
-    const relativeUrl = new URL(url, window.location.origin).pathname;
-
-    fetch(relativeUrl + '?character_id=' + charId + '&month=' + month, {
+    fetch(taxTraceUrl('{{ route("mining-manager.diagnostic.tax-diagnostic") }}', params), {
         headers: { 'Accept': 'application/json' }
     })
     .then(response => response.json())
@@ -2952,9 +3180,14 @@ function runTaxTrace() {
         spinner.style.display = 'none';
 
         if (!data.success) {
-            resultsDiv.innerHTML = `<div class="provider-test-result error"><h5><i class="fas fa-times-circle text-danger"></i> Failed</h5><p>${data.error}</p></div>`;
+            if (data.matches && data.matches.length) {
+                fillTaxTraceMatches(data.matches);
+            }
+            fail(data.error || 'The trace failed.');
             return;
         }
+
+        setTaxTraceDownload(data.scope.query);
 
         const fmtISK = (v) => Number(v || 0).toLocaleString('en-US', {minimumFractionDigits: 2});
         const fmtNum = (v) => Number(v || 0).toLocaleString();
@@ -2967,24 +3200,24 @@ function runTaxTrace() {
         // ================================================================
         const acc = data.account || {};
         const bills = data.tax_bills || [];
-        const names = {};
-        (acc.all_characters || []).forEach(c => { names[c.character_id] = c.name; });
-        names[data.character.id] = names[data.character.id] || data.character.name;
+        const names = Object.assign({}, data.names || {});
+        (acc.all_characters || []).forEach(c => { names[c.character_id] = names[c.character_id] || c.name; });
         const charName = id => names[id] || ('Character ' + id);
         const multiChar = (acc.all_character_ids || []).length > 1;
-        const statusColors = { paid: 'success', unpaid: 'warning', overdue: 'danger', partial: 'info', waived: 'secondary' };
+        const statusColors = { paid: 'success', unpaid: 'warning', overdue: 'danger', partial: 'info', waived: 'secondary', exempted: 'secondary' };
+        const tracedBy = { bill: 'bill #' + data.scope.bill_id, period: 'tax period', month: 'calendar month' }[data.scope.by];
 
         html += `<div class="provider-test-result ${data.stored_summaries.totals.days_with_data > 0 ? 'success' : 'warning'}">
             <h5><i class="fas fa-user"></i> Character & Account Info</h5>
             <div class="row mb-2">
                 <div class="col-md-4">
-                    <strong>Character:</strong> ${data.character.name} <small class="text-muted">(${data.character.id})</small>
+                    <strong>Character:</strong> ${diagEscape(data.character.name)} <small class="text-muted">(${data.character.id})</small>
                 </div>
                 <div class="col-md-4">
-                    <strong>Corporation:</strong> ${data.character.corporation_name || 'Unknown'}
+                    <strong>Corporation:</strong> ${diagEscape(data.character.corporation_name || 'Unknown')}
                 </div>
                 <div class="col-md-4">
-                    <strong>Period:</strong> ${data.period.start} to ${data.period.end}
+                    <strong>Period:</strong> ${diagEscape(data.period.label)} <small class="text-muted">(${data.period.start} to ${data.period.end}, by ${tracedBy})</small>
                 </div>
             </div>`;
 
@@ -3008,29 +3241,76 @@ function runTaxTrace() {
             html += `<div class="row mb-2"><div class="col-md-12"><span class="text-warning"><i class="fas fa-exclamation-triangle"></i> Character not registered in SeAT</span></div></div>`;
         }
 
-        // Tax bills: two for the month on a twice-monthly period
+        // Tax bills: the one traced, or every bill over these days, two in a
+        // month billed twice
         if (bills.length > 0) {
-            bills.forEach(bill => {
+            bills.forEach((bill, billIdx) => {
                 const statusColor = statusColors[bill.status] || 'secondary';
+                const notesId = 'taxTraceBillNotes_' + billIdx;
                 html += `<div class="row mb-2" style="background: rgba(0,0,0,0.1); padding: 8px; border-radius: 4px; margin-top: 5px;">
                     <div class="col-md-3">
-                        <strong>Tax Bill:</strong> <span class="badge badge-${statusColor}">${bill.status.toUpperCase()}</span>
-                        <br><small class="text-muted">${bill.period_start} to ${bill.period_end}</small>
+                        <strong>Bill #${bill.id}:</strong> <span class="badge badge-${statusColor}">${diagEscape(bill.status).toUpperCase()}</span>
+                        ${bill.deleted ? '<span class="badge badge-dark">DELETED</span>' : ''}
+                        <br><small class="text-muted">${diagEscape(bill.period_label)}, ${bill.period_start} to ${bill.period_end}${bill.character_id !== data.character.id ? ', billed to ' + diagEscape(charName(bill.character_id)) : ''}</small>
                     </div>
                     <div class="col-md-3">
                         <strong>Owed:</strong> ${fmtISK(bill.amount_owed)} ISK
+                        <br><small class="text-muted">Billed by ${diagEscape(bill.billed_by)}</small>
                     </div>
                     <div class="col-md-3">
                         <strong>Paid:</strong> ${fmtISK(bill.amount_paid)} ISK
+                        ${bill.calculated_at ? '<br><small class="text-muted">Worked out ' + bill.calculated_at + (bill.triggered_by ? ' by ' + diagEscape(bill.triggered_by) : '') + '</small>' : ''}
                     </div>
                     <div class="col-md-3">
                         <strong>Due:</strong> ${bill.due_date || 'N/A'}
                         ${bill.tax_code ? ' | <strong>Code:</strong> ' + diagEscape(bill.tax_code) : ''}
+                        ${bill.notes ? '<br><a href="#" onclick="event.preventDefault(); const n = document.getElementById(\'' + notesId + '\'); n.style.display = n.style.display === \'none\' ? \'block\' : \'none\';"><small>As billed</small></a>' : ''}
                     </div>
+                    ${bill.notes ? '<div class="col-md-12" id="' + notesId + '" style="display: none;"><pre class="mb-0 mt-2" style="white-space: pre-wrap; color: inherit;">' + diagEscape(bill.notes) + '</pre></div>' : ''}
                 </div>`;
             });
         } else {
             html += `<div class="row mb-2"><div class="col-md-12"><span class="text-muted"><i class="fas fa-info-circle"></i> No tax bill found for this period (taxes may not have been calculated yet)</span></div></div>`;
+        }
+
+        // Each character's share: what the account's bill adds up before the
+        // exemption threshold and the minimum.
+        const shares = data.by_character || [];
+        const liveBills = bills.filter(bill => !bill.deleted && bill.period_start === data.period.start && bill.period_end === data.period.end);
+        if (shares.length > 0) {
+            const sum = key => shares.reduce((total, share) => total + Number(share[key] || 0), 0);
+            html += `<table class="table table-sm table-dark table-striped mt-2" style="font-size: 0.85em; margin-bottom: 0;">
+                <thead><tr>
+                    <th>Character</th>
+                    <th class="text-right">Days</th>
+                    <th class="text-right">Stored Value</th>
+                    <th class="text-right">Stored Tax</th>
+                    <th class="text-right">Rebuilt Tax</th>
+                </tr></thead><tbody>`;
+            shares.forEach(share => {
+                html += `<tr>
+                    <td>${diagEscape(charName(share.character_id))} <small class="text-muted">(${share.character_id})</small></td>
+                    <td class="text-right">${share.days}</td>
+                    <td class="text-right">${fmtISK(share.stored_value)}</td>
+                    <td class="text-right">${fmtISK(share.stored_tax)}</td>
+                    <td class="text-right">${fmtISK(share.rebuilt_tax)}</td>
+                </tr>`;
+            });
+            html += `<tr>
+                    <td><strong>Account</strong></td>
+                    <td class="text-right">${sum('days')}</td>
+                    <td class="text-right">${fmtISK(sum('stored_value'))}</td>
+                    <td class="text-right"><strong>${fmtISK(sum('stored_tax'))}</strong></td>
+                    <td class="text-right">${fmtISK(sum('rebuilt_tax'))}</td>
+                </tr>`;
+            if (liveBills.length === 1) {
+                html += `<tr>
+                    <td colspan="3">Bill #${liveBills[0].id}, after the exemption threshold and the minimum</td>
+                    <td class="text-right"><strong>${fmtISK(liveBills[0].amount_owed)}</strong></td>
+                    <td></td>
+                </tr>`;
+            }
+            html += `</tbody></table>`;
         }
 
         html += `</div>`;
@@ -3143,7 +3423,7 @@ function runTaxTrace() {
 
             html += `</div>`;
         } else {
-            html += `<p class="text-muted mt-3">No daily summaries found for this character in the selected month. Run calculate-taxes to generate them.</p>`;
+            html += `<p class="text-muted mt-3">No daily summaries found for this account on these days. Run calculate-taxes to generate them.</p>`;
         }
 
         html += `</div>`;

@@ -821,10 +821,10 @@ return [
     'open_diagnostics' => 'Open Diagnostics',
 
     'tax_trace_title' => 'Tax Trace',
-    'tax_trace_desc' => 'Enter a character ID and month to get a comprehensive tax diagnostic. The trace shows four sections:',
+    'tax_trace_desc' => 'Pick one bill, by choosing it from a character\'s bills or by its ID or payment code, and the trace covers exactly the days that bill was billed for. Or pick a character, by name or ID, and one of the tax periods their account is billed on, or a calendar month. Download CSV saves the trace as a file. The trace shows four sections:',
 
     'tax_trace_section_1' => 'Character & Account Info',
-    'tax_trace_section_1_desc' => 'Shows the character, their corporation, main account (which SeAT user they belong to), all alt characters under that account, and the month\'s bills with their status, amount, due date and tax code.',
+    'tax_trace_section_1_desc' => 'Shows the character, their corporation, main account (which SeAT user they belong to), all alt characters under that account, the bills over those days with their status, amount, due date, tax code, the tax profile that billed them and what was billed per character, and each character\'s share of the stored and rebuilt tax.',
 
     'tax_trace_section_2' => 'Stored Daily Summaries',
     'tax_trace_section_2_desc' => 'Shows the actual data the system used to calculate the tax bill. Each day is expandable and shows every ore type with its quantity, unit price, total value, tax rate, event modifier, effective rate, and estimated tax. Warnings flag issues like zero prices or missing data.',

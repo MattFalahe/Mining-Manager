@@ -1195,6 +1195,24 @@ Route::group([
             'middleware' => 'can:mining-manager.admin',
         ]);
 
+        Route::get('/tax-diagnostic/export', [
+            'as' => 'mining-manager.diagnostic.tax-diagnostic.export',
+            'uses' => 'DiagnosticController@taxDiagnosticExport',
+            'middleware' => 'can:mining-manager.admin',
+        ]);
+
+        Route::get('/tax-diagnostic/characters', [
+            'as' => 'mining-manager.diagnostic.tax-diagnostic.characters',
+            'uses' => 'DiagnosticController@taxDiagnosticCharacters',
+            'middleware' => 'can:mining-manager.admin',
+        ]);
+
+        Route::get('/tax-diagnostic/periods', [
+            'as' => 'mining-manager.diagnostic.tax-diagnostic.periods',
+            'uses' => 'DiagnosticController@taxDiagnosticPeriods',
+            'middleware' => 'can:mining-manager.admin',
+        ]);
+
         Route::get('/data-integrity', [
             'as' => 'mining-manager.diagnostic.data-integrity',
             'uses' => 'DiagnosticController@dataIntegrity',
