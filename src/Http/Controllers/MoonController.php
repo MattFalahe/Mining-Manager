@@ -100,7 +100,11 @@ class MoonController extends Controller
             MoonExtraction::whereIn('id', $readyCandidates)->update(['status' => 'ready']);
         }
 
-        $query = MoonExtraction::with(['structure', 'corporation']);
+        // A cancelled pull stays in the database, with the times it was
+        // planned for, and in its moon's own history. Listed here it reads as
+        // one still on its way, next to the pull that replaced it.
+        $query = MoonExtraction::with(['structure', 'corporation'])
+            ->where('status', '!=', 'cancelled');
 
         if ($status !== 'all') {
             // Map 'completed' filter to actual database statuses
@@ -233,6 +237,11 @@ class MoonController extends Controller
         $unstableStart = $extraction->getUnstableStartTime();
         if ($unstableStart && $unstableStart > Carbon::now()) {
             $timeUntilUnstable = Carbon::now()->diffInHours($unstableStart);
+        }
+
+        // A cancelled pull keeps its old times, and nothing is coming.
+        if ($extraction->status === 'cancelled') {
+            $timeUntilArrival = $timeUntilDecay = $timeUntilUnstable = null;
         }
 
         // Load extraction history for this structure.

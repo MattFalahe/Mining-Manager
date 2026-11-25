@@ -538,7 +538,7 @@ class MoonAnalyticsService
      */
     public function getAvailableExtractions(?Carbon $month = null): Collection
     {
-        $query = MoonExtraction::query();
+        $query = MoonExtraction::where('status', '!=', 'cancelled');
 
         if ($month) {
             $query->whereMonth('chunk_arrival_time', $month->month)
@@ -571,15 +571,18 @@ class MoonAnalyticsService
         $monthStart = $month->copy()->startOfMonth();
         $monthEnd = $month->copy()->endOfMonth();
 
+        // A cancelled pull's arrival time is only the plan it had, and no
+        // chunk came, so it is no pull of the month.
+
         // Active extractions whose chunk arrived in this month
         $active = MoonExtraction::where(function ($q) use ($monthStart, $monthEnd) {
             $q->whereBetween('chunk_arrival_time', [$monthStart, $monthEnd]);
-        })->get();
+        })->where('status', '!=', 'cancelled')->get();
 
         // Historical extractions for this month
         $history = MoonExtractionHistory::where(function ($q) use ($monthStart, $monthEnd) {
             $q->whereBetween('chunk_arrival_time', [$monthStart, $monthEnd]);
-        })->get();
+        })->where(fn ($q) => $q->whereNull('final_status')->orWhere('final_status', '!=', 'cancelled'))->get();
 
         // Merge, preferring history (has more complete data) by deduplicating on structure_id + extraction_start_time
         $seen = [];

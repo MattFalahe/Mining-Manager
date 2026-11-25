@@ -395,10 +395,16 @@ class MoonExtraction extends Model
 
     /**
      * Get the effective status including unstable state.
-     * Returns: 'extracting', 'ready', 'unstable', 'expired'
+     * Returns: 'cancelled', 'extracting', 'ready', 'unstable', 'expired'
      */
     public function getEffectiveStatus(): string
     {
+        // The times below are the pull's original plan. A cancelled pull never
+        // arrives, so going by them would show it on its way, then ready.
+        if ($this->status === 'cancelled') {
+            return 'cancelled';
+        }
+
         // If expired (past auto-fracture time)
         if ($this->isExpired()) {
             return 'expired';

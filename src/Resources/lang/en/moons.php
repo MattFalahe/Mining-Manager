@@ -15,6 +15,7 @@ return [
     'completed' => 'Completed',
     'expired' => 'Expired',
     'fractured' => 'Fractured',
+    'cancelled' => 'Cancelled',
     'past' => 'Past',
     
     // General Terms
