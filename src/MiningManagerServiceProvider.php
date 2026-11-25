@@ -104,6 +104,10 @@ class MiningManagerServiceProvider extends AbstractSeatPlugin
         // either MC or SM is missing — plugin still works standalone.
         $this->registerCrossPluginStructureAlerts();
 
+        // Mining and tax questions other plugins ask through Manager Core.
+        // Unlike the alerts above, they don't need Structure Manager.
+        $this->registerMiningQueryCapabilities();
+
         // Register MM's moon notification handler with Manager Core's ESI
         // fast-poll registry so `MoonminingExtractionStarted` is detected in
         // ~2 min instead of waiting on the corp moon-extraction endpoint's
@@ -374,11 +378,79 @@ class MiningManagerServiceProvider extends AbstractSeatPlugin
                 }
             );
 
-            // B4: expose 2 read-only query capabilities so other plugins
-            // (HR Manager, Pings, Buyback Manager, etc.) can ask MM for
-            // mining/tax data WITHOUT coupling to MM's DB schema. Returns
-            // small DTOs with stable field names so MM can refactor models
-            // without breaking consumers.
+            // Metenox drill cargo readout — exposed for cross-plugin use so
+            // Structure Manager (or future consumers) can render the moon-ore
+            // sitting in a Metenox's MoonMaterialBay on its structure detail
+            // page without having to round-trip through MM's UI.
+            //
+            // Contract: $structureId is the Metenox's structure_id.
+            // Returns array<int,int> mapping type_id => quantity for every
+            // moon ore stack in the bay. Returns:
+            //   - []     when the structure is a known Metenox but the bay
+            //            is empty (caller can distinguish "drill just pulled"
+            //            from "unknown structure")
+            //   - null   when the structure is not a Metenox (type_id != 81826)
+            //            or doesn't exist in corporation_structures at all
+            //
+            // No corp permission gate here — capability resolution is
+            // peer-plugin level. The caller is expected to enforce its own
+            // visibility before invoking (the same way HR's tax-status
+            // capability call assumes HR's middleware vetted the request).
+            $bridge->registerCapability(
+                'mining-manager',
+                'mining.metenox.cargoSnapshot',
+                function (int $structureId): ?array {
+                    try {
+                        return $this->app
+                            ->make(\MiningManager\Services\Moon\MetenoxCargoService::class)
+                            ->cargoSnapshot($structureId);
+                    } catch (\Throwable $e) {
+                        \Illuminate\Support\Facades\Log::warning(
+                            '[MM] mining.metenox.cargoSnapshot failed',
+                            ['structure_id' => $structureId, 'error' => $e->getMessage()]
+                        );
+                        return null;
+                    }
+                }
+            );
+
+            // Persistent subscription — survives restarts. updateOrCreate
+            // semantics so repeated boots are safe.
+            $eventBus = $this->app->make(\ManagerCore\Services\EventBus::class);
+            $eventBus->subscribe(
+                'mining-manager',
+                'structure.alert.*',
+                'structure.notify_alert',
+                [
+                    'queued' => false,    // Sync dispatch — event volume is tiny (per-structure poll)
+                    'priority' => 10,     // Above default 0; threat alerts should fire early
+                ]
+            );
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning(
+                '[MM] Cross-plugin structure alert subscription failed: ' . $e->getMessage()
+            );
+        }
+    }
+
+    /**
+     * Read-only questions other plugins can ask Mining Manager about a
+     * character's mining and tax, answered as small arrays with stable field
+     * names so the tables behind them can change.
+     *
+     * They read only Mining Manager's own tables, so Manager Core is all they
+     * need.
+     *
+     * @return void
+     */
+    private function registerMiningQueryCapabilities()
+    {
+        if (!class_exists('ManagerCore\\Services\\PluginBridge')) {
+            return;
+        }
+
+        try {
+            $bridge = $this->app->make(\ManagerCore\Services\PluginBridge::class);
 
             $bridge->registerCapability(
                 'mining-manager',
@@ -445,58 +517,9 @@ class MiningManagerServiceProvider extends AbstractSeatPlugin
                     }
                 }
             );
-
-            // Metenox drill cargo readout — exposed for cross-plugin use so
-            // Structure Manager (or future consumers) can render the moon-ore
-            // sitting in a Metenox's MoonMaterialBay on its structure detail
-            // page without having to round-trip through MM's UI.
-            //
-            // Contract: $structureId is the Metenox's structure_id.
-            // Returns array<int,int> mapping type_id => quantity for every
-            // moon ore stack in the bay. Returns:
-            //   - []     when the structure is a known Metenox but the bay
-            //            is empty (caller can distinguish "drill just pulled"
-            //            from "unknown structure")
-            //   - null   when the structure is not a Metenox (type_id != 81826)
-            //            or doesn't exist in corporation_structures at all
-            //
-            // No corp permission gate here — capability resolution is
-            // peer-plugin level. The caller is expected to enforce its own
-            // visibility before invoking (the same way HR's tax-status
-            // capability call assumes HR's middleware vetted the request).
-            $bridge->registerCapability(
-                'mining-manager',
-                'mining.metenox.cargoSnapshot',
-                function (int $structureId): ?array {
-                    try {
-                        return $this->app
-                            ->make(\MiningManager\Services\Moon\MetenoxCargoService::class)
-                            ->cargoSnapshot($structureId);
-                    } catch (\Throwable $e) {
-                        \Illuminate\Support\Facades\Log::warning(
-                            '[MM] mining.metenox.cargoSnapshot failed',
-                            ['structure_id' => $structureId, 'error' => $e->getMessage()]
-                        );
-                        return null;
-                    }
-                }
-            );
-
-            // Persistent subscription — survives restarts. updateOrCreate
-            // semantics so repeated boots are safe.
-            $eventBus = $this->app->make(\ManagerCore\Services\EventBus::class);
-            $eventBus->subscribe(
-                'mining-manager',
-                'structure.alert.*',
-                'structure.notify_alert',
-                [
-                    'queued' => false,    // Sync dispatch — event volume is tiny (per-structure poll)
-                    'priority' => 10,     // Above default 0; threat alerts should fire early
-                ]
-            );
         } catch (\Throwable $e) {
             \Illuminate\Support\Facades\Log::warning(
-                '[MM] Cross-plugin structure alert subscription failed: ' . $e->getMessage()
+                '[MM] Registering the mining query capabilities failed: ' . $e->getMessage()
             );
         }
     }
