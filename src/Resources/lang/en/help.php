@@ -9,6 +9,7 @@ return [
     // Navigation Items
     'overview' => 'Overview',
     'getting_started' => 'Getting Started',
+    'plugins' => 'Plugins & Ecosystem',
     'dashboard' => 'Dashboard',
     'tax_system' => 'Tax System',
     'mining_events' => 'Mining Events',

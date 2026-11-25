@@ -1612,13 +1612,17 @@ class SettingsController extends Controller
      * / Dev branch / Unknown" pill. Cached 6h on the service side so
      * each Help visit doesn't hit Packagist.
      *
+     * `$ecosystem` says which partner plugins are installed, found the way
+     * the features that use them find them, with no HTTP.
+     *
      * @return \Illuminate\View\View
      */
     public function help()
     {
         $versionStatus = app(\MiningManager\Services\VersionChecker::class)->getStatus();
+        $ecosystem = \MiningManager\Services\Ecosystem\PluginStatus::forHelp();
 
-        return view('mining-manager::help.index', compact('versionStatus'));
+        return view('mining-manager::help.index', compact('versionStatus', 'ecosystem'));
     }
 
     /**
