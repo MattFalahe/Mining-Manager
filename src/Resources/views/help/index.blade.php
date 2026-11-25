@@ -1214,13 +1214,32 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                 <div class="recent-changes-box">
                     <h4>
                         <span><i class="fas fa-history"></i> In this update (3.0.1)</span>
-                        <span class="recent-changes-tag">Buy and Sell</span>
+                        <span class="recent-changes-tag">Fixes and Improvements</span>
                     </h4>
                     <p>
                         The changes in this release you will notice without going looking.
                         <a href="https://github.com/MattFalahe/Mining-Manager/blob/main/CHANGELOG.md" target="_blank" rel="noopener">The changelog</a>
                         has the complete record.
                     </p>
+                    <h5>Mining Ledger and moons</h5>
+                    <ul>
+                        <li>
+                            <strong>My Performance.</strong> <span class="mm-new-badge">{{ trans('mining-manager::help.new_badge') }}</span>
+                            A new tab on the Mining Ledger with Analytics' performance charts for your own
+                            characters, all of them or one. See Analytics in this Help.
+                        </li>
+                        <li>
+                            <strong>Best Day on My Mining.</strong> It was the best day of any one character, so
+                            with several characters it could come out below the Daily Average. It is the best day
+                            of all the characters in view together now.
+                        </li>
+                        <li>
+                            <strong>Cancelled pulls.</strong> A pull cancelled in game no longer shows on All
+                            Extractions or in Moon Analytics as still on its way, and a pull replaced by a newer
+                            one on the same refinery is marked cancelled even when nobody's notifications show
+                            the cancellation.
+                        </li>
+                    </ul>
                     <h5>Prices</h5>
                     <ul>
                         <li>
@@ -1312,6 +1331,12 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                         <li>
                             <strong>Help search.</strong> The search box looks through every section of this page,
                             not only the open one.
+                        </li>
+                        <li>
+                            <strong>Plugins &amp; Ecosystem.</strong> <span class="mm-new-badge">{{ trans('mining-manager::help.new_badge') }}</span>
+                            A new page in this Help lists the plugins Mining Manager works with and whether this
+                            server has each one, and Key Features shows what each feature that needs another plugin
+                            is missing.
                         </li>
                         <li>
                             <strong>Dialogs.</strong> Investigate and Resolve on Theft Detection, New Schedule,
@@ -2574,7 +2599,7 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
 
                     <div class="alert alert-secondary mt-2">
                         <i class="fas fa-ban text-warning"></i>
-                        <strong>Cancellation handling:</strong> If a director cancels an extraction in-game before chunk arrival, EVE sends a <code>MoonminingExtractionCancelled</code> character notification. The state system picks this up on its next 2h ESI poll and marks the extraction as <code>cancelled</code>. The notification watchdog then skips it — no false "Moon Chunk Ready" alert fires at the originally scheduled arrival time. Webhooks with <strong>Moon Extraction Cancelled</strong> ticked are told, with who cancelled it and when the chunk was due.
+                        <strong>Cancellation handling:</strong> If a director cancels an extraction in-game before chunk arrival, EVE sends a <code>MoonminingExtractionCancelled</code> character notification. The state system picks this up on its next 2h ESI poll and marks the extraction as <code>cancelled</code>. The notification watchdog then skips it — no false "Moon Chunk Ready" alert fires at the originally scheduled arrival time. Webhooks with <strong>Moon Extraction Cancelled</strong> ticked are told, with who cancelled it and when the chunk was due. A refinery runs one pull at a time, so a pull is also marked cancelled once a newer one has been under way on the same refinery for an hour, for when no character with notification access saw the cancellation; that alert has no name on it. <span class="mm-new-badge">{{ trans('mining-manager::help.new_badge') }}</span> A cancelled pull is left off All Extractions and Moon Analytics and shows as Cancelled in its moon's history.
                     </div>
 
                     <div class="alert alert-secondary mt-2">
@@ -4143,6 +4168,18 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                         Moon managers can open <strong>Moon Analytics</strong>, below. The rest of Analytics is
                         for directors.
                     </p>
+
+                    <h4>
+                        <i class="fas fa-chart-line"></i> My Performance
+                        <span class="mm-new-badge">{{ trans('mining-manager::help.new_badge') }}</span>
+                    </h4>
+                    <p>
+                        Every member gets the same charts for their own characters, on the Mining Ledger's
+                        <strong>My Performance</strong> tab. The corporation list holds only the corporations
+                        their characters are in, and instead of a player they pick all their characters or one of
+                        them. Miner Activity becomes each of their characters, and the week by day can be split
+                        by character. Nothing on it shows anyone else's mining.
+                    </p>
                 </div>
 
                 <div class="help-card">
@@ -4318,7 +4355,7 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                                 <tr>
                                     <td><code>mining-manager:update-extractions</code></td>
                                     <td><span class="badge badge-info">{{ trans('mining-manager::help.schedule_2hours') }}</span></td>
-                                    <td><strong>State system</strong> — refreshes moon extraction data from corporation structure ESI endpoints. Detects manual and auto-fracture notifications (<code>MoonminingLaserFired</code>, <code>MoonminingAutomaticFracture</code>) and director cancellations (<code>MoonminingExtractionCancelled</code>) — cancelled extractions are flagged so the notification watchdog skips them. Answers the question "what does EVE say is happening?". Does <em>not</em> fire moon arrival notifications — that's the notification system below. The same run sends Moon Extraction Cancelled, the Moon Not Rescheduled and Moons Need Planning reminders, Next Pull Can Be Started and Moon Scan Missing, and takes planned pulls off refineries confirmed gone (Refinery Gone).<br>
+                                    <td><strong>State system</strong> — refreshes moon extraction data from corporation structure ESI endpoints. Detects manual and auto-fracture notifications (<code>MoonminingLaserFired</code>, <code>MoonminingAutomaticFracture</code>) and director cancellations (<code>MoonminingExtractionCancelled</code>) — cancelled extractions are flagged so the notification watchdog skips them, and so is a pull a newer one on the same refinery has replaced. Answers the question "what does EVE say is happening?". Does <em>not</em> fire moon arrival notifications — that's the notification system below. The same run sends Moon Extraction Cancelled, the Moon Not Rescheduled and Moons Need Planning reminders, Next Pull Can Be Started and Moon Scan Missing, and takes planned pulls off refineries confirmed gone (Refinery Gone).<br>
                                         <small class="text-muted">Options: <code>--structure_id=</code> specific structure, <code>--corporation_id=</code> specific corp, <code>--active-only</code> only active extractions</small>
                                     </td>
                                 </tr>

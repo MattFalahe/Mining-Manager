@@ -2,9 +2,19 @@
 
 All notable changes to Mining Manager will be documented in this file.
 
-## [Unreleased]
+## [3.0.1] - 2026-11-28 - The Ecosystem Era: Eclipse, Fixes and Improvements
 
-**Backwards compatible.** No migrations.
+**Backwards compatible.** No migrations. Manager Core is still optional. Where it is installed, 1.2.0 is the oldest release this one is tested with: on an older one, `mining.tax_reopened` isn't sent and prices are copied on the scheduled refresh rather than when Manager Core says they are in, and everything else works as before.
+
+### Moon Extractions
+
+- Fixed: **a cancelled pull showed as still on its way.** When a pull was cancelled in game and a new one started on the same refinery, All Extractions listed both, the cancelled one as Extracting with its old arrival date, and Moon Analytics counted it in its month. Its own page counted down to an arrival that was never coming, and Manager Core was told it was ready, unstable and expired at the times it would have had. A cancelled pull is left off All Extractions and Moon Analytics now, past months included, shows as Cancelled wherever it is listed, has no countdown, and sends no events. It stays in its moon's history, marked Cancelled. Nothing stored changes.
+- **A pull replaced by a newer one is marked cancelled, notice or not.** Only the game's cancel notification marked a pull cancelled, so with no character able to read the corporation's notifications the old pull stayed Extracting. A refinery runs one pull at a time, so once a newer pull has been under way on the same refinery for an hour, the older one is marked cancelled and Extraction Cancelled goes out. This covers pulls still on their way; nothing that has arrived or been archived is touched.
+
+### Mining Ledger
+
+- Fixed: **Best Day on My Mining was one character's best day.** It took the best day of any single character, while Daily Average is worked out on the whole account, so with several characters Best Day could come out below the average. It adds up each day across the characters in view now and takes the best. With one character picked it comes out the same as before.
+- **My Performance.** A new tab on the Mining Ledger, next to My Mining, with Analytics' performance charts for your own characters: mining trends, ore by ISK and by quantity, each character's activity, systems, and the week by day, split by character. Filter by dates, source and ore type, by one of the corporations your characters are in, and by all your characters or one of them. Members can open it, and it never shows anyone else's characters.
 
 ### Pricing
 
@@ -36,6 +46,7 @@ All notable changes to Mining Manager will be documented in this file.
 - Fixed: **a part-paid bill passing its due date was never announced.** A part-paid bill stays Partial past its due date, and only a bill nothing was paid on turned Overdue and sent `mining.tax_overdue`. A part-paid one now sends it too, once, as it passes the same point, with `part_paid` set. This covers due dates passed from the update on.
 - `mining.tax_paid`, `mining.tax_overdue` and `mining.tax_written_off` carry a key per change rather than per bill now, so a bill paid again after reopening isn't dropped as a repeat. The topics and their fields are unchanged.
 - Fixed: **`mining.tax_created` went out before the bill was saved.** It was published from inside the bill's database transaction, so a plugin listening for it, HR Manager for one, did its work inside the tax run's transaction and could hear of a bill that was then rolled back. It goes out once the bill is committed now, like every other event. The topic, its fields and its key are unchanged, and a bill that held credit pays off as it is raised is still announced before its `mining.tax_paid`.
+- Fixed: **the mining and tax queries were only offered with Structure Manager installed.** `mining.getCharacterTaxStatus` and `mining.getCharacterRecentMining` read only Mining Manager's own tables, but were registered with Manager Core alongside the Structure Manager alerts. They are registered whenever Manager Core is installed now.
 
 ### Notifications
 
@@ -55,6 +66,7 @@ All notable changes to Mining Manager will be documented in this file.
 
 - Fixed: **eight dialogs could open behind the page's dimmed backdrop.** Investigate and Resolve on Theft Detection (the list and an incident's page), New Schedule on Scheduled Reports, Send to Discord on a report, Generate Code on Payment Codes and the webhook dialog on Settings stayed inside the page, where AdminLTE's layout can leave them under the backdrop and out of reach. They open on top of the page now.
 - Fixed: **Help's search only looked in the section that was open.** A match in any other section stayed hidden. It searches every section now, and choosing a section from the menu clears the search.
+- **Plugins & Ecosystem in Help.** A new Help page lists the plugins Mining Manager works with, Manager Core as crucial and Structure Manager, SeAT Broadcast and SeAT Connector as optional, and says whether this server has each one. Under Key Features, each feature that needs another plugin has a box of its own: red while a crucial plugin is missing, yellow while only an optional one is.
 
 ### REST API
 
@@ -72,6 +84,7 @@ All notable changes to Mining Manager will be documented in this file.
 ### Tests
 
 - Tests for reading prices from Manager Core and Fuzzwork, on Jita's order book as it stood on 7 November, and for the market Janice and Fuzzwork are asked about at each hub.
+- Tests for what Help's Plugins & Ecosystem shows for each set of installed plugins.
 
 ## [3.0.0] - 2026-11-07 - The Ecosystem Era: Eclipse
 
