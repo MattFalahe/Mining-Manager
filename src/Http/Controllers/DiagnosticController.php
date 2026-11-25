@@ -2584,10 +2584,15 @@ class DiagnosticController extends Controller
     public function taxPipelineDiagnostic(Request $request)
     {
         try {
-            $month = $request->input('month', \Carbon\Carbon::now()->subMonth()->format('Y-m'));
+            $month = (string) $request->input('month', \Carbon\Carbon::now()->subMonthNoOverflow()->format('Y-m'));
+            if (!preg_match('/^\d{4}-(0[1-9]|1[0-2])$/', $month)) {
+                return response()->json(['success' => false, 'error' => 'The month is YYYY-MM.'], 400);
+            }
             $characterId = (int) $request->input('character_id');
 
-            $monthStart = \Carbon\Carbon::createFromFormat('Y-m', $month)->startOfMonth();
+            // From the 1st: a year and month alone take today's day, and on
+            // the 31st that runs a 30 day month into the next.
+            $monthStart = \Carbon\Carbon::parse($month . '-01')->startOfMonth();
             $monthEnd = $monthStart->copy()->endOfMonth();
 
             $taxService = app(\MiningManager\Services\Tax\TaxCalculationService::class);

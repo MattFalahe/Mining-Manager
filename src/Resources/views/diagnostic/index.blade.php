@@ -1875,7 +1875,7 @@
                             <div class="col-md-4">
                                 <div class="form-group">
                                     <label>Month</label>
-                                    <input type="month" id="taxPipeMonth" class="form-control" value="{{ \Carbon\Carbon::now()->subMonth()->format('Y-m') }}">
+                                    <input type="month" id="taxPipeMonth" class="form-control" value="{{ \Carbon\Carbon::now()->subMonthNoOverflow()->format('Y-m') }}">
                                 </div>
                             </div>
                             <div class="col-md-4">
