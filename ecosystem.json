@@ -1,6 +1,6 @@
 {
     "plugin": "mining-manager",
-    "manager_core": { "relation": "optional", "minimum": "1.1.0" },
+    "manager_core": { "relation": "optional", "minimum": "1.2.0" },
     "migration_identifier": "mining_manager",
     "publishes": [
         "mining.tax_created", "mining.tax_paid", "mining.tax_overdue", "mining.tax_written_off", "mining.tax_reopened",
