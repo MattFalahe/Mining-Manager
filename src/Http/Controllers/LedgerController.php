@@ -255,8 +255,7 @@ class LedgerController extends Controller
                 SUM(total_value) as total_value,
                 SUM(total_tax) as total_tax,
                 SUM(event_discount_total) as event_discount_total,
-                COUNT(DISTINCT date) as active_days,
-                MAX(total_value) as best_day_value
+                COUNT(DISTINCT date) as active_days
             ')
             ->first();
 
@@ -270,8 +269,16 @@ class LedgerController extends Controller
             ->selectRaw('COALESCE(SUM(mining_ledger.quantity * invTypes.volume), 0) as total_volume')
             ->value('total_volume');
 
-        // Best single day by value (from daily summaries)
-        $bestDayValue = (float) ($agg->best_day_value ?? 0);
+        // Best day across every character shown. The summaries hold a row per
+        // character per day, so their own maximum is one character's best day,
+        // which can sit below the daily average of an account with several.
+        $bestDayValue = (float) (MiningLedgerDailySummary::whereIn('character_id', $characterIds)
+            ->whereBetween('date', [$startDate, $endDate])
+            ->when($specificCharacterId, fn($q) => $q->where('character_id', $specificCharacterId))
+            ->groupBy('date')
+            ->selectRaw('SUM(total_value) as day_value')
+            ->orderByDesc('day_value')
+            ->value('day_value') ?? 0);
 
         // The bills that cover any of the days shown, each counted whole, as
         // it was billed. A bill's month is only the month it falls in, which a
