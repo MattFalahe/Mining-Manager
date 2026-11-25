@@ -940,7 +940,8 @@ class MoonExtractionService
      *
      * Matches by structure_id + timestamp window (cancellation must have
      * happened after the extraction was imported and before the originally
-     * planned chunk arrival).
+     * planned chunk arrival). A pull that a newer one on the same refinery
+     * replaced is marked cancelled too, notice or not.
      *
      * @return int Number of extractions marked cancelled
      */
@@ -981,6 +982,32 @@ class MoonExtractionService
                 // The status only ever moves to cancelled once, so this fires once.
                 $this->sendExtractionCancelledNotification($extraction, $cancelledBy);
             }
+        }
+
+        // The notice only reaches SeAT through a character that can see the
+        // corporation's notifications. A refinery runs one pull at a time, so
+        // a pull started there before this one's chunk was due means this one
+        // was cancelled all the same. The newer pull has to be an hour old,
+        // which gives the notice time to arrive first and name who did it.
+        $superseded = MoonExtraction::where('status', 'extracting')
+            ->where('chunk_arrival_time', '>', $now)
+            ->whereExists(function ($query) use ($now) {
+                $query->select(DB::raw(1))
+                    ->from('moon_extractions as newer')
+                    ->whereColumn('newer.structure_id', 'moon_extractions.structure_id')
+                    ->whereColumn('newer.extraction_start_time', '>', 'moon_extractions.extraction_start_time')
+                    ->whereColumn('newer.extraction_start_time', '<', 'moon_extractions.chunk_arrival_time')
+                    ->where('newer.extraction_start_time', '<=', $now->copy()->subHour());
+            })
+            ->get();
+
+        foreach ($superseded as $extraction) {
+            $extraction->update(['status' => 'cancelled']);
+            $cancelled++;
+
+            Log::info("Mining Manager: Extraction {$extraction->id} marked cancelled: a newer pull started on structure {$extraction->structure_id} before its chunk was due");
+
+            $this->sendExtractionCancelledNotification($extraction, null);
         }
 
         return $cancelled;
