@@ -5,6 +5,7 @@ namespace MiningManager\Services\Tax;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use MiningManager\Models\MiningTax;
 
 /**
  * Is a ledger row already accounted for on an invoice somebody has been sent?
@@ -12,8 +13,8 @@ use Illuminate\Support\Facades\Log;
  * Several places need to know this and they must all agree, so the rule lives
  * here once rather than being re-expressed as a slightly different query each
  * time. An invoice counts as issued when a payment code has been generated for
- * it, money has arrived against it, or its status already says paid or partial
- * -- the same three conditions TaxCalculationService::invoiceFreezeReason()
+ * it, money has arrived against it, or its status already says paid, partial or
+ * let off -- the same three conditions TaxCalculationService::invoiceFreezeReason()
  * applies at the invoice level.
  *
  * An invoice belongs to a player rather than to the character that mined. Tax
@@ -55,7 +56,7 @@ class InvoiceCoverage
             $day = DB::table('mining_taxes as t')
                 ->leftJoin('mining_tax_codes as c', 'c.mining_tax_id', '=', 't.id')
                 ->where(function ($q) {
-                    $q->whereIn('t.status', ['paid', 'partial'])
+                    $q->whereIn('t.status', self::issuedStatuses())
                       ->orWhere('t.amount_paid', '>', 0)
                       ->orWhereNotNull('c.id');
                 })
@@ -111,6 +112,9 @@ class InvoiceCoverage
      */
     public static function excludeFrom($query, string $table = 'mining_ledger'): void
     {
+        $statuses = self::issuedStatuses();
+        $placeholders = implode(', ', array_fill(0, count($statuses), '?'));
+
         $query->whereRaw("NOT EXISTS (
             SELECT 1
             FROM mining_taxes t
@@ -131,8 +135,19 @@ class InvoiceCoverage
                     t.period_end,
                     LAST_DAY(COALESCE(t.period_start, t.month))
                   )
-              AND (t.status IN (?, ?) OR t.amount_paid > 0 OR c.id IS NOT NULL)
-        )", ['paid', 'partial']);
+              AND (t.status IN ({$placeholders}) OR t.amount_paid > 0 OR c.id IS NOT NULL)
+        )", $statuses);
+    }
+
+    /**
+     * Statuses that pin an invoice on their own: paid or part paid, and let
+     * off, since what was let off is the bill less what was paid on it.
+     *
+     * @return array<int, string>
+     */
+    public static function issuedStatuses(): array
+    {
+        return array_merge(['paid', 'partial'], MiningTax::WRITTEN_OFF_STATUSES);
     }
 
     /**
@@ -164,7 +179,7 @@ class InvoiceCoverage
                       });
                 })
                 ->where(function ($q) {
-                    $q->whereIn('t.status', ['paid', 'partial'])
+                    $q->whereIn('t.status', self::issuedStatuses())
                       ->orWhere('t.amount_paid', '>', 0)
                       ->orWhereNotNull('c.id');
                 })

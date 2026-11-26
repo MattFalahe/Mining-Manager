@@ -1537,6 +1537,7 @@ class DashboardController extends Controller
         $months = [];
         $collected = [];
         $owed = [];
+        $waived = [];
 
         for ($i = 11; $i >= 0; $i--) {
             $month = Carbon::now()->startOfMonth()->subMonths($i);
@@ -1549,6 +1550,13 @@ class DashboardController extends Controller
             $owedAmount = MiningTax::whereIn('character_id', $characterIds)
                 ->where('month', $month->format('Y-m-01'))
                 ->sum('amount_owed');
+
+            // Let off on the month's bills: never collected, but not owed
+            // either, so it is not part of the gap between the other two.
+            $waivedAmount = (float) MiningTax::whereIn('character_id', $characterIds)
+                ->where('month', $month->format('Y-m-01'))
+                ->whereIn('status', MiningTax::WRITTEN_OFF_STATUSES)
+                ->sum(DB::raw('GREATEST(amount_owed - COALESCE(amount_paid, 0), 0)'));
 
             // For current month, always use daily summaries as the estimate
             // (single source of truth for tax), falling back to mining_taxes if available
@@ -1567,12 +1575,14 @@ class DashboardController extends Controller
             $months[] = $month->format('Y-m');
             $collected[] = $collectedAmount;
             $owed[] = $owedAmount;
+            $waived[] = round($waivedAmount, 2);
         }
 
         return [
             'labels' => $months,
             'collected' => $collected,
             'owed' => $owed,
+            'waived' => $waived,
         ];
     }
 

@@ -89,6 +89,12 @@
                                             {{ number_format($collectedThisPeriod, 0) }} ISK for {{ $currentPeriodLabel }}
                                         </small>
                                     @endif
+                                    @if(($summary['written_off_count'] ?? 0) > 0)
+                                        <small class="d-block text-white-75 mt-1" title="{{ trans('mining-manager::taxes.waived_this_month_help') }}">
+                                            <i class="fas fa-hand-holding-usd"></i>
+                                            {{ trans_choice('mining-manager::taxes.waived_this_month', $summary['written_off_count'], ['amount' => number_format($summary['written_off'], 0), 'count' => $summary['written_off_count']]) }}
+                                        </small>
+                                    @endif
                                 </div>
                             </div>
                         </div>
@@ -228,6 +234,8 @@
                                         <option value="paid" {{ request('status') == 'paid' ? 'selected' : '' }}>{{ trans('mining-manager::taxes.paid') }}</option>
                                         <option value="overdue" {{ request('status') == 'overdue' ? 'selected' : '' }}>{{ trans('mining-manager::taxes.overdue') }}</option>
                                         <option value="partial" {{ request('status') == 'partial' ? 'selected' : '' }}>{{ trans('mining-manager::taxes.partial') }}</option>
+                                        <option value="waived" {{ request('status') == 'waived' ? 'selected' : '' }}>{{ trans('mining-manager::taxes.waived') }}</option>
+                                        <option value="exempted" {{ request('status') == 'exempted' ? 'selected' : '' }}>{{ trans('mining-manager::taxes.exempted') }}</option>
                                     </select>
                                 </div>
                             </div>
@@ -410,6 +418,9 @@
                                     <td class="text-right" data-order="{{ (float) $tax->amount_paid }}">
                                         <strong>{{ number_format($tax->amount_paid, 2) }}</strong>
                                         <small class="text-muted">ISK</small>
+                                        @if($tax->isWrittenOff())
+                                            <small class="d-block text-muted">{{ trans('mining-manager::taxes.amount_waived', ['amount' => number_format($tax->getWrittenOffAmount(), 2)]) }}</small>
+                                        @endif
                                     </td>
                                     {{-- What still has to be paid, so nobody has to subtract the two
                                          columns before it, and the figure the Copy button hands over, to
@@ -486,7 +497,7 @@
                                         @if($tax->due_date)
                                             @php
                                                 $dueDate = \Carbon\Carbon::parse($tax->due_date);
-                                                $isOverdue = $dueDate->isPast() && $tax->status !== 'paid';
+                                                $isOverdue = $dueDate->isPast() && $tax->status !== 'paid' && !$tax->isWrittenOff();
                                             @endphp
                                             <span class="{{ $isOverdue ? 'text-danger' : '' }}">
                                                 {{ $dueDate->format('Y-m-d') }}
@@ -605,6 +616,9 @@
                             <button type="button" class="btn btn-success" id="bulkMarkPaid">
                                 <i class="fas fa-check"></i> {{ trans('mining-manager::taxes.mark_as_paid') }}
                             </button>
+                            <button type="button" class="btn btn-secondary" id="bulkWaive">
+                                <i class="fas fa-hand-holding-usd"></i> {{ trans('mining-manager::taxes.waive') }}
+                            </button>
                             <button type="button" class="btn btn-warning" id="bulkSendReminders">
                                 <i class="fas fa-envelope"></i> {{ trans('mining-manager::taxes.send_reminders') }}
                             </button>
@@ -661,6 +675,37 @@
         </div>
     </div>
 </div>
+
+@if($isAdmin ?? false)
+{{-- WAIVE SELECTED MODAL --}}
+<div class="modal fade" id="bulkWaiveModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content bg-dark">
+            <div class="modal-header">
+                <h5 class="modal-title">{{ trans('mining-manager::taxes.bulk_waive_title') }}</h5>
+                <button type="button" class="close" data-dismiss="modal">
+                    <span>&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <p>{{ trans('mining-manager::taxes.bulk_waive_explain') }} <strong id="bulkWaiveCount">0</strong></p>
+                <div class="form-group mb-0">
+                    <label for="bulkWaiveReason">{{ trans('mining-manager::taxes.waive_reason') }}</label>
+                    <textarea class="form-control" id="bulkWaiveReason" rows="3" maxlength="255" placeholder="{{ trans('mining-manager::taxes.waive_reason_placeholder') }}"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">
+                    {{ trans('mining-manager::taxes.cancel') }}
+                </button>
+                <button type="button" class="btn btn-warning" id="confirmBulkWaive">
+                    <i class="fas fa-hand-holding-usd"></i> {{ trans('mining-manager::taxes.waive_confirm') }}
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+@endif
 
 @push('javascript')
 <script src="{{ asset('vendor/mining-manager/js/vendor/jquery.dataTables.min.js') }}"></script>
@@ -843,6 +888,44 @@ $(document).ready(function() {
                 }
             });
         }
+    });
+
+    // Bulk waive: one reason for every bill picked
+    $('#bulkWaive').on('click', function() {
+        $('#bulkWaiveCount').text($('.tax-checkbox:checked').length);
+        $('#bulkWaiveModal').appendTo('body').modal('show');
+    });
+
+    $('#confirmBulkWaive').on('click', function() {
+        const selectedIds = $('.tax-checkbox:checked').map(function() {
+            return $(this).val();
+        }).get();
+        const reason = $.trim($('#bulkWaiveReason').val());
+
+        if (!reason) {
+            toastr.error(@json(trans('mining-manager::taxes.waive_reason_required')));
+            return;
+        }
+
+        const $btn = $(this);
+        const label = $btn.html();
+        $btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i>');
+        $.ajax({
+            url: @json(route('mining-manager.taxes.bulk-waive')),
+            method: 'POST',
+            data: { tax_ids: selectedIds, reason: reason },
+            headers: {
+                'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
+            },
+            success: function(response) {
+                toastr.success(response.message);
+                setTimeout(() => location.reload(), 1000);
+            },
+            error: function(xhr) {
+                toastr.error(xhr.responseJSON?.message || @json(trans('mining-manager::taxes.error_waiving')));
+                $btn.prop('disabled', false).html(label);
+            }
+        });
     });
 
     // Bulk send reminders

@@ -117,6 +117,11 @@
                         <i class="fas fa-check"></i> Mark as Paid
                     </button>
                     @endif
+                    @if(in_array($tax->status, \MiningManager\Models\MiningTax::OUTSTANDING_STATUSES, true))
+                    <button class="btn btn-secondary btn-block mt-2" data-toggle="modal" data-target="#waiveModal">
+                        <i class="fas fa-hand-holding-usd"></i> {{ trans('mining-manager::taxes.waive') }}
+                    </button>
+                    @endif
                     <div class="form-group mt-2">
                         <label class="text-muted"><small>Change Status</small></label>
                         <select class="form-control form-control-sm" id="statusSelect">
@@ -185,6 +190,24 @@
                     <div class="mm-notice mm-notice-success">
                         <h5><i class="fas fa-check-circle"></i> {{ trans('mining-manager::taxes.payment_confirmed') }}</h5>
                         <p>{{ trans('mining-manager::taxes.paid_on') }}: {{ $tax->paid_at ? \Carbon\Carbon::parse($tax->paid_at)->format('F d, Y') : 'N/A' }}</p>
+                    </div>
+                    @endif
+
+                    @if($tax->isWrittenOff())
+                    <div class="mm-notice mm-notice-secondary">
+                        <h5><i class="fas fa-hand-holding-usd"></i> {{ trans('mining-manager::taxes.written_off_heading', ['status' => trans('mining-manager::taxes.' . $tax->status)]) }}</h5>
+                        <p class="mb-1">
+                            {{ trans('mining-manager::taxes.written_off_amount', ['amount' => number_format($tax->getWrittenOffAmount(), 2)]) }}
+                            @if((float) $tax->amount_paid > 0)
+                                {{ trans('mining-manager::taxes.written_off_paid_before', ['amount' => number_format((float) $tax->amount_paid, 2)]) }}
+                            @endif
+                        </p>
+                        @if($tax->written_off_at)
+                            <p class="mb-1"><small>{{ trans('mining-manager::taxes.written_off_when', ['date' => $tax->written_off_at->format('F d, Y H:i'), 'name' => $writtenOffBy ?? trans('mining-manager::taxes.written_off_by_unknown')]) }}</small></p>
+                        @endif
+                        @if($tax->written_off_reason)
+                            <p class="mb-0"><small>{{ trans('mining-manager::taxes.written_off_reason', ['reason' => $tax->written_off_reason]) }}</small></p>
+                        @endif
                     </div>
                     @endif
 
@@ -498,6 +521,36 @@ $(document).ready(function() {
     </div>
 </div>
 
+@if(in_array($tax->status, \MiningManager\Models\MiningTax::OUTSTANDING_STATUSES, true))
+{{-- Waive Modal --}}
+<div class="modal fade" id="waiveModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content bg-dark">
+            <div class="modal-header">
+                <h5 class="modal-title">{{ trans('mining-manager::taxes.waive_title') }}</h5>
+                <button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
+            </div>
+            <div class="modal-body">
+                <p>{{ trans('mining-manager::taxes.waive_explain', ['amount' => number_format($tax->getRemainingBalance(), 2)]) }}</p>
+                @if((float) $tax->amount_paid > 0)
+                    <p>{{ trans('mining-manager::taxes.waive_paid_stays', ['amount' => number_format((float) $tax->amount_paid, 2)]) }}</p>
+                @endif
+                <div class="form-group mb-0">
+                    <label for="waiveReason">{{ trans('mining-manager::taxes.waive_reason') }}</label>
+                    <textarea class="form-control" id="waiveReason" rows="3" maxlength="255" placeholder="{{ trans('mining-manager::taxes.waive_reason_placeholder') }}"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-warning" id="confirmWaive">
+                    <i class="fas fa-hand-holding-usd"></i> {{ trans('mining-manager::taxes.waive_confirm') }}
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+@endif
+
 @push('javascript')
 <script>
 $(document).ready(function() {
@@ -511,7 +564,7 @@ $(document).ready(function() {
     // so the fix also covers Bootstrap's declarative data-toggle="modal"
     // triggers (which don't go through $.fn.modal('show') and can't be
     // patched at the call site).
-    $(document).on('show.bs.modal', '#markPaidModal', function () {
+    $(document).on('show.bs.modal', '#markPaidModal, #waiveModal', function () {
         if (!$(this).parent().is('body')) {
             $(this).appendTo('body');
         }
@@ -537,6 +590,33 @@ $(document).ready(function() {
             error: function(xhr) {
                 toastr.error(xhr.responseJSON?.message || 'Error marking as paid');
                 $('#confirmDetailMarkPaid').prop('disabled', false).html('<i class="fas fa-check"></i> Confirm Payment');
+            }
+        });
+    });
+
+    // Waive
+    $('#confirmWaive').on('click', function() {
+        var reason = $.trim($('#waiveReason').val());
+        if (!reason) {
+            toastr.error(@json(trans('mining-manager::taxes.waive_reason_required')));
+            return;
+        }
+
+        var $btn = $(this);
+        var label = $btn.html();
+        $btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Saving...');
+        $.ajax({
+            url: @json(route('mining-manager.taxes.waive', $tax->id)),
+            method: 'POST',
+            data: { reason: reason },
+            headers: { 'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content') },
+            success: function(response) {
+                toastr.success(response.message);
+                setTimeout(() => location.reload(), 1000);
+            },
+            error: function(xhr) {
+                toastr.error(xhr.responseJSON?.message || @json(trans('mining-manager::taxes.error_waiving')));
+                $btn.prop('disabled', false).html(label);
             }
         });
     });

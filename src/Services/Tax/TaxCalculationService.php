@@ -1103,16 +1103,17 @@ class TaxCalculationService
     /**
      * Why a tax record must not have its amount rewritten, or null when it may.
      *
-     * Two things pin an invoice: a payment code, because that code is already in
-     * a member's hands and is what the wallet matcher looks for; and any money
+     * Three things pin an invoice: a payment code, because that code is already
+     * in a member's hands and is what the wallet matcher looks for; any money
      * received against it, because a changed total would silently re-open
-     * something that was settled.
+     * something that was settled; and being let off, because what was let off
+     * is the bill less what was paid, and would change with it.
      *
      * @return string|null
      */
     private function invoiceFreezeReason(MiningTax $tax): ?string
     {
-        if (in_array($tax->status, ['paid', 'partial'], true)) {
+        if (in_array($tax->status, InvoiceCoverage::issuedStatuses(), true)) {
             return 'status:' . $tax->status;
         }
 

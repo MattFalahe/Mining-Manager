@@ -333,6 +333,19 @@ Route::group([
             'middleware' => 'can:mining-manager.admin',
         ]);
 
+        // Letting money go is an admin's call, like setting a bill Exempted.
+        Route::post('/bulk/waive', [
+            'as' => 'mining-manager.taxes.bulk-waive',
+            'uses' => 'TaxController@bulkWaive',
+            'middleware' => 'can:mining-manager.admin',
+        ]);
+
+        Route::post('/{id}/waive', [
+            'as' => 'mining-manager.taxes.waive',
+            'uses' => 'TaxController@waive',
+            'middleware' => 'can:mining-manager.admin',
+        ]);
+
         Route::post('/{id}/status', [
             'as' => 'mining-manager.taxes.update-status',
             'uses' => 'TaxController@updateStatus',

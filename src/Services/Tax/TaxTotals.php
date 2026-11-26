@@ -87,4 +87,30 @@ class TaxTotals
             'bills' => (int) (clone $allocations)->distinct()->count('mining_tax_id'),
         ];
     }
+
+    /**
+     * What was let off on a set of bills during this calendar month, waived
+     * or exempted, and on how many bills. Counted in the month it was let off,
+     * as Collected counts a payment in the month it arrived. A bill let off
+     * before that was recorded has no date, so it is in no month.
+     *
+     * @param \Illuminate\Database\Eloquent\Builder $bills already scoped to whoever is looking
+     * @return array{amount: float, bills: int}
+     */
+    public static function writtenOffThisMonth($bills): array
+    {
+        if (!MiningTax::recordsWriteOff()) {
+            return ['amount' => 0.0, 'bills' => 0];
+        }
+
+        $letOff = (clone $bills)
+            ->whereIn('status', MiningTax::WRITTEN_OFF_STATUSES)
+            ->whereBetween('written_off_at', [Carbon::now()->startOfMonth(), Carbon::now()->endOfMonth()])
+            ->get(['id', 'status', 'amount_owed', 'amount_paid']);
+
+        return [
+            'amount' => round($letOff->sum(fn (MiningTax $bill) => $bill->getWrittenOffAmount()), 2),
+            'bills' => $letOff->count(),
+        ];
+    }
 }

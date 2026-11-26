@@ -50,8 +50,33 @@ class MiningTax extends Model
     private static bool $recordsTaxProfile = false;
     private static int $recordsTaxProfileCheckedAt = 0;
 
+    private static bool $recordsWriteOff = false;
+    private static int $recordsWriteOffCheckedAt = 0;
+
     protected static function booted(): void
     {
+        // When and by whom a bill was let off goes with the status however
+        // it gets there: Waive, Change Status, or anything else that saves
+        // the bill. A bill open again was not let off, so what said it was
+        // comes off with the status.
+        static::saving(function (MiningTax $tax) {
+            if (!$tax->isDirty('status') || !self::recordsWriteOff()) {
+                return;
+            }
+
+            $writtenOff = in_array($tax->status, self::WRITTEN_OFF_STATUSES, true);
+            $wasWrittenOff = in_array($tax->getOriginal('status'), self::WRITTEN_OFF_STATUSES, true);
+
+            if ($writtenOff && !$wasWrittenOff) {
+                $tax->written_off_at = $tax->written_off_at ?? Carbon::now();
+                $tax->written_off_by = $tax->written_off_by ?? (auth()->check() ? auth()->id() : null);
+            } elseif (!$writtenOff && $wasWrittenOff) {
+                $tax->written_off_at = null;
+                $tax->written_off_by = null;
+                $tax->written_off_reason = null;
+            }
+        });
+
         // A bill paid off is announced once, when its status turns paid,
         // however the money came: the wallet, held credit, Mark as Paid,
         // Change Status or the bulk mark. A bill let off is announced when
@@ -99,6 +124,9 @@ class MiningTax extends Model
         'due_date',
         'triggered_by',
         'tax_profile',
+        'written_off_at',
+        'written_off_by',
+        'written_off_reason',
     ];
 
     /**
@@ -117,6 +145,7 @@ class MiningTax extends Model
         'paid_at' => 'datetime',
         'last_reminder_sent' => 'datetime',
         'reminder_count' => 'integer',
+        'written_off_at' => 'datetime',
     ];
 
     /**
@@ -145,6 +174,43 @@ class MiningTax extends Model
         }
 
         return self::$recordsTaxProfile;
+    }
+
+    /**
+     * Whether bills record who let them off yet, asked again after a while
+     * for the same reason as recordsTaxProfile().
+     */
+    public static function recordsWriteOff(): bool
+    {
+        if (!self::$recordsWriteOff && time() - self::$recordsWriteOffCheckedAt >= 30) {
+            self::$recordsWriteOffCheckedAt = time();
+
+            try {
+                self::$recordsWriteOff = Schema::hasColumn('mining_taxes', 'written_off_at');
+            } catch (\Throwable $e) {
+                self::$recordsWriteOff = false;
+            }
+        }
+
+        return self::$recordsWriteOff;
+    }
+
+    /**
+     * Whether the bill was let off, waived or exempted.
+     */
+    public function isWrittenOff(): bool
+    {
+        return in_array($this->status, self::WRITTEN_OFF_STATUSES, true);
+    }
+
+    /**
+     * What was let off: the bill less what was paid on it before. Nothing on
+     * a bill still open or paid. A payment quoting a let-off bill's code goes
+     * to the member's balance, not the bill, so this never moves afterwards.
+     */
+    public function getWrittenOffAmount(): float
+    {
+        return $this->isWrittenOff() ? $this->getRemainingBalance() : 0.0;
     }
 
     /**

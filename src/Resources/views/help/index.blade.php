@@ -1303,6 +1303,13 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                     <h5>Payments</h5>
                     <ul>
                         <li>
+                            <strong>Waive a bill.</strong> <span class="mm-new-badge">{{ trans('mining-manager::help.new_badge') }}</span>
+                            A bill the corporation will not collect can be waived with a reason, on its page or
+                            several at once on Tax Overview. Unlike Mark as Paid it records no ISK as received, so
+                            Collected stays what reached the wallet. Each bill shows what was paid and what was
+                            waived, and Tax Overview what was waived this month. See Waiving a bill in this Help.
+                        </li>
+                        <li>
                             <strong>Assign to invoice.</strong> Assigning a wallet payment to a bill by hand answered
                             "Could not assign this payment" on every assignment after the first an install ever made,
                             although the payment had gone onto the bill. It answers correctly now. If you saw that
@@ -1344,6 +1351,13 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                             A new page in this Help lists the plugins Mining Manager works with and whether this
                             server has each one, and Key Features shows what each feature that needs another plugin
                             is missing.
+                        </li>
+                        <li>
+                            <strong>Tax Trace by bill.</strong> <span class="mm-new-badge">{{ trans('mining-manager::help.new_badge') }}</span>
+                            On Diagnostics, Tax Trace can follow one bill, picked from a character's bills or by
+                            its ID or payment code, and covers exactly the days that bill was billed for. A
+                            character can be found by name, a trace can be one of the account's tax periods, and
+                            Download CSV saves the trace.
                         </li>
                         <li>
                             <strong>Dialogs.</strong> Investigate and Resolve on Theft Detection, New Schedule,
@@ -2019,6 +2033,35 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                     <p>
                         {{ trans('mining-manager::help.assign_payment_undo') }}
                         <span class="mm-new-badge">{{ trans('mining-manager::help.new_badge') }}</span>
+                    </p>
+                </div>
+
+                {{-- Waiving a bill --}}
+                <div class="help-card">
+                    <h3>
+                        <i class="fas fa-hand-holding-usd"></i>
+                        Waiving a bill
+                        <span class="mm-new-badge">{{ trans('mining-manager::help.new_badge') }}</span>
+                    </h3>
+                    <p>
+                        When the corporation decides not to collect a bill, waive it rather than marking it paid.
+                        Mark as Paid records ISK as received, so Collected counts money that never reached the
+                        wallet. Waive records nothing as received: what is left on the bill is let off.
+                    </p>
+                    <ul>
+                        <li><strong>One bill:</strong> Waive on the bill's page, under Mark as Paid. Admins only.</li>
+                        <li><strong>Several:</strong> tick them on Tax Overview and use Waive in the bar that appears. One reason covers them all, and a bill paid or let off already is left as it is.</li>
+                        <li>A reason is required. The bill keeps who waived it, when and why, on its page and in its notes.</li>
+                        <li>Whatever was paid before stays paid and stays in Collected. The bill's page, Tax Overview and My Taxes show the rest as waived.</li>
+                        <li>A waived bill drops out of Owed and Overdue, gets no reminders and is never worked out again. A payment quoting its code goes to the member's other open bills, then to their balance.</li>
+                        <li>Collected on Tax Overview shows what was waived this month underneath, and the tax chart on the director dashboard has a Waived bar beside Collected and Owed.</li>
+                        <li>To undo it, set the bill back to Unpaid with Change Status. A bill with something paid on it goes back to Partial.</li>
+                    </ul>
+                    <p>
+                        Exempted, under Change Status, works the same way for a bill that should never have been
+                        raised, without asking for a reason. Both count as let off: Manager Core hears
+                        <code>mining.tax_written_off</code>, and Corp Wallet Manager leaves the bill out of tax
+                        compliance.
                     </p>
                 </div>
 
@@ -4973,7 +5016,7 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                                 </tr>
                                 <tr>
                                     <td><strong>Tax Trace</strong></td>
-                                    <td>One character and a month: each daily summary with the profile that taxed the day, the same days worked out again now, the bills, and anything that does not add up. It only reads. <em>When a member asks why their bill says what it does.</em></td>
+                                    <td>One bill, or a character by name or ID over a tax period or a month: each daily summary with the profile that taxed the day, the same days worked out again now, the bills, and anything that does not add up. Download CSV saves it. It only reads. <em>When a member asks why their bill says what it does.</em></td>
                                 </tr>
                                 <tr>
                                     <td><strong>Notification Testing</strong></td>

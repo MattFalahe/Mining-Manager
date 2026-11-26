@@ -587,6 +587,9 @@
                                             {{-- A token payment rounds to 0.0%, which reads as nothing paid. --}}
                                             <br><small class="text-warning">({{ $paidShare < 0.1 ? '<0.1' : number_format($paidShare, 1) }}%)</small>
                                         @endif
+                                        @if($tax->isWrittenOff())
+                                            <br><small class="text-muted">{{ trans('mining-manager::taxes.amount_waived', ['amount' => number_format($tax->getWrittenOffAmount(), 2)]) }}</small>
+                                        @endif
                                     </td>
                                     @php $leftToPay = in_array($tax->status, \MiningManager\Models\MiningTax::OUTSTANDING_STATUSES) ? $tax->getRemainingBalance() : 0; @endphp
                                     <td class="text-right">

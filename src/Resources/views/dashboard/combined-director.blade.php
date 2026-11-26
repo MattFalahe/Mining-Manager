@@ -1285,7 +1285,8 @@ function initCorpCharts(data) {
         $('#corpMiningByTypeChart').parent().append('<p class="text-center text-muted mt-3">No mining data available</p>');
     }
 
-    // 5) Tax Revenue Chart (dual-dataset: Collected vs Owed)
+    // 5) Tax Revenue Chart: Collected, Waived and Owed. What was waived is
+    // part of what was owed that will never be collected.
     if (data.miningTaxChart) {
         new Chart(document.getElementById('corpTaxChart'), {
             type: 'bar',
@@ -1296,6 +1297,12 @@ function initCorpCharts(data) {
                     data: toFloats(data.miningTaxChart.collected),
                     backgroundColor: 'rgba(75, 192, 192, 0.8)',
                     borderColor: 'rgb(75, 192, 192)',
+                    borderWidth: 1
+                }, {
+                    label: 'Tax Waived (ISK)',
+                    data: toFloats(data.miningTaxChart.waived || []),
+                    backgroundColor: 'rgba(160, 160, 160, 0.7)',
+                    borderColor: 'rgb(160, 160, 160)',
                     borderWidth: 1
                 }, {
                     label: 'Tax Owed (ISK)',

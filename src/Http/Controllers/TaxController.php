@@ -9,6 +9,7 @@ use MiningManager\Services\Tax\PaymentAllocationService;
 use MiningManager\Services\Tax\TaxCalculationService;
 use MiningManager\Services\Tax\TaxPeriodHelper;
 use MiningManager\Services\Tax\TaxTotals;
+use MiningManager\Services\Tax\TaxWaiver;
 use MiningManager\Services\Tax\WalletTransferService;
 use MiningManager\Services\Tax\TaxCodeGeneratorService;
 use MiningManager\Services\Configuration\SettingsManagerService;
@@ -300,6 +301,7 @@ class TaxController extends Controller
         // status alone.
         $outstanding = TaxTotals::outstanding($scopeSummary(MiningTax::query()));
         $collected = TaxTotals::collectedThisMonth($scopeSummary(MiningTax::query()));
+        $writtenOff = TaxTotals::writtenOffThisMonth($scopeSummary(MiningTax::query()));
 
         $totalOwed = $outstanding['owed'];
         $totalOverdue = $outstanding['overdue'];
@@ -320,6 +322,8 @@ class TaxController extends Controller
             'overdue_count' => $overdueCount,
             'paid_count' => $paidCount,
             'collection_rate' => $collectionRate,
+            'written_off' => $writtenOff['amount'],
+            'written_off_count' => $writtenOff['bills'],
         ];
 
         // Add corp vs guest breakdown if moon owner is configured
@@ -1537,6 +1541,131 @@ class TaxController extends Controller
     }
 
     /**
+     * Let a bill off: what is left on it will not be collected. What was paid
+     * on it stays paid, and nothing is recorded as collected.
+     */
+    public function waive(Request $request, $id)
+    {
+        try {
+            $validated = $request->validate([
+                'reason' => 'required|string|max:255',
+            ]);
+
+            $user = auth()->user();
+            $userName = $user->main_character->name ?? $user->name ?? 'Unknown';
+
+            $result = app(TaxWaiver::class)->waive((int) $id, $validated['reason'], (int) $user->id, $userName);
+
+            Log::info('Tax waived', [
+                'tax_id' => (int) $id,
+                'waived' => $result['waived'],
+                'paid_before' => $result['paid'],
+                'waived_by' => $userName,
+                'reason' => $validated['reason'],
+            ]);
+
+            return response()->json([
+                'status' => 'success',
+                'message' => trans('mining-manager::taxes.waived_success', [
+                    'amount' => number_format($result['waived'], 0),
+                ]),
+            ]);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->validator->errors()->first(),
+            ], 422);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => trans('mining-manager::taxes.tax_not_found'),
+            ], 404);
+        } catch (\DomainException $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(),
+            ], 422);
+        } catch (\Exception $e) {
+            Log::error('Error waiving tax: ' . $e->getMessage());
+
+            return response()->json([
+                'status' => 'error',
+                'message' => trans('mining-manager::taxes.error_waiving'),
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Let several bills off with one reason. Each is waived on its own, so a
+     * bill paid or let off already is passed over without holding up the rest.
+     */
+    public function bulkWaive(Request $request)
+    {
+        try {
+            $validated = $request->validate([
+                'tax_ids' => 'required|array|min:1',
+                'tax_ids.*' => 'integer|min:1',
+                'reason' => 'required|string|max:255',
+            ]);
+
+            $user = auth()->user();
+            $userName = $user->main_character->name ?? $user->name ?? 'Unknown';
+            $waiver = app(TaxWaiver::class);
+
+            $count = 0;
+            $skipped = 0;
+            $total = 0.0;
+
+            foreach (array_unique(array_map('intval', $validated['tax_ids'])) as $taxId) {
+                try {
+                    $result = $waiver->waive($taxId, $validated['reason'], (int) $user->id, $userName);
+                    $count++;
+                    $total += $result['waived'];
+                } catch (\DomainException | \Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+                    $skipped++;
+                }
+            }
+
+            Log::info('Taxes bulk waived', [
+                'count' => $count,
+                'skipped' => $skipped,
+                'waived' => round($total, 2),
+                'waived_by' => $userName,
+                'reason' => $validated['reason'],
+            ]);
+
+            $message = trans('mining-manager::taxes.bulk_waived_success', [
+                'count' => $count,
+                'amount' => number_format($total, 0),
+            ]);
+            if ($skipped > 0) {
+                $message .= ' ' . trans('mining-manager::taxes.bulk_waived_skipped', ['count' => $skipped]);
+            }
+
+            return response()->json([
+                'status' => 'success',
+                'message' => $message,
+            ]);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->validator->errors()->first(),
+            ], 422);
+        } catch (\Exception $e) {
+            Log::error('Error bulk waiving taxes: ' . $e->getMessage());
+
+            return response()->json([
+                'status' => 'error',
+                'message' => trans('mining-manager::taxes.error_waiving'),
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
      * Bulk send reminders
      */
     public function bulkSendReminders(Request $request)
@@ -2549,6 +2678,11 @@ class TaxController extends Controller
 
         $features = $this->getFeatureFlags();
 
+        // SeAT keeps the user's main character name on the user.
+        $writtenOffBy = $tax->isWrittenOff() && $tax->written_off_by
+            ? DB::table('users')->where('id', $tax->written_off_by)->value('name')
+            : null;
+
         return view('mining-manager::taxes.details', compact(
             'tax',
             'miningBreakdown',
@@ -2561,7 +2695,8 @@ class TaxController extends Controller
             'viewAll',
             'features',
             'paymentHistory',
-            'creditApplied'
+            'creditApplied',
+            'writtenOffBy'
         ));
     }
 
@@ -3124,6 +3259,16 @@ class TaxController extends Controller
                 $oldStatus = $tax->status;
                 $tax->status = $validated['status'];
                 $change = ['old' => $oldStatus, 'taken_off' => 0.0, 'moved' => 0.0, 'left' => 0.0, 'refused' => false];
+
+                // Who let a bill off is cleared when it opens again, so the
+                // notes keep both turns, with what was let off.
+                $wasLetOff = in_array($oldStatus, MiningTax::WRITTEN_OFF_STATUSES, true);
+                $isLetOff = in_array($validated['status'], MiningTax::WRITTEN_OFF_STATUSES, true);
+                if ($wasLetOff !== $isLetOff) {
+                    $note = Carbon::now()->format('Y-m-d H:i') . " - Status changed from {$oldStatus} to {$validated['status']} by {$userName}"
+                        . ($isLetOff ? ': ' . number_format($tax->getRemainingBalance(), 0) . ' ISK let off.' : '.');
+                    $tax->notes = $tax->notes ? $tax->notes . "\n\n" . $note : $note;
+                }
 
                 // Unpaid or Overdue on a bill with money on it. This is the
                 // only way to undo Mark as Paid, so what was recorded by hand
