@@ -51,9 +51,9 @@ class PaymentCredit extends Model
     public const SOURCE_MANUAL = 'manual';
 
     /**
-     * Wallet payments and held credit taken off a bill a director set back to
-     * Unpaid or Overdue. The next wallet check pays the member's open bills
-     * with it, oldest first.
+     * Money taken off a bill a director set back to Unpaid or Overdue, or
+     * let off (waived or exempted). The next wallet check pays the member's
+     * open bills with it, oldest first.
      */
     public const SOURCE_REOPENED = 'reopened';
 

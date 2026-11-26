@@ -204,13 +204,34 @@ class MiningTax extends Model
     }
 
     /**
-     * What was let off: the bill less what was paid on it before. Nothing on
-     * a bill still open or paid. A payment quoting a let-off bill's code goes
-     * to the member's balance, not the bill, so this never moves afterwards.
+     * What was let off: the bill less what is still paid on it. Letting a
+     * bill off moves what was paid to the member's balance, so that is
+     * usually the whole bill. Nothing on a bill still open or paid. A payment
+     * quoting a let-off bill's code goes to the member's balance, not the
+     * bill, so this never moves afterwards.
      */
     public function getWrittenOffAmount(): float
     {
         return $this->isWrittenOff() ? $this->getRemainingBalance() : 0.0;
+    }
+
+    /**
+     * Take $moved off what is paid on the bill, without saving it, and say
+     * what is left paid. A bill with nothing left paid has no payment date
+     * or payment either.
+     */
+    public function takeOffPaid(float $moved): float
+    {
+        $left = round(max(0.0, (float) ($this->amount_paid ?? 0) - $moved), 2);
+
+        $this->amount_paid = $left;
+
+        if ($left <= 0) {
+            $this->paid_at = null;
+            $this->transaction_id = null;
+        }
+
+        return $left;
     }
 
     /**

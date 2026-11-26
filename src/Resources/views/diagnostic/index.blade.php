@@ -3259,6 +3259,9 @@ function runTaxTrace() {
                     </div>
                     <div class="col-md-3">
                         <strong>Paid:</strong> ${fmtISK(bill.amount_paid)} ISK
+                        ${bill.written_off > 0 ? '<br><strong>Let off:</strong> ' + fmtISK(bill.written_off) + ' ISK'
+                            + (bill.written_off_at || bill.written_off_by ? '<br><small class="text-muted">' + (bill.written_off_at ? diagEscape(bill.written_off_at) : '') + (bill.written_off_by ? ' by ' + diagEscape(bill.written_off_by) : '') + '</small>' : '')
+                            + (bill.written_off_reason ? '<br><small class="text-muted">Reason: ' + diagEscape(bill.written_off_reason) + '</small>' : '') : ''}
                         ${bill.calculated_at ? '<br><small class="text-muted">Worked out ' + bill.calculated_at + (bill.triggered_by ? ' by ' + diagEscape(bill.triggered_by) : '') + '</small>' : ''}
                     </div>
                     <div class="col-md-3">
@@ -4645,6 +4648,11 @@ function runTaxPipeline() {
                 <div class="col-md-3"><strong>Unpaid:</strong> <span class="text-warning">${fmtNum(step2ByStatus.unpaid || step2ByStatus.pending || 0)}</span></div>
                 <div class="col-md-3"><strong>Overdue:</strong> <span class="text-danger">${fmtNum(step2ByStatus.overdue || 0)}</span></div>
             </div>
+            ${(step2ByStatus.waived || step2ByStatus.exempted) ? `<div class="row mb-2">
+                <div class="col-md-3"><strong>Waived:</strong> ${fmtNum(step2ByStatus.waived || 0)}</div>
+                <div class="col-md-3"><strong>Exempted:</strong> ${fmtNum(step2ByStatus.exempted || 0)}</div>
+                <div class="col-md-6"><strong>Let off:</strong> ${fmtISK(step2.total_waived || 0)} ISK <small class="text-muted">(not counted against the collection rate)</small></div>
+            </div>` : ''}
             <div class="row mb-2">
                 <div class="col-md-4"><strong>Total Owed:</strong> ${fmtISK(step2.total_owed)} ISK</div>
                 <div class="col-md-4"><strong>Total Paid:</strong> ${fmtISK(step2.total_paid)} ISK</div>

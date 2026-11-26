@@ -199,7 +199,16 @@ class TaxTraceTargets
             ? DB::table('corporation_infos')->whereIn('corporation_id', $profiles)->get(['corporation_id', 'name', 'ticker'])->keyBy('corporation_id')
             : collect();
 
-        return $bills->map(function (MiningTax $bill) use ($codes, $corporations) {
+        $letOffBy = $bills->filter(fn (MiningTax $bill) => $bill->isWrittenOff() && $bill->written_off_by)
+            ->pluck('written_off_by')
+            ->unique()
+            ->values()
+            ->all();
+        $userNames = $letOffBy
+            ? DB::table('users')->whereIn('id', $letOffBy)->pluck('name', 'id')
+            : collect();
+
+        return $bills->map(function (MiningTax $bill) use ($codes, $corporations, $userNames) {
             $start = Carbon::parse($bill->period_start ?? $bill->month);
             $end = $bill->period_end ? Carbon::parse($bill->period_end) : $start->copy()->endOfMonth();
             $type = $bill->period_type ?? 'monthly';
@@ -220,6 +229,10 @@ class TaxTraceTargets
                 'amount_owed' => (float) $bill->amount_owed,
                 'amount_paid' => (float) $bill->amount_paid,
                 'status' => $bill->status,
+                'written_off' => $bill->getWrittenOffAmount(),
+                'written_off_at' => $bill->isWrittenOff() && $bill->written_off_at ? $bill->written_off_at->format('Y-m-d H:i') : null,
+                'written_off_by' => $bill->isWrittenOff() && $bill->written_off_by ? ($userNames[$bill->written_off_by] ?? null) : null,
+                'written_off_reason' => $bill->isWrittenOff() ? $bill->written_off_reason : null,
                 'deleted' => $bill->trashed(),
                 'due_date' => $bill->due_date ? $bill->due_date->format('Y-m-d') : null,
                 'paid_at' => $bill->paid_at ? $bill->paid_at->format('Y-m-d H:i') : null,

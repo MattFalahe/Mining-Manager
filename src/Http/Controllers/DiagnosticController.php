@@ -2361,12 +2361,13 @@ class DiagnosticController extends Controller
         yield [];
 
         yield $row(['Bills']);
-        yield $row(['Bill', 'Payment code', 'Billed to', 'Billed to ID', 'Period', 'Period type', 'From', 'To', 'Billed by', 'Amount owed', 'Amount paid', 'Status', 'Deleted', 'Due', 'Paid at', 'Calculated at', 'Triggered by', 'Notes']);
+        yield $row(['Bill', 'Payment code', 'Billed to', 'Billed to ID', 'Period', 'Period type', 'From', 'To', 'Billed by', 'Amount owed', 'Amount paid', 'Let off', 'Status', 'Deleted', 'Due', 'Paid at', 'Calculated at', 'Triggered by', 'Let off at', 'Let off by', 'Reason let off', 'Notes']);
         foreach ($trace['tax_bills'] as $bill) {
             yield $row([
                 $bill['id'], $bill['tax_code'], $name($bill['character_id']), $bill['character_id'], $bill['period_label'], $bill['period_type'],
-                $bill['period_start'], $bill['period_end'], $bill['billed_by'], $bill['amount_owed'], $bill['amount_paid'], $bill['status'],
-                $yes($bill['deleted']), $bill['due_date'], $bill['paid_at'], $bill['calculated_at'], $bill['triggered_by'], trim((string) $bill['notes']),
+                $bill['period_start'], $bill['period_end'], $bill['billed_by'], $bill['amount_owed'], $bill['amount_paid'], $bill['written_off'], $bill['status'],
+                $yes($bill['deleted']), $bill['due_date'], $bill['paid_at'], $bill['calculated_at'], $bill['triggered_by'],
+                $bill['written_off_at'], $bill['written_off_by'], $bill['written_off_reason'], trim((string) $bill['notes']),
             ]);
         }
         if (!$trace['tax_bills']) {
@@ -2623,6 +2624,10 @@ class DiagnosticController extends Controller
             $byStatus = $taxRecords->groupBy('status')->map->count();
             $totalOwed = $taxRecords->sum('amount_owed');
             $totalPaid = $taxRecords->sum('amount_paid');
+            // Waived and exempted bills are not being collected, so they are
+            // no shortfall in the rate.
+            $totalWaived = $taxRecords->sum(fn ($tax) => $tax->getWrittenOffAmount());
+            $toCollect = $totalOwed - $totalWaived;
 
             $pipeline['tax_records'] = [
                 'status' => $taxRecords->isNotEmpty() ? 'pass' : 'warning',
@@ -2630,7 +2635,8 @@ class DiagnosticController extends Controller
                 'by_status' => $byStatus->toArray(),
                 'total_owed' => round($totalOwed, 2),
                 'total_paid' => round($totalPaid, 2),
-                'collection_rate' => $totalOwed > 0 ? round(($totalPaid / $totalOwed) * 100, 1) : 0,
+                'total_waived' => round($totalWaived, 2),
+                'collection_rate' => $toCollect > 0 ? round(($totalPaid / $toCollect) * 100, 1) : 0,
             ];
 
             // Step 3: Tax codes

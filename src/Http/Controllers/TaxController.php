@@ -1592,21 +1592,33 @@ class TaxController extends Controller
             $user = auth()->user();
             $userName = $user->main_character->name ?? $user->name ?? 'Unknown';
 
-            $result = app(TaxWaiver::class)->waive((int) $id, $validated['reason'], (int) $user->id, $userName);
+            $result = app(TaxWaiver::class)->waive(
+                (int) $id,
+                $validated['reason'],
+                (int) $user->id,
+                $userName,
+                $user->main_character_id ?: $user->id
+            );
 
             Log::info('Tax waived', [
                 'tax_id' => (int) $id,
                 'waived' => $result['waived'],
-                'paid_before' => $result['paid'],
+                'moved_to_balance' => $result['moved'],
+                'left_on_bill' => $result['stays'],
                 'waived_by' => $userName,
                 'reason' => $validated['reason'],
             ]);
 
+            $message = trans('mining-manager::taxes.waived_success', [
+                'amount' => number_format($result['waived'], 0),
+            ]);
+            if ($result['moved'] > 0) {
+                $message .= ' ' . $this->letOffMovedMessage($result['moved']);
+            }
+
             return response()->json([
                 'status' => 'success',
-                'message' => trans('mining-manager::taxes.waived_success', [
-                    'amount' => number_format($result['waived'], 0),
-                ]),
+                'message' => $message,
             ]);
 
         } catch (\Illuminate\Validation\ValidationException $e) {
@@ -1655,12 +1667,14 @@ class TaxController extends Controller
             $count = 0;
             $skipped = 0;
             $total = 0.0;
+            $moved = 0.0;
 
             foreach (array_unique(array_map('intval', $validated['tax_ids'])) as $taxId) {
                 try {
-                    $result = $waiver->waive($taxId, $validated['reason'], (int) $user->id, $userName);
+                    $result = $waiver->waive($taxId, $validated['reason'], (int) $user->id, $userName, $user->main_character_id ?: $user->id);
                     $count++;
                     $total += $result['waived'];
+                    $moved += $result['moved'];
                 } catch (\DomainException | \Illuminate\Database\Eloquent\ModelNotFoundException $e) {
                     $skipped++;
                 }
@@ -1670,6 +1684,7 @@ class TaxController extends Controller
                 'count' => $count,
                 'skipped' => $skipped,
                 'waived' => round($total, 2),
+                'moved_to_balance' => round($moved, 2),
                 'waived_by' => $userName,
                 'reason' => $validated['reason'],
             ]);
@@ -1678,6 +1693,9 @@ class TaxController extends Controller
                 'count' => $count,
                 'amount' => number_format($total, 0),
             ]);
+            if ($moved > 0) {
+                $message .= ' ' . trans('mining-manager::taxes.bulk_let_off_moved', ['moved' => number_format($moved, 0)]);
+            }
             if ($skipped > 0) {
                 $message .= ' ' . trans('mining-manager::taxes.bulk_waived_skipped', ['count' => $skipped]);
             }
@@ -1701,6 +1719,21 @@ class TaxController extends Controller
                 'error' => $e->getMessage(),
             ], 500);
         }
+    }
+
+    /**
+     * Where the money paid on a bill just let off went, and when it pays
+     * anything again.
+     */
+    private function letOffMovedMessage(float $moved): string
+    {
+        $autoMatch = (bool) ($this->settingsService->getPaymentSettings()['auto_match_payments'] ?? true);
+
+        return trans($autoMatch
+            ? 'mining-manager::taxes.let_off_moved_to_balance'
+            : 'mining-manager::taxes.let_off_moved_to_balance_no_auto_match', [
+            'moved' => number_format($moved, 0),
+        ]);
     }
 
     /**
@@ -3310,15 +3343,29 @@ class TaxController extends Controller
 
                 $oldStatus = $tax->status;
                 $tax->status = $validated['status'];
-                $change = ['old' => $oldStatus, 'taken_off' => 0.0, 'moved' => 0.0, 'left' => 0.0, 'refused' => false];
+                $change = ['old' => $oldStatus, 'taken_off' => 0.0, 'moved' => 0.0, 'left' => 0.0, 'refused' => false, 'let_off' => false];
 
                 // Who let a bill off is cleared when it opens again, so the
                 // notes keep both turns, with what was let off.
                 $wasLetOff = in_array($oldStatus, MiningTax::WRITTEN_OFF_STATUSES, true);
                 $isLetOff = in_array($validated['status'], MiningTax::WRITTEN_OFF_STATUSES, true);
                 if ($wasLetOff !== $isLetOff) {
+                    // Exempted gives back what was paid on the bill, as Waive
+                    // does: a bill nobody owes keeps none of the member's money.
+                    if ($isLetOff && (float) ($tax->amount_paid ?? 0) > 0) {
+                        $change['let_off'] = true;
+                        $change['moved'] = $this->allocationService->holdPaymentsOfLetOffBill(
+                            $tax,
+                            auth()->user()->main_character_id ?: auth()->id(),
+                            "Taken off bill #{$tax->id} when {$userName} set it to {$validated['status']}"
+                        );
+                        $change['left'] = $tax->takeOffPaid($change['moved']);
+                    }
+
                     $note = Carbon::now()->format('Y-m-d H:i') . " - Status changed from {$oldStatus} to {$validated['status']} by {$userName}"
-                        . ($isLetOff ? ': ' . number_format($tax->getRemainingBalance(), 0) . ' ISK let off.' : '.');
+                        . ($isLetOff ? ': ' . number_format($tax->getRemainingBalance(), 0) . ' ISK let off.' : '.')
+                        . ($change['moved'] > 0 ? ' ' . number_format($change['moved'], 0) . " ISK paid on it moved to the member's balance." : '')
+                        . ($change['left'] > 0 ? ' ' . number_format($change['left'], 0) . ' ISK credited before payments were recorded one by one stays on it.' : '');
                     $tax->notes = $tax->notes ? $tax->notes . "\n\n" . $note : $note;
                 }
 
@@ -3467,7 +3514,9 @@ class TaxController extends Controller
                 ]);
             }
 
-            if ($change['moved'] > 0) {
+            if ($change['moved'] > 0 && $change['let_off']) {
+                $parts[] = $this->letOffMovedMessage($change['moved']);
+            } elseif ($change['moved'] > 0) {
                 $autoMatch = (bool) ($this->settingsService->getPaymentSettings()['auto_match_payments'] ?? true);
                 $parts[] = trans($autoMatch
                     ? 'mining-manager::taxes.status_updated_moved_to_balance'
@@ -3476,7 +3525,11 @@ class TaxController extends Controller
                 ]);
             }
 
-            if ($change['left'] > 0) {
+            if ($change['left'] > 0 && $change['let_off']) {
+                $parts[] = trans('mining-manager::taxes.let_off_money_stays', [
+                    'left' => number_format($change['left'], 0),
+                ]);
+            } elseif ($change['left'] > 0) {
                 $parts[] = trans('mining-manager::taxes.status_updated_money_stays', [
                     'left' => number_format($change['left'], 0),
                     'status' => ucfirst($change['new']),

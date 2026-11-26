@@ -796,6 +796,7 @@ class NotificationService
             'is_current_month' => $isCurrentMonth,
             'estimated_tax' => $taxes['estimated_tax'] ?? 0,
             'total_paid' => $taxes['total_paid'] ?? 0,
+            'waived' => $taxes['waived'] ?? 0,
             'unpaid' => $taxes['unpaid'] ?? 0,
             'collection_rate' => $taxes['collection_rate'] ?? null,
 
@@ -3685,6 +3686,9 @@ class NotificationService
                 ] : null,
                 (empty($data['is_current_month']) && !empty($data['total_paid']) && $data['total_paid'] > 0)
                     ? ['name' => '✅ Total Paid', 'value' => number_format($data['total_paid'], 0) . ' ISK', 'inline' => true]
+                    : null,
+                (empty($data['is_current_month']) && !empty($data['waived']) && $data['waived'] > 0)
+                    ? ['name' => '🤝 Waived', 'value' => number_format($data['waived'], 0) . ' ISK', 'inline' => true]
                     : null,
                 (empty($data['is_current_month']) && !empty($data['unpaid']) && $data['unpaid'] > 0)
                     ? ['name' => '❌ Outstanding', 'value' => number_format($data['unpaid'], 0) . ' ISK', 'inline' => true]

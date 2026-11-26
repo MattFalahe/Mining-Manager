@@ -219,6 +219,7 @@ return [
     'taxable_value' => 'Taxable Value',
     'total_paid' => 'Total Paid',
     'total_outstanding' => 'Total Outstanding',
+    'total_waived' => 'Waived',
     'no_report_data' => 'No Report Data Available',
     'no_report_data_description' => 'This report does not contain any viewable data. Try downloading the report file instead.',
     'unknown' => 'Unknown',

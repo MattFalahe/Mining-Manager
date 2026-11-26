@@ -650,6 +650,7 @@
                 </button>
             </div>
             <div class="modal-body">
+                @include('mining-manager::taxes.partials.mark-paid-notice')
                 <form id="markPaidForm">
                     <input type="hidden" id="taxIdInput" name="tax_id">
                     <div class="form-group">

@@ -496,6 +496,7 @@ $(document).ready(function() {
                 <button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
             </div>
             <div class="modal-body">
+                @include('mining-manager::taxes.partials.mark-paid-notice')
                 <div class="form-group">
                     <label>Amount Paid (ISK)</label>
                     <input type="number" step="any" class="form-control" id="detailAmountPaid" value="{{ number_format($tax->getRemainingBalance(), 2, '.', '') }}">
@@ -529,9 +530,9 @@ $(document).ready(function() {
                 <button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
             </div>
             <div class="modal-body">
-                <p>{{ trans('mining-manager::taxes.waive_explain', ['amount' => number_format($tax->getRemainingBalance(), 2)]) }}</p>
+                <p>{{ trans('mining-manager::taxes.waive_explain', ['amount' => number_format((float) $tax->amount_owed, 2)]) }}</p>
                 @if((float) $tax->amount_paid > 0)
-                    <p>{{ trans('mining-manager::taxes.waive_paid_stays', ['amount' => number_format((float) $tax->amount_paid, 2)]) }}</p>
+                    <p>{{ trans('mining-manager::taxes.waive_paid_to_balance', ['amount' => number_format((float) $tax->amount_paid, 2)]) }}</p>
                 @endif
                 <div class="form-group mb-0">
                     <label for="waiveReason">{{ trans('mining-manager::taxes.waive_reason') }}</label>

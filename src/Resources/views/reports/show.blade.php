@@ -377,6 +377,12 @@
                             <td class="text-right">{{ number_format($reportData['taxes']['total_paid'], 2) }} ISK</td>
                         </tr>
                         @endif
+                        @if(($reportData['taxes']['waived'] ?? 0) > 0)
+                        <tr>
+                            <td><i class="fas fa-hand-holding-usd text-muted"></i> {{ trans('mining-manager::reports.total_waived') }}</td>
+                            <td class="text-right">{{ number_format($reportData['taxes']['waived'], 2) }} ISK</td>
+                        </tr>
+                        @endif
                         @if(isset($reportData['taxes']['unpaid']) && $reportData['taxes']['unpaid'] > 0)
                         <tr>
                             <td><i class="fas fa-exclamation-circle text-danger"></i> {{ trans('mining-manager::reports.total_outstanding') }}</td>

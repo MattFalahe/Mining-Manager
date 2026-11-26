@@ -316,6 +316,12 @@
                 <span class="tax-label">Total Paid:</span>
                 <span class="tax-value">{{ number_format($data['taxes']['total_paid'] ?? 0, 2) }} ISK</span>
             </div>
+            @if(($data['taxes']['waived'] ?? 0) > 0)
+            <div class="tax-row">
+                <span class="tax-label">Waived:</span>
+                <span class="tax-value">{{ number_format($data['taxes']['waived'], 2) }} ISK</span>
+            </div>
+            @endif
             <div class="tax-row">
                 <span class="tax-label">Unpaid:</span>
                 <span class="tax-value" style="color: #e74c3c;">{{ number_format($data['taxes']['unpaid'] ?? 0, 2) }} ISK</span>

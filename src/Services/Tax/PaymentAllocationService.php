@@ -624,8 +624,36 @@ class PaymentAllocationService
      */
     public function holdPaymentsOfReopenedBill(MiningTax $tax, ?int $actorId = null, ?string $notes = null): float
     {
+        return $this->holdPaymentsOfBill($tax, false, $actorId, $notes);
+    }
+
+    /**
+     * Take everything paid on a bill a director is letting off, waived or
+     * exempted, and hold it for the member, the same way as for a reopened
+     * bill. A bill nobody owes keeps none of the member's money, so what was
+     * recorded by hand goes too: Mark as Paid is for ISK that reached the
+     * wallet by a route the wallet check can't see.
+     *
+     * Only a payment credited before payments were recorded one by one has
+     * nothing to move, and stays on the bill.
+     *
+     * Call inside the caller's transaction, with the bill locked.
+     *
+     * @return float how much was taken off
+     */
+    public function holdPaymentsOfLetOffBill(MiningTax $tax, ?int $actorId = null, ?string $notes = null): float
+    {
+        return $this->holdPaymentsOfBill($tax, true, $actorId, $notes);
+    }
+
+    private function holdPaymentsOfBill(MiningTax $tax, bool $byHandToo, ?int $actorId, ?string $notes): float
+    {
+        // Reopening is how Mark as Paid is undone, so what was recorded by
+        // hand is the caller's to take off rather than the member's to keep.
         $slices = PaymentAllocation::where('mining_tax_id', $tax->id)
-            ->where(fn ($q) => $q->whereNotNull('transaction_id')->orWhereNotNull('credit_id'))
+            ->when(!$byHandToo, fn ($query) => $query->where(
+                fn ($q) => $q->whereNotNull('transaction_id')->orWhereNotNull('credit_id')
+            ))
             ->lockForUpdate()
             ->get();
 
@@ -654,10 +682,11 @@ class PaymentAllocationService
 
         PaymentAllocation::whereIn('id', $slices->pluck('id'))->delete();
 
-        Log::info('Mining Manager: payments taken off a reopened bill and held for the member', [
+        Log::info('Mining Manager: payments taken off a bill and held for the member', [
             'tax_id' => (int) $tax->id,
             'character_id' => (int) $tax->character_id,
             'amount' => $moved,
+            'bill' => $byHandToo ? 'let off' : 'reopened',
         ]);
 
         return $moved;

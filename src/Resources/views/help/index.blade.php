@@ -1306,8 +1306,10 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                             <strong>Waive a bill.</strong> <span class="mm-new-badge">{{ trans('mining-manager::help.new_badge') }}</span>
                             A bill the corporation will not collect can be waived with a reason, on its page or
                             several at once on Tax Overview. Unlike Mark as Paid it records no ISK as received, so
-                            Collected stays what reached the wallet. Each bill shows what was paid and what was
-                            waived, and Tax Overview what was waived this month. See Waiving a bill in this Help.
+                            Collected stays what reached the wallet. Anything already paid on the bill goes back to
+                            the member's balance, and exempting a bill now does the same. Tax Overview shows what
+                            was waived this month, and reports show it on a line of its own. A waived or exempted
+                            bill can't be marked paid or sent a reminder. See Waiving a bill in this Help.
                         </li>
                         <li>
                             <strong>Assign to invoice.</strong> Assigning a wallet payment to a bill by hand answered
@@ -2036,32 +2038,50 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                     </p>
                 </div>
 
-                {{-- Waiving a bill --}}
-                <div class="help-card">
+                {{-- Waiving a bill. The Mark as Paid windows link here by this id. --}}
+                <div class="help-card" id="waiving-a-bill">
                     <h3>
                         <i class="fas fa-hand-holding-usd"></i>
                         Waiving a bill
                         <span class="mm-new-badge">{{ trans('mining-manager::help.new_badge') }}</span>
                     </h3>
                     <p>
-                        When the corporation decides not to collect a bill, waive it rather than marking it paid.
-                        Mark as Paid records ISK as received, so Collected counts money that never reached the
-                        wallet. Waive records nothing as received: what is left on the bill is let off.
+                        When the corporation decides not to collect a bill, waive it. Don't mark it paid: Mark as
+                        Paid records ISK as received, so the corporation wallet comes up short of what Mining
+                        Manager says came in, and other plugins can flag the gap as possible fraud. Waive records
+                        nothing as received. Admins only.
                     </p>
+                    <h5>One bill</h5>
+                    <ol class="step-by-step">
+                        <li>On Tax Overview, find the bill and open it with the eye button. The rows on Tax Overview have no Waive button of their own.</li>
+                        <li>On the bill's page, press <strong>Waive</strong>, under Mark as Paid.</li>
+                        <li>Give a reason and press <strong>Waive</strong>.</li>
+                    </ol>
+                    <h5>Several at once</h5>
+                    <ol class="step-by-step">
+                        <li>On Tax Overview, tick the bills in the first column. A bar with the number selected appears under the table.</li>
+                        <li>Press <strong>Waive</strong> in that bar, give one reason for them all, and press <strong>Waive</strong>.</li>
+                        <li>A bill paid or let off already is left as it is, and the message says how many were.</li>
+                    </ol>
+                    <h5>What happens to the bill</h5>
                     <ul>
-                        <li><strong>One bill:</strong> Waive on the bill's page, under Mark as Paid. Admins only.</li>
-                        <li><strong>Several:</strong> tick them on Tax Overview and use Waive in the bar that appears. One reason covers them all, and a bill paid or let off already is left as it is.</li>
-                        <li>A reason is required. The bill keeps who waived it, when and why, on its page and in its notes.</li>
-                        <li>Whatever was paid before stays paid and stays in Collected. The bill's page, Tax Overview and My Taxes show the rest as waived.</li>
-                        <li>A waived bill drops out of Owed and Overdue, gets no reminders and is never worked out again. A payment quoting its code goes to the member's other open bills, then to their balance.</li>
-                        <li>Collected on Tax Overview shows what was waived this month underneath, and the tax chart on the director dashboard has a Waived bar beside Collected and Owed.</li>
-                        <li>To undo it, set the bill back to Unpaid with Change Status. A bill with something paid on it goes back to Partial. Until then it can't be marked paid or sent a reminder, so if the money comes in after all, set it back first.</li>
+                        <li>The whole bill is let off. Whatever was paid on it, from the wallet, from the member's balance or recorded by hand, goes back to the member's balance. The next wallet check pays their oldest open bill with it; with nothing open, their next bill draws it down.</li>
+                        <li>The bill keeps who waived it, when and why, on its page, in its notes and in Tax Trace on the Diagnostic page.</li>
+                        <li>It drops out of Owed and Overdue, gets no reminders and is never worked out again. A payment quoting its code goes to the member's other open bills, then to their balance.</li>
+                        <li>Collected on Tax Overview shows what was waived this month underneath, the tax chart on the director dashboard has a Waived bar, and reports show Waived on a line of its own, outside what is outstanding and the collection rate.</li>
+                        <li>It can't be marked paid or sent a reminder. To undo it, set it back to Unpaid with Change Status. If the money comes in after all, do that first, then mark it paid.</li>
                     </ul>
                     <p>
                         Exempted, under Change Status, works the same way for a bill that should never have been
-                        raised, without asking for a reason. Both count as let off: Manager Core hears
-                        <code>mining.tax_written_off</code>, and Corp Wallet Manager leaves the bill out of tax
-                        compliance.
+                        raised, without asking for a reason, and gives back what was paid on it too. Both count as
+                        let off: Manager Core hears <code>mining.tax_written_off</code>, and Corp Wallet Manager
+                        leaves the bill out of tax compliance.
+                    </p>
+                    <h5>When Mark as Paid is right</h5>
+                    <p>
+                        Only for ISK that reached the moon owner's wallet by a route the wallet check can't see,
+                        such as a member who sent the payment to the wrong character, which passed it on. If the
+                        ISK never reached the wallet, the bill isn't paid: waive it.
                     </p>
                 </div>
 
@@ -5127,10 +5147,24 @@ $(document).ready(function() {
         $('.help-content').scrollTop(0);
     });
 
-    // Load section from URL hash
+    // Load section from URL hash. A card's id opens the section holding it
+    // and scrolls to the card, so other pages can link straight to one.
     if (window.location.hash) {
         const hash = window.location.hash.substring(1);
-        $(`.help-nav .nav-link[data-section="${hash}"]`).click();
+        const $nav = $('.help-nav .nav-link').filter(function () { return $(this).data('section') === hash; });
+
+        if ($nav.length) {
+            $nav.click();
+        } else {
+            const card = document.getElementById(hash);
+            const section = card ? $(card).closest('.help-section').attr('id') : null;
+
+            if (section) {
+                $('.help-nav .nav-link').filter(function () { return $(this).data('section') === section; }).click();
+                window.location.hash = hash;
+                card.scrollIntoView();
+            }
+        }
     }
 
     // Links inside a section that open another section

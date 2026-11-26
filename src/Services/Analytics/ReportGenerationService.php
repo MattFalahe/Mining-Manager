@@ -261,15 +261,21 @@ class ReportGenerationService
         $totalOwed = $taxes->sum('amount_owed');
         $totalPaid = $taxes->sum('amount_paid');
 
+        // A bill waived or exempted is not going to be collected, so it is
+        // neither unpaid nor a shortfall in the collection rate.
+        $waived = round($taxes->sum(fn (MiningTax $tax) => $tax->getWrittenOffAmount()), 2);
+        $toCollect = $totalOwed - $waived;
+
         return [
             'is_current_month' => $isCurrentMonth,
             'estimated_tax' => round($estimatedTax, 2),
             'total_owed' => $totalOwed,
             'total_paid' => $totalPaid,
-            'unpaid' => $totalOwed - $totalPaid,
+            'waived' => $waived,
+            'unpaid' => max(0, round($toCollect - $totalPaid, 2)),
             'overdue' => $taxes->where('status', 'overdue')->sum('amount_owed'),
-            'collection_rate' => $totalOwed > 0
-                ? round(($totalPaid / $totalOwed) * 100, 1)
+            'collection_rate' => $toCollect > 0
+                ? round(($totalPaid / $toCollect) * 100, 1)
                 : 0,
         ];
     }
@@ -516,7 +522,8 @@ class ReportGenerationService
                     'character_id' => $tax->character_id,
                     'amount_owed'  => (float) $tax->amount_owed,
                     'amount_paid'  => (float) $tax->amount_paid,
-                    'balance'      => (float) $tax->getRemainingBalance(),
+                    'balance'      => $tax->isWrittenOff() ? 0.0 : (float) $tax->getRemainingBalance(),
+                    'waived'       => $tax->getWrittenOffAmount(),
                     'status'       => $tax->status,
                     'due_date'     => $tax->due_date ? $tax->due_date->toDateString() : null,
                     'paid_at'      => $tax->paid_at ? $tax->paid_at->toDateTimeString() : null,
