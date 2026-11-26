@@ -557,7 +557,7 @@
                                                title="{{ trans('mining-manager::taxes.view_details') }}">
                                                 <i class="fas fa-eye"></i>
                                             </a>
-                                            @if(($isAdmin ?? false) && $tax->status !== 'paid')
+                                            @if(($isAdmin ?? false) && in_array($tax->status, \MiningManager\Models\MiningTax::OUTSTANDING_STATUSES, true))
                                             <button type="button"
                                                     class="btn btn-sm btn-success mark-paid"
                                                     data-tax-id="{{ $tax->id }}"
@@ -573,6 +573,8 @@
                                                     title="{{ trans('mining-manager::taxes.send_reminder') }}">
                                                 <i class="fas fa-envelope"></i>
                                             </button>
+                                            @endif
+                                            @if(($isAdmin ?? false) && $tax->status !== 'paid')
                                             <button type="button"
                                                     class="btn btn-sm btn-danger delete-tax"
                                                     data-tax-id="{{ $tax->id }}"

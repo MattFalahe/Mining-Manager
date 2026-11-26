@@ -1238,6 +1238,15 @@ class TaxController extends Controller
                 // credits at the same moment is added to, not written over.
                 $tax = MiningTax::where('id', $taxId)->lockForUpdate()->firstOrFail();
 
+                // Nothing is owed on a bill let off, so marking it paid would
+                // count what was let off as collected, and a part payment
+                // would leave the rest owed again. Wallet payments skip it too.
+                if ($tax->isWrittenOff()) {
+                    throw new \DomainException(trans('mining-manager::taxes.mark_paid_let_off', [
+                        'status' => trans('mining-manager::taxes.' . $tax->status),
+                    ]));
+                }
+
                 // Accumulate partial payments
                 $previouslyPaid = (float) ($tax->amount_paid ?? 0);
                 $totalPaid = round($previouslyPaid + $amountPaid, 2);
@@ -1310,6 +1319,11 @@ class TaxController extends Controller
             return response()->json([
                 'status' => 'error',
                 'message' => $e->validator->errors()->first(),
+            ], 422);
+        } catch (\DomainException $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(),
             ], 422);
         } catch (\Exception $e) {
             Log::error('Error marking tax as paid: ' . $e->getMessage());
@@ -1402,6 +1416,17 @@ class TaxController extends Controller
             $taxId = (int) $validated['tax_id'];
             $tax = MiningTax::findOrFail($taxId);
 
+            // The scheduled reminders skip a bill let off; asking for it by
+            // hand would ask the member for what was let off.
+            if ($tax->isWrittenOff()) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => trans('mining-manager::taxes.reminder_let_off', [
+                        'status' => trans('mining-manager::taxes.' . $tax->status),
+                    ]),
+                ], 422);
+            }
+
             $dueDate = $tax->due_date ? Carbon::parse($tax->due_date) : Carbon::now();
             $daysRemaining = (int) max(0, Carbon::now()->startOfDay()->diffInDays($dueDate->startOfDay(), false));
 
@@ -1473,11 +1498,18 @@ class TaxController extends Controller
             // row, but each invoice now leaves the same trail as any other
             // payment.
             $updated = 0;
+            $letOff = 0;
 
-            DB::transaction(function () use ($taxIds, $paymentDate, $actorId, $actorName, &$updated) {
+            DB::transaction(function () use ($taxIds, $paymentDate, $actorId, $actorName, &$updated, &$letOff) {
                 $taxes = MiningTax::whereIn('id', $taxIds)->lockForUpdate()->get();
 
                 foreach ($taxes as $tax) {
+                    // Same as markPaid(): nothing is owed on a bill let off.
+                    if ($tax->isWrittenOff()) {
+                        $letOff++;
+                        continue;
+                    }
+
                     $owed = (float) $tax->amount_owed;
                     $alreadyPaid = (float) ($tax->amount_paid ?? 0);
                     $delta = round($owed - $alreadyPaid, 2);
@@ -1521,12 +1553,18 @@ class TaxController extends Controller
 
             Log::info('Taxes bulk marked as paid', [
                 'count' => $updated,
+                'left_let_off' => $letOff,
                 'marked_by' => $actorName,
             ]);
 
+            $message = trans('mining-manager::taxes.bulk_marked_success', ['count' => $updated]);
+            if ($letOff > 0) {
+                $message = rtrim($message, '.') . '. ' . trans('mining-manager::taxes.bulk_marked_skipped_let_off', ['count' => $letOff]);
+            }
+
             return response()->json([
                 'status' => 'success',
-                'message' => trans('mining-manager::taxes.bulk_marked_success', ['count' => $updated]),
+                'message' => $message,
             ]);
 
         } catch (\Exception $e) {
@@ -1678,7 +1716,11 @@ class TaxController extends Controller
         try {
             $taxIds = $request->input('tax_ids', []);
 
-            $taxes = MiningTax::whereIn('id', $taxIds)->get();
+            // A bill let off is not owed, so it adds nothing to what anyone
+            // is reminded of.
+            $taxes = MiningTax::whereIn('id', $taxIds)
+                ->whereNotIn('status', MiningTax::WRITTEN_OFF_STATUSES)
+                ->get();
             $sent = 0;
             $errors = 0;
 
@@ -3256,6 +3298,16 @@ class TaxController extends Controller
                 // Locked for the same reason as markPaid(): a wallet payment
                 // landing meanwhile would otherwise be overwritten.
                 $tax = MiningTax::where('id', $id)->lockForUpdate()->firstOrFail();
+
+                // Paid straight from let off records the whole bill as
+                // collected by hand, as Mark as Paid would. Opening it again
+                // first keeps the two steps visible.
+                if ($validated['status'] === 'paid' && $tax->isWrittenOff()) {
+                    throw new \DomainException(trans('mining-manager::taxes.mark_paid_let_off', [
+                        'status' => trans('mining-manager::taxes.' . $tax->status),
+                    ]));
+                }
+
                 $oldStatus = $tax->status;
                 $tax->status = $validated['status'];
                 $change = ['old' => $oldStatus, 'taken_off' => 0.0, 'moved' => 0.0, 'left' => 0.0, 'refused' => false];
@@ -3440,6 +3492,11 @@ class TaxController extends Controller
                 'message' => $message,
             ]);
 
+        } catch (\DomainException $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(),
+            ], 422);
         } catch (\Exception $e) {
             Log::error('Tax status update error: ' . $e->getMessage());
 

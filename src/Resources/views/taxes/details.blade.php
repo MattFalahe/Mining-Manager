@@ -112,12 +112,10 @@
 
                     @if(auth()->user()->can('mining-manager.admin'))
                     <hr>
-                    @if($tax->status !== 'paid')
+                    @if(in_array($tax->status, \MiningManager\Models\MiningTax::OUTSTANDING_STATUSES, true))
                     <button class="btn btn-success btn-block" data-toggle="modal" data-target="#markPaidModal">
                         <i class="fas fa-check"></i> Mark as Paid
                     </button>
-                    @endif
-                    @if(in_array($tax->status, \MiningManager\Models\MiningTax::OUTSTANDING_STATUSES, true))
                     <button class="btn btn-secondary btn-block mt-2" data-toggle="modal" data-target="#waiveModal">
                         <i class="fas fa-hand-holding-usd"></i> {{ trans('mining-manager::taxes.waive') }}
                     </button>
@@ -127,7 +125,7 @@
                         <select class="form-control form-control-sm" id="statusSelect">
                             <option value="" disabled selected>-- Select --</option>
                             <option value="unpaid" {{ $tax->status === 'unpaid' ? 'disabled' : '' }}>Unpaid</option>
-                            <option value="paid" {{ $tax->status === 'paid' ? 'disabled' : '' }}>Paid</option>
+                            <option value="paid" {{ $tax->status === 'paid' || $tax->isWrittenOff() ? 'disabled' : '' }}>Paid</option>
                             <option value="overdue" {{ $tax->status === 'overdue' ? 'disabled' : '' }}>Overdue</option>
                             <option value="exempted" {{ $tax->status === 'exempted' ? 'disabled' : '' }}>Exempted</option>
                         </select>

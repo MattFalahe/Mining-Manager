@@ -2055,7 +2055,7 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                         <li>Whatever was paid before stays paid and stays in Collected. The bill's page, Tax Overview and My Taxes show the rest as waived.</li>
                         <li>A waived bill drops out of Owed and Overdue, gets no reminders and is never worked out again. A payment quoting its code goes to the member's other open bills, then to their balance.</li>
                         <li>Collected on Tax Overview shows what was waived this month underneath, and the tax chart on the director dashboard has a Waived bar beside Collected and Owed.</li>
-                        <li>To undo it, set the bill back to Unpaid with Change Status. A bill with something paid on it goes back to Partial.</li>
+                        <li>To undo it, set the bill back to Unpaid with Change Status. A bill with something paid on it goes back to Partial. Until then it can't be marked paid or sent a reminder, so if the money comes in after all, set it back first.</li>
                     </ul>
                     <p>
                         Exempted, under Change Status, works the same way for a bill that should never have been
